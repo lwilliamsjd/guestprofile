@@ -102,3 +102,47 @@ export function subscribeApplicants(cb) {
     .subscribe();
   return () => supabase.removeChannel(ch);
 }
+
+// ---------- team ----------
+export async function listTeam() {
+  const { data, error } = await supabase.from("profiles").select("id, full_name").order("full_name");
+  if (error) return [];
+  return data;
+}
+
+// ---------- change history ----------
+export async function listChanges(applicantId) {
+  const { data, error } = await supabase
+    .from("applicant_changes")
+    .select("*")
+    .eq("applicant_id", applicantId)
+    .order("changed_at", { ascending: false });
+  if (error) return [];
+  return data;
+}
+export async function addChange(applicantId, changes, profile) {
+  if (!changes || !changes.length) return;
+  const { error } = await supabase.from("applicant_changes").insert({
+    applicant_id: applicantId,
+    changed_by: profile.id,
+    changed_by_name: profile.full_name,
+    changes,
+  });
+  if (error) console.warn("History not recorded:", error.message);
+}
+
+// ---------- backups ----------
+export async function markExported() {
+  const { error } = await supabase.rpc("mark_exported");
+  if (error) console.warn("Export not recorded:", error.message);
+}
+export async function lastExportAt() {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("last_export_at, full_name")
+    .not("last_export_at", "is", null)
+    .order("last_export_at", { ascending: false })
+    .limit(1);
+  if (error || !data || !data.length) return null;
+  return data[0];
+}

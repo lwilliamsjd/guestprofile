@@ -2,6 +2,7 @@ import {
   signIn, signOut, getSession, onAuthChange, getCurrentProfile, setDisplayName, changePassword,
   listApplicants, getApplicant, createApplicant, updateApplicant, trashApplicant,
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
+  listTeam, listChanges, addChange, markExported, lastExportAt,
 } from "./api.js";
 import {
   USAGE_OPTIONS, escapeHtml, initials, garageOf, totalMiles, fmtDate,
@@ -70,21 +71,74 @@ function navigate(h) { window.location.hash = h; }
 // ---------- form definition ----------
 const AGE_RANGES = ["Under 30", "30s", "40s", "50s", "60s", "70+"];
 const GT_USE_OPTIONS = ["Track Days", "Weekend Street", "Collection", "Daily Driver", "Shows & Events"];
-const TIMING_SUGGESTIONS = ["Ready now", "Within 6 months", "Within 12 months", "Flexible / whenever allocated"];
+const TIMING_SUGGESTIONS = ["Ready now", "Within 6 months", "Within 12 months", "Flexible"];
+const HPDE_LEVELS = ["None", "Beginner", "Intermediate", "Advanced", "Instructor"];
+const RACE_LEVELS = ["None", "Time Attack / Autocross", "Club Racing", "Pro / Semi Pro"];
+const ALLOCATION_OPTIONS = ["Pending", "Awarded", "Waitlist", "Declined"];
+const COMMON_MAKES = ["Acura","Alfa Romeo","Aston Martin","Audi","Bentley","BMW","Bugatti","Cadillac","Chevrolet","Dodge","Ferrari","Ford","Honda","Hyundai","Jaguar","Jeep","Koenigsegg","Lamborghini","Land Rover","Lexus","Lotus","Lucid","Maserati","Mazda","McLaren","Mercedes Benz","Nissan","Pagani","Porsche","Ram","Rimac","Rivian","Rolls Royce","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
+
+// fields required before a profile can be marked Complete
+const REQUIRED_FOR_COMPLETE = [
+  ["name", "Name"], ["age_range", "Age Range"], ["preferred_dealer", "Preferred Dealer"], ["summary", "Summary"],
+  ["hpde_level", "HPDE Level"], ["race_level", "Race Level"], ["garage", "At least one garage vehicle"],
+  ["has_flips", "Recent flips (Yes or No)"], ["timing", "Timing"], ["gt_usage", "Planned GR GT Use"], ["intended_use", "Intended Use"],
+];
+function missingForComplete(a) {
+  return REQUIRED_FOR_COMPLETE.filter(([k]) => {
+    if (k === "garage") return garageOf(a).length === 0;
+    if (k === "gt_usage") return !(a.gt_usage || []).length;
+    if (k === "has_flips") return a.has_flips !== true && a.has_flips !== false;
+    return !String(a[k] ?? "").trim();
+  }).map(([, label]) => label);
+}
+
+// labels used in change history
+const FIELD_LABELS = {
+  name: "Name", age_range: "Age Range", preferred_dealer: "Preferred Dealer", social_media: "Social Media", tmna_relationship: "TMNA Relationship",
+  vip: "VIP", summary: "Summary", hpde_level: "HPDE Level", hpde_experience: "HPDE Experience", race_level: "Race Level", race_experience: "Race Experience",
+  key_events: "Key Events", what_drives_you: "What Drives You", garage: "Current Garage", lfa_owner: "LFA Ownership",
+  previous_toyota_lexus: "Previous Toyota / Lexus", has_flips: "Recent Flips", recent_flips: "Recent Flips Detail", timing: "Timing",
+  gt_usage: "Planned GR GT Use", spec_consideration: "Spec Consideration", intended_use: "Intended Use",
+  interviewed_by: "Interviewed By", interview_date: "Interview Date", status: "Status", allocation: "Allocation Outcome",
+};
+const LONG_FIELDS = ["summary", "hpde_experience", "race_experience", "key_events", "what_drives_you", "previous_toyota_lexus", "recent_flips", "spec_consideration", "intended_use", "social_media", "tmna_relationship"];
+function fmtVal(k, v) {
+  if (v === true) return "Yes";
+  if (v === false) return "No";
+  if (v == null || v === "" || (Array.isArray(v) && !v.length)) return "(blank)";
+  if (k === "gt_usage") return v.join(", ");
+  if (k === "garage") return v.map((g) => g.vehicle).join("; ");
+  return String(v);
+}
+function diffFields(before, after) {
+  const out = [];
+  Object.keys(FIELD_LABELS).forEach((k) => {
+    if (!(k in after)) return;
+    const b = before[k] ?? null, a = after[k] ?? null;
+    const norm = (x) => {
+      if (k === "garage" && Array.isArray(x)) x = x.filter((g) => g.vehicle).map((g) => ({ v: (g.vehicle || "").trim(), u: g.usage || [], m: Number(g.miles) || null }));
+      return JSON.stringify(x === "" ? null : Array.isArray(x) && !x.length ? null : x);
+    };
+    if (norm(b) === norm(a)) return;
+    if (LONG_FIELDS.includes(k) || k === "garage") out.push({ field: FIELD_LABELS[k], note: "edited" });
+    else out.push({ field: FIELD_LABELS[k], from: fmtVal(k, b), to: fmtVal(k, a) });
+  });
+  return out;
+}
 
 const SECTIONS = [
   { id: "bio", title: "Bio", icon: I.user, check: (a) => !!(a.name && a.age_range && a.preferred_dealer) },
   { id: "summary", title: "Summary", icon: I.text, check: (a) => !!a.summary },
-  { id: "motorsports", title: "Motorsports / Events", icon: I.flag, check: (a) => !!(a.hpde_experience || a.race_experience || a.key_events || a.what_drives_you) },
+  { id: "motorsports", title: "Motorsports / Events", icon: I.flag, check: (a) => !!(a.hpde_level && a.race_level) },
   { id: "car", title: "Car Profile", icon: I.car, check: (a) => garageOf(a).length > 0 },
-  { id: "buyer", title: "Buyer Profile", icon: I.target, check: (a) => !!(a.timing || a.spec_consideration || a.intended_use || (a.gt_usage || []).length) },
+  { id: "buyer", title: "Buyer Profile", icon: I.target, check: (a) => !!(a.timing && (a.gt_usage || []).length && a.intended_use) },
 ];
 
 const TEXT_FIELDS = [
   "name", "age_range", "preferred_dealer", "social_media", "tmna_relationship", "summary",
   "hpde_experience", "race_experience", "key_events", "what_drives_you",
   "previous_toyota_lexus", "recent_flips", "timing", "spec_consideration", "intended_use",
-  "interviewed_by", "interview_date", "status",
+  "interviewed_by", "interview_date", "status", "hpde_level", "race_level", "allocation",
 ];
 const BOOL_FIELDS = ["vip", "lfa_owner"];
 
@@ -98,6 +152,7 @@ function blankApplicant() {
     hpde_experience: "", race_experience: "", key_events: "", what_drives_you: "",
     garage: [{ vehicle: "", usage: [], miles: "" }], lfa_owner: false, previous_toyota_lexus: "", recent_flips: "",
     timing: "", spec_consideration: "", intended_use: "", gt_usage: [],
+    hpde_level: "", race_level: "", has_flips: null, allocation: "Pending",
   };
 }
 
@@ -229,7 +284,7 @@ function renderLogin() {
 // ============================================================
 // LIST
 // ============================================================
-const listState = Object.assign({ q: "", status: "", dealer: "", flag: "", sort: "updated_at", dir: "desc" }, store.get("gtap-list") || {});
+const listState = Object.assign({ q: "", status: "", dealer: "", flag: "", alloc: "", sort: "updated_at", dir: "desc" }, store.get("gtap-list") || {});
 
 async function renderList(seq) {
   const main = shell("list", `<div class="loading">Loading applicants…</div>`);
@@ -241,12 +296,22 @@ async function renderList(seq) {
   };
 
   const dealers = [...new Set(rows.map((r) => (r.preferred_dealer || "").trim()).filter(Boolean))].sort();
+  let backupNote = "";
+  if (currentProfile?.is_admin && rows.length) {
+    const last = await lastExportAt();
+    if (seq !== renderSeq) return;
+    const days = last ? Math.floor((Date.now() - new Date(last.last_export_at).getTime()) / 86400000) : null;
+    if (days === null || days >= 14) {
+      backupNote = `<div class="banner"><span>${days === null ? "No Excel backup has been exported yet." : `Last Excel backup was ${days} days ago${last.full_name ? ` (by ${escapeHtml(last.full_name)})` : ""}.`} Export one to keep an offline copy.</span><button class="btn btn-primary" id="backup-btn">${I.excel}Export now</button></div>`;
+    }
+  }
 
   function filtered() {
     const q = listState.q.toLowerCase();
     let out = rows.filter((r) => {
       if (listState.status && r.status !== listState.status) return false;
       if (listState.dealer && (r.preferred_dealer || "").trim() !== listState.dealer) return false;
+      if (listState.alloc && (r.allocation || "Pending") !== listState.alloc) return false;
       if (listState.flag === "vip" && !r.vip) return false;
       if (listState.flag === "lfa" && !r.lfa_owner) return false;
       if (q) {
@@ -281,6 +346,7 @@ async function renderList(seq) {
           <a href="#/new" class="btn btn-primary">${I.plus}New Profile</a>
         </div>
       </div>
+      ${backupNote}
       <div class="kpi-strip">
         ${kpi("Total", rows.length, "status", "")}
         ${kpi("Complete", rows.filter((r) => r.status === "Complete").length, "status", "Complete")}
@@ -292,11 +358,12 @@ async function renderList(seq) {
         <label class="search-box">${I.search}<input id="q" placeholder="Search name, dealer, vehicle, summary…" value="${escapeHtml(listState.q)}"></label>
         <select id="f-status"><option value="">All statuses</option><option ${listState.status === "Draft" ? "selected" : ""}>Draft</option><option ${listState.status === "Complete" ? "selected" : ""}>Complete</option></select>
         <select id="f-dealer"><option value="">All dealers</option>${dealers.map((d) => `<option ${listState.dealer === d ? "selected" : ""}>${escapeHtml(d)}</option>`).join("")}</select>
+        <select id="f-alloc"><option value="">Any outcome</option>${ALLOCATION_OPTIONS.map((o) => `<option ${listState.alloc === o ? "selected" : ""}>${o}</option>`).join("")}</select>
         <select id="f-flag"><option value="">Any flags</option><option value="vip" ${listState.flag === "vip" ? "selected" : ""}>VIP only</option><option value="lfa" ${listState.flag === "lfa" ? "selected" : ""}>LFA owners only</option></select>
       </div>
       <div class="table-wrap">
         ${list.length ? `<table class="crm-table">
-          <thead><tr>${th("Applicant", "name")}${th("Preferred Dealer", "preferred_dealer")}${th("Garage", "garage")}${th("Timing", "timing")}<th>Flags</th>${th("Status", "status")}${th("Interviewed By", "interviewed_by")}${th("Updated", "updated_at")}</tr></thead>
+          <thead><tr>${th("Applicant", "name")}${th("Preferred Dealer", "preferred_dealer")}${th("Garage", "garage")}${th("Timing", "timing")}<th>Flags</th>${th("Status", "status")}${th("Outcome", "allocation")}${th("Interviewed By", "interviewed_by")}${th("Updated", "updated_at")}</tr></thead>
           <tbody>${list.map((r) => `
             <tr class="clickable-row" data-id="${r.id}">
               <td><div class="cell-name">${escapeHtml(r.name)}</div><div class="cell-sub muted">${escapeHtml(r.age_range || "")}</div></td>
@@ -305,6 +372,7 @@ async function renderList(seq) {
               <td>${escapeHtml(r.timing || "")}</td>
               <td><div class="pill-row">${r.vip ? `<span class="pill pill-vip">${I.star}VIP</span>` : ""}${r.lfa_owner ? `<span class="pill pill-lfa">LFA</span>` : ""}</div></td>
               <td><span class="pill pill-${r.status.toLowerCase()}">${r.status}</span></td>
+              <td><span class="pill pill-alloc-${(r.allocation || "Pending").toLowerCase()}">${escapeHtml(r.allocation || "Pending")}</span></td>
               <td>${escapeHtml(r.interviewed_by || "")}<div class="cell-sub muted">${r.interview_date ? fmtDate(r.interview_date) : ""}</div></td>
               <td><span class="muted" style="font-size:13px">${timeAgo(r.updated_at)}</span></td>
             </tr>`).join("")}</tbody></table>`
@@ -316,6 +384,7 @@ async function renderList(seq) {
     main.querySelector("#f-status").addEventListener("change", (e) => { listState.status = e.target.value; draw(); });
     main.querySelector("#f-dealer").addEventListener("change", (e) => { listState.dealer = e.target.value; draw(); });
     main.querySelector("#f-flag").addEventListener("change", (e) => { listState.flag = e.target.value; draw(); });
+    main.querySelector("#f-alloc").addEventListener("change", (e) => { listState.alloc = e.target.value; draw(); });
     main.querySelectorAll(".kpi").forEach((b) => b.addEventListener("click", () => {
       const k = b.dataset.k, v = b.dataset.v;
       if (v === "") { listState.status = ""; listState.flag = ""; }
@@ -330,6 +399,8 @@ async function renderList(seq) {
     }));
     main.querySelectorAll(".clickable-row").forEach((tr) => tr.addEventListener("click", () => navigate(`#/p/${tr.dataset.id}`)));
     main.querySelector("#export-btn").addEventListener("click", () => exportExcel(filtered()));
+    const bb = main.querySelector("#backup-btn");
+    if (bb) bb.addEventListener("click", () => { exportExcel(rows); backupNote = ""; draw(); });
   }
   draw();
 }
@@ -339,6 +410,7 @@ function exportExcel(rows) {
   const wb = XLSX.utils.book_new();
   appendApplicantSheets(wb, rows);
   XLSX.writeFile(wb, `GR GT Applicants ${todayISO()}.xlsx`, { cellDates: true });
+  markExported();
 }
 
 function appendApplicantSheets(wb, rows) {
@@ -346,15 +418,15 @@ function appendApplicantSheets(wb, rows) {
     Name: r.name, Status: r.status, "Age Range": r.age_range, "Preferred Dealer": r.preferred_dealer,
     VIP: r.vip ? "Yes" : "No", "LFA Owner": r.lfa_owner ? "Yes" : "No",
     "Social Media": r.social_media, "TMNA Relationship": r.tmna_relationship, Summary: r.summary,
-    "HPDE Experience": r.hpde_experience, "Race Experience": r.race_experience, "Key Events": r.key_events, "What Drives Them": r.what_drives_you,
+    "HPDE Level": r.hpde_level, "HPDE Details": r.hpde_experience, "Race Level": r.race_level, "Race Details": r.race_experience, "Key Events": r.key_events, "What Drives Them": r.what_drives_you,
     "Vehicles": garageOf(r).length, "Combined Miles/Yr": totalMiles(r),
-    "Previous Toyota/Lexus": r.previous_toyota_lexus, "Recent Flips": r.recent_flips,
+    "Previous Toyota/Lexus": r.previous_toyota_lexus, "Recent Flips": r.has_flips === true ? "Yes" : r.has_flips === false ? "No" : "", "Flip Details": r.recent_flips,
     Timing: r.timing, "Spec Consideration": r.spec_consideration, "GR GT Use": (r.gt_usage || []).join(", "), "Intended Use": r.intended_use,
-    "Interviewed By": r.interviewed_by, "Interview Date": r.interview_date ? new Date(r.interview_date + "T12:00:00") : null,
+    "Allocation Outcome": r.allocation || "Pending", "Interviewed By": r.interviewed_by, "Interview Date": r.interview_date ? new Date(r.interview_date + "T12:00:00") : null,
     "Last Updated": r.updated_at ? new Date(r.updated_at) : null,
   }));
   const garage = [];
-  rows.forEach((r) => garageOf(r).forEach((g) => garage.push({ Applicant: r.name, Vehicle: g.vehicle, Usage: (g.usage || []).join(", "), "Miles/Yr": Number(g.miles) || null })));
+  rows.forEach((r) => garageOf(r).forEach((g) => garage.push({ Applicant: r.name, Vehicle: g.vehicle, Make: g.make || makeOf(g.vehicle), Usage: (g.usage || []).join(", "), "Miles/Yr": Number(g.miles) || null })));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(people, { cellDates: true }), "Applicants");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(garage), "Garages");
 }
@@ -370,9 +442,16 @@ async function renderEditor(route, seq) {
     try { record = await getApplicant(route.id); } catch (e) { main.innerHTML = `<div class="banner error">Couldn't load this profile: ${escapeHtml(e.message)}</div>`; return; }
     if (seq !== renderSeq) return;
   }
+  const [team, others] = await Promise.all([listTeam(), listApplicants().catch(() => [])]);
+  if (seq !== renderSeq) return;
+  const changes = record ? await listChanges(record.id) : [];
+  if (seq !== renderSeq) return;
+  const dealerNames = [...new Set(others.map((o) => (o.preferred_dealer || "").trim()).filter(Boolean))].sort();
   const draftKey = `gtap-draft-${route.id || "new"}`;
   let a = record ? JSON.parse(JSON.stringify(record)) : blankApplicant();
   if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [{ vehicle: "", usage: [], miles: "" }];
+  a.garage.forEach((g) => { if (g.make) g.makeTouched = true; });
+  if (!a.allocation) a.allocation = "Pending";
 
   const localDraft = store.get(draftKey);
   const draftIsNewer = localDraft && (!record || new Date(localDraft.savedAt) > new Date(record.updated_at));
@@ -382,7 +461,10 @@ async function renderEditor(route, seq) {
     const hint = opts.hint ? ` <span class="hint">${opts.hint}</span>` : "";
     let input;
     if (opts.type === "textarea") input = `<textarea data-f="${key}" rows="${opts.rows || 3}" placeholder="${opts.ph || ""}">${escapeHtml(v)}</textarea>`;
-    else if (opts.type === "select") input = `<select data-f="${key}"><option value=""></option>${opts.options.map((o) => `<option ${o === v ? "selected" : ""}>${o}</option>`).join("")}</select>`;
+    else if (opts.type === "select") {
+      const optsList = v && !opts.options.includes(v) ? [...opts.options, v] : opts.options;
+      input = `<select data-f="${key}">${opts.noBlank ? "" : `<option value=""></option>`}${optsList.map((o) => `<option ${o === v ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
+    }
     else input = `<input type="${opts.type || "text"}" data-f="${key}" value="${escapeHtml(v)}" placeholder="${opts.ph || ""}" ${opts.list ? `list="${opts.list}"` : ""} autocomplete="off">`;
     return `<div class="form-field ${opts.span ? "span-2" : ""}"><label>${label}${hint}</label>${input}</div>`;
   };
@@ -394,7 +476,8 @@ async function renderEditor(route, seq) {
     </label>`;
 
   main.innerHTML = `
-    <datalist id="timing-list">${TIMING_SUGGESTIONS.map((t) => `<option value="${t}">`).join("")}</datalist>
+    <datalist id="dealer-list">${dealerNames.map((t) => `<option value="${escapeHtml(t)}">`).join("")}</datalist>
+    <datalist id="make-list">${COMMON_MAKES.map((t) => `<option value="${t}">`).join("")}</datalist>
     <a href="#/" class="back-link">${I.back}All applicants</a>
     <div class="editor-bar">
       <div class="editor-title">
@@ -426,7 +509,7 @@ async function renderEditor(route, seq) {
           <div class="form-grid">
             ${field("name", "Name", { ph: "First and last name" })}
             ${field("age_range", "Age Range", { type: "select", options: AGE_RANGES })}
-            ${field("preferred_dealer", "Preferred Dealer", { ph: "Dealership name" })}
+            ${field("preferred_dealer", "Preferred Dealer", { ph: "Start typing to pick an existing dealer", list: "dealer-list" })}
             ${field("social_media", "Social Media Accounts", { type: "textarea", rows: 2, ph: "One per line, e.g. Instagram @handle" })}
             ${field("tmna_relationship", "Relationships / Affiliation with TMNA", { type: "textarea", rows: 2, span: true, ph: "Who they know, prior programs, events, ambassador roles…" })}
             <div class="span-2">${toggle("vip", "VIP", "Flag this applicant as a VIP")}</div>
@@ -441,8 +524,10 @@ async function renderEditor(route, seq) {
         <section class="form-section" id="sec-motorsports">
           <header><div><div class="sec-kicker">03</div><h2>${I.flag}Motorsports / Events Profile</h2></div></header>
           <div class="form-grid">
-            ${field("hpde_experience", "HPDE Experience", { type: "textarea", ph: "Tracks, how often, run group / level" })}
-            ${field("race_experience", "Race Experience", { type: "textarea", ph: "Series, license, results" })}
+            ${field("hpde_level", "HPDE Level", { type: "select", options: HPDE_LEVELS })}
+            ${field("race_level", "Race Level", { type: "select", options: RACE_LEVELS })}
+            ${field("hpde_experience", "HPDE Details", { type: "textarea", ph: "Tracks, how often, run group" })}
+            ${field("race_experience", "Race Details", { type: "textarea", ph: "Series, license, results" })}
             ${field("key_events", "Key Motorsports Events Attended", { type: "textarea", span: true, ph: "Le Mans, Rolex 24, Monterey Car Week, GR Academy…" })}
             ${field("what_drives_you", "What Drives You", { type: "textarea", span: true, ph: "In their words, what they love about driving and the hobby" })}
           </div>
@@ -451,20 +536,21 @@ async function renderEditor(route, seq) {
         <section class="form-section" id="sec-car">
           <header><div><div class="sec-kicker">04</div><h2>${I.car}Car Profile</h2></div><span class="garage-total" id="garage-total"></span></header>
           <div class="form-field"><label>Current Garage <span class="hint">(how each is used and miles per year)</span></label></div>
-          <div class="garage-head"><span></span><span>Vehicle</span><span>How it's used</span><span>Miles / yr</span><span></span></div>
+          <div class="garage-head"><span></span><span>Vehicle</span><span>Make</span><span>How it's used</span><span>Miles / yr</span><span></span></div>
           <div class="garage-list" id="garage-list"></div>
           <button type="button" class="btn" id="add-car">${I.plus}Add vehicle</button>
           <div class="form-grid" style="margin-top:18px">
             <div class="span-2">${toggle("lfa_owner", "LFA Ownership", "Currently owns or has owned a Lexus LFA")}</div>
             ${field("previous_toyota_lexus", "Previous Toyota / Lexus Vehicles", { type: "textarea" })}
-            ${field("recent_flips", "Recent Vehicle Flips", { type: "textarea", ph: "Anything bought and resold quickly" })}
+            <div class="form-field"><label>Any Recent Vehicle Flips?</label><select data-f="has_flips"><option value=""></option><option value="yes" ${a.has_flips === true ? "selected" : ""}>Yes</option><option value="no" ${a.has_flips === false ? "selected" : ""}>No</option></select></div>
+            ${field("recent_flips", "Flip Details", { type: "textarea", span: true, ph: "What was bought and resold, and how quickly" })}
           </div>
         </section>
 
         <section class="form-section" id="sec-buyer">
           <header><div><div class="sec-kicker">05</div><h2>${I.target}Buyer Profile</h2></div></header>
           <div class="form-grid">
-            ${field("timing", "Timing", { list: "timing-list", ph: "When they'd take delivery" })}
+            ${field("timing", "Timing", { type: "select", options: TIMING_SUGGESTIONS })}
             ${field("spec_consideration", "Spec Consideration", { type: "textarea", rows: 2, ph: "Color, options, packages" })}
             <div class="form-field span-2"><label>How they plan to use the GR GT <span class="hint">(pick all that apply)</span></label><div class="use-chips" id="gt-use"></div></div>
             ${field("intended_use", "Why do they want the GR GT? (Intended use)", { type: "textarea", rows: 3, span: true })}
@@ -472,13 +558,22 @@ async function renderEditor(route, seq) {
         </section>
 
         <section class="form-section" id="sec-meta">
-          <header><div><div class="sec-kicker">Interview</div><h2>Call details</h2></div></header>
+          <header><div><div class="sec-kicker">Interview</div><h2>Call Details &amp; Decision</h2></div></header>
           <div class="form-grid">
-            ${field("interviewed_by", "Interviewed By")}
+            ${field("interviewed_by", "Interviewed By", { type: "select", options: team.map((t) => t.full_name).filter(Boolean) })}
             ${field("interview_date", "Interview Date", { type: "date" })}
+            ${field("allocation", "Allocation Outcome", { type: "select", options: ALLOCATION_OPTIONS, noBlank: true, hint: "(set once the EVP decides)" })}
           </div>
           ${!isNew && currentProfile?.is_admin ? `<div style="margin-top:16px;display:flex;justify-content:flex-end"><button type="button" class="btn btn-danger" id="trash-btn">${I.trash}Move to Trash</button></div>` : ""}
         </section>
+        ${isNew ? "" : `<section class="form-section" id="sec-history">
+          <header><div><div class="sec-kicker">Log</div><h2>Change History</h2></div><span class="muted">${changes.length} entr${changes.length === 1 ? "y" : "ies"}</span></header>
+          ${changes.length ? `<div class="history">${changes.map((c) => `
+            <div class="hist-item">
+              <div class="hist-meta"><b>${escapeHtml(c.changed_by_name || "Someone")}</b><span class="muted">${fmtDate(c.changed_at || new Date())} ${new Date(c.changed_at || Date.now()).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span></div>
+              <ul>${(c.changes || []).map((x) => `<li><span class="hist-field">${escapeHtml(x.field)}</span>${x.note ? ` <span class="muted">${escapeHtml(x.note)}</span>` : x.from !== undefined ? ` <span class="hist-from">${escapeHtml(x.from)}</span> → <span class="hist-to">${escapeHtml(x.to)}</span>` : ""}</li>`).join("")}</ul>
+            </div>`).join("")}</div>` : `<div class="muted">No changes recorded yet.</div>`}
+        </section>`}
       </form>
     </div>`;
 
@@ -492,6 +587,7 @@ async function renderEditor(route, seq) {
       <div class="garage-row" data-i="${i}">
         <span class="g-num">${i + 1}</span>
         <input data-g="vehicle" value="${escapeHtml(g.vehicle)}" placeholder="Year, make, model">
+        <input data-g="make" value="${escapeHtml(g.make || "")}" placeholder="${escapeHtml((g.vehicle && makeOf(g.vehicle)) || "Make")}" list="make-list" title="Leave blank to use the make detected from the vehicle name">
         <div class="use-chips">${USAGE_OPTIONS.map((u) => `<button type="button" class="use-chip ${(g.usage || []).includes(u) ? "on" : ""}" data-use="${u}">${u}</button>`).join("")}</div>
         <input data-g="miles" type="number" min="0" step="500" value="${escapeHtml(g.miles ?? "")}" placeholder="Miles">
         <button type="button" class="icon-btn" data-rm title="Remove">${I.trash}</button>
@@ -505,7 +601,17 @@ async function renderEditor(route, seq) {
   main.querySelector("#garage-list").addEventListener("input", (e) => {
     const row = e.target.closest(".garage-row"); if (!row) return;
     const g = a.garage[+row.dataset.i];
-    if (e.target.dataset.g === "vehicle") g.vehicle = e.target.value;
+    if (e.target.dataset.g === "vehicle") {
+      g.vehicle = e.target.value;
+      // fill the make automatically until someone edits it by hand
+      if (!g.makeTouched) {
+        const guess = makeOf(g.vehicle);
+        const known = guess && COMMON_MAKES.find((m) => m.toLowerCase() === guess.toLowerCase());
+        g.make = known || "";
+        row.querySelector('[data-g="make"]').value = g.make;
+      }
+    }
+    if (e.target.dataset.g === "make") { g.make = e.target.value; g.makeTouched = true; }
     if (e.target.dataset.g === "miles") g.miles = e.target.value === "" ? "" : Number(e.target.value);
     updateGarageTotal(); markDirty();
   });
@@ -554,7 +660,7 @@ async function renderEditor(route, seq) {
   main.addEventListener("input", (e) => {
     const k = e.target.dataset?.f;
     if (!k) return;
-    if (BOOL_FIELDS.includes(k)) return;
+    if (BOOL_FIELDS.includes(k) || k === "has_flips") return;
     a[k] = e.target.value;
     if (k === "name") {
       main.querySelector("#ed-name").textContent = a.name || "New applicant";
@@ -566,6 +672,7 @@ async function renderEditor(route, seq) {
   main.addEventListener("change", (e) => {
     const k = e.target.dataset?.f;
     if (!k) return;
+    if (k === "has_flips") { a.has_flips = e.target.value === "yes" ? true : e.target.value === "no" ? false : null; markDirty(); return; }
     if (BOOL_FIELDS.includes(k)) {
       a[k] = e.target.checked;
       e.target.closest(".toggle-card").classList.toggle("on", a[k]);
@@ -613,6 +720,7 @@ async function renderEditor(route, seq) {
       // repaint fields
       TEXT_FIELDS.forEach((k) => main.querySelectorAll(`[data-f="${k}"]`).forEach((el) => (el.value = a[k] ?? "")));
       BOOL_FIELDS.forEach((k) => { const el = main.querySelector(`[data-f="${k}"]`); el.checked = !!a[k]; el.closest(".toggle-card").classList.toggle("on", !!a[k]); });
+      main.querySelector('[data-f="has_flips"]').value = a.has_flips === true ? "yes" : a.has_flips === false ? "no" : "";
       if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [{ vehicle: "", usage: [], miles: "" }];
       drawGarage();
       drawGtUse();
@@ -638,12 +746,28 @@ async function renderEditor(route, seq) {
     payload.status = a.status || "Draft";
     BOOL_FIELDS.forEach((k) => (payload[k] = !!a[k]));
     payload.gt_usage = Array.isArray(a.gt_usage) ? a.gt_usage : [];
-    payload.garage = garageOf(a).map((g) => ({ vehicle: g.vehicle.trim(), usage: g.usage || [], miles: Number(g.miles) || null }));
+    payload.has_flips = a.has_flips === true || a.has_flips === false ? a.has_flips : null;
+    payload.allocation = a.allocation || "Pending";
+    payload.garage = garageOf(a).map((g) => ({ vehicle: g.vehicle.trim(), make: (g.make || "").trim() || makeOf(g.vehicle) || null, usage: g.usage || [], miles: Number(g.miles) || null }));
+    if (payload.status === "Complete") {
+      const missing = missingForComplete(a);
+      if (missing.length) {
+        errBanner.innerHTML = `<div class="banner error"><span><b>Can't mark Complete yet.</b> Still needed: ${missing.map(escapeHtml).join(", ")}. Save as Draft for now, or fill these in.</span></div>`;
+        errBanner.scrollIntoView({ behavior: "smooth", block: "center" });
+        return false;
+      }
+    }
+    if (isNew) {
+      const norm = (x) => (x || "").trim().toLowerCase().replace(/\s+/g, " ");
+      const dup = others.find((o) => norm(o.name) === norm(payload.name));
+      if (dup && !confirm(`A profile for "${dup.name}" already exists${dup.interviewed_by ? ` (interviewed by ${dup.interviewed_by})` : ""}. Create another one anyway?`)) return false;
+    }
     const btn = main.querySelector("#save-btn");
     btn.disabled = true;
     try {
       if (isNew) {
         const created = await createApplicant(payload, currentProfile);
+        await addChange(created.id, [{ field: "Profile", note: "created" }], currentProfile);
         store.del(draftKey);
         dirty = false;
         toast("Profile created");
@@ -651,7 +775,9 @@ async function renderEditor(route, seq) {
         navigate(lastHash);
         return true;
       }
+      const before = record;
       const saved = await updateApplicant(record.id, payload, currentProfile, record.updated_at);
+      await addChange(record.id, diffFields(before, payload), currentProfile);
       record = saved;
       a.updated_at = saved.updated_at;
       store.del(draftKey);
@@ -753,7 +879,7 @@ async function renderOutputs(route, seq) {
 // ============================================================
 // ANALYTICS
 // ============================================================
-const analyticsState = Object.assign({ status: "", vip: false }, store.get("gtap-analytics") || {});
+const analyticsState = Object.assign({ status: "", vip: false, compare: "lfa" }, store.get("gtap-analytics") || {});
 const TWO_WORD_MAKES = ["land rover", "aston martin", "alfa romeo", "rolls royce", "range rover"];
 const MAKE_ALIASES = { gr: "Toyota", vw: "Volkswagen", mercedes: "Mercedes Benz", "mercedes-benz": "Mercedes Benz", benz: "Mercedes Benz", chevy: "Chevrolet", mclaren: "McLaren", bmw: "BMW", gmc: "GMC", "rolls-royce": "Rolls Royce", "range rover": "Land Rover" };
 function makeOf(vehicle) {
@@ -766,9 +892,16 @@ function makeOf(vehicle) {
 }
 const hasText = (t) => !!(t && String(t).trim());
 const isNone = (t) => /^\s*(none|no|nope|n\/?a|0|nothing)\b/i.test(t || "");
-const hasFlips = (r) => hasText(r.recent_flips) && !isNone(r.recent_flips);
-const hpde = (r) => hasText(r.hpde_experience) && !isNone(r.hpde_experience);
-const racer = (r) => hasText(r.race_experience) && !isNone(r.race_experience);
+// structured answers win; older profiles without them fall back to reading the text
+const hasFlips = (r) => (r.has_flips === true || r.has_flips === false ? r.has_flips : hasText(r.recent_flips) && !isNone(r.recent_flips));
+const hpde = (r) => (r.hpde_level ? r.hpde_level !== "None" : hasText(r.hpde_experience) && !isNone(r.hpde_experience));
+const racer = (r) => (r.race_level ? r.race_level !== "None" : hasText(r.race_experience) && !isNone(r.race_experience));
+const makeFor = (g) => (g.make && g.make.trim()) || makeOf(g.vehicle);
+function weekStart(d) {
+  const x = new Date(d); x.setHours(12, 0, 0, 0);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); // Monday
+  return x;
+}
 
 async function renderAnalytics(seq) {
   const main = shell("analytics", `<div class="loading">Crunching numbers…</div>`);
@@ -829,7 +962,7 @@ async function renderAnalytics(seq) {
     function split(title, items, opts = {}) {
       const id = reg(title, items);
       const total = items.reduce((t, i) => t + i.rows.length, 0) || 1;
-      const color = (it, i) => it.neutral ? NEUTRAL : PALETTE[i % PALETTE.length];
+      const color = (it, i) => it.color || (it.neutral ? NEUTRAL : PALETTE[i % PALETTE.length]);
       const body = any(items) ? `
         <div class="split">${items.map((it, i) => it.rows.length ? `<button class="seg" data-g="${id}" data-i="${i}" style="flex:${it.rows.length};background:${color(it, i)}" title="${escapeHtml(tip(it))}"></button>` : "").join("")}</div>
         <div class="legend">${items.map((it, i) => `
@@ -873,6 +1006,38 @@ async function renderAnalytics(seq) {
       return wrap(opts.cls || "", title, opts.note, body);
     }
 
+    // side by side comparison of groups
+    function compare(title, opts = {}) {
+      const defs = {
+        lfa: { label: "LFA ownership", groups: [["LFA owners", (r) => r.lfa_owner], ["Non owners", (r) => !r.lfa_owner]] },
+        allocation: { label: "Allocation outcome", groups: ALLOCATION_OPTIONS.map((o) => [o, (r) => (r.allocation || "Pending") === o]) },
+        age: { label: "Age range", groups: AGE_RANGES.map((o) => [o, (r) => r.age_range === o]) },
+      };
+      const def = defs[analyticsState.compare] || defs.lfa;
+      const gs = def.groups.map(([label, fn]) => ({ label, rows: rows.filter(fn) })).filter((g) => g.rows.length);
+      const id = reg(`${title}: ${def.label}`, gs);
+      const share = (rs, fn) => (rs.length ? Math.round((rs.filter(fn).length / rs.length) * 100) : 0);
+      const metrics = [
+        ["Track experience", (rs) => share(rs, (r) => hpde(r) || racer(r)), "%"],
+        ["Advanced or Instructor HPDE", (rs) => share(rs, (r) => r.hpde_level === "Advanced" || r.hpde_level === "Instructor"), "%"],
+        ["Plans track days in the GR GT", (rs) => share(rs, (r) => (r.gt_usage || []).includes("Track Days")), "%"],
+        ["Ready now", (rs) => share(rs, (r) => (r.timing || "").toLowerCase() === "ready now"), "%"],
+        ["Prior Toyota / Lexus owner", (rs) => share(rs, (r) => hasText(r.previous_toyota_lexus) && !isNone(r.previous_toyota_lexus)), "%"],
+        ["Recent flips", (rs) => share(rs, hasFlips), "%"],
+        ["Avg garage size", (rs) => (rs.length ? (rs.reduce((t, r) => t + garageOf(r).length, 0) / rs.length).toFixed(1) : "0"), ""],
+      ];
+      const picker = `<select id="an-compare" class="an-select">${Object.entries(defs).map(([k, d]) => `<option value="${k}" ${analyticsState.compare === k ? "selected" : ""}>By ${d.label.toLowerCase()}</option>`).join("")}</select>`;
+      const body = gs.length > 1 ? `<div class="cmp-wrap"><table class="cmp">
+        <thead><tr><th></th>${gs.map((g, i) => `<th><button data-g="${id}" data-i="${i}" title="See who's in this group">${escapeHtml(g.label)}<span>${g.rows.length}</span></button></th>`).join("")}</tr></thead>
+        <tbody>${metrics.map(([label, fn, unit]) => {
+          const vals = gs.map((g) => fn(g.rows));
+          const max = Math.max(...vals.map(Number));
+          return `<tr><td class="cmp-label">${label}</td>${vals.map((v) => `<td class="${Number(v) === max && max > 0 ? "hi" : ""}">${v}${unit}</td>`).join("")}</tr>`;
+        }).join("")}</tbody></table></div>`
+        : `<div class="an-empty">Needs at least two groups with applicants</div>`;
+      return `<div class="an-card ${opts.cls || ""}"><div class="an-head"><h2>${title}</h2>${picker}</div>${body}</div>`;
+    }
+
     const by = (fn, order) => {
       const m = new Map();
       rows.forEach((r) => [].concat(fn(r)).filter((x) => x != null && x !== "").forEach((k) => { if (!m.has(k)) m.set(k, []); if (!m.get(k).includes(r)) m.get(k).push(r); }));
@@ -909,7 +1074,19 @@ async function renderAnalytics(seq) {
     const gsize = (r) => { const k = garageOf(r).length; return k === 0 ? "None recorded" : k === 1 ? "1 vehicle" : k <= 3 ? "2 to 3" : k <= 5 ? "4 to 5" : k <= 9 ? "6 to 9" : "10 or more"; };
     const garageSize = by(gsize, ["1 vehicle", "2 to 3", "4 to 5", "6 to 9", "10 or more", "None recorded"]).filter((i) => i.label !== "None recorded" || i.rows.length);
     // makes
-    const makes = by((r) => garageOf(r).map((g) => makeOf(g.vehicle))).slice(0, 10);
+    const makes = by((r) => garageOf(r).map(makeFor)).slice(0, 10);
+    const hpdeLevels = by((r) => r.hpde_level || "Not set", [...HPDE_LEVELS, "Not set"]).filter((i) => i.label !== "Not set" || i.rows.length);
+    const raceLevels = by((r) => r.race_level || "Not set", [...RACE_LEVELS, "Not set"]).filter((i) => i.label !== "Not set" || i.rows.length);
+    const ALLOC_COLORS = { Pending: NEUTRAL, Awarded: "#2a9d5c", Waitlist: "#b87a0e", Declined: "#a01c30" };
+    const alloc = by((r) => r.allocation || "Pending", ALLOCATION_OPTIONS).map((it) => ({ ...it, color: ALLOC_COLORS[it.label] }));
+    // interviews per week, last 12 weeks
+    const thisWeek = weekStart(new Date());
+    const weeks = [];
+    for (let w = 11; w >= 0; w--) { const d = new Date(thisWeek); d.setDate(d.getDate() - w * 7); weeks.push(d); }
+    const weekly = weeks.map((d) => ({
+      label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      rows: rows.filter((r) => { const when = r.interview_date ? new Date(r.interview_date + "T12:00:00") : new Date(r.created_at); return weekStart(when).getTime() === d.getTime(); }),
+    }));
     // timing
     const timingRaw = by((r) => (r.timing || "").trim() || "Not set");
     const tRank = (l) => { const i = TIMING_SUGGESTIONS.findIndex((t) => t.toLowerCase() === l.toLowerCase()); return i < 0 ? (l === "Not set" ? 99 : 50) : i; };
@@ -969,12 +1146,20 @@ async function renderAnalytics(seq) {
       <div class="an-grid">
         ${split("Motorsports Experience", ms, { cls: "span-5" })}
         ${hbars("Current Garage Use", garageUse, { cls: "span-7", note: "Applicants with a car used this way" })}
+        ${columns("HPDE Level", hpdeLevels, { cls: "span-6" })}
+        ${columns("Race Level", raceLevels, { cls: "span-6" })}
         ${columns("Garage Size", garageSize, { cls: "span-5", note: "Vehicles per applicant" })}
         ${hbars("Most Common Makes Owned", makes, { cls: "span-7", ranked: true, note: "Top 10" })}
       </div>
+      <div class="an-section-title">Decisions</div>
+      <div class="an-grid">
+        ${split("Allocation Outcome", alloc, { cls: "span-4" })}
+        ${compare("Compare Groups", { cls: "span-8" })}
+      </div>
       <div class="an-section-title">Program</div>
       <div class="an-grid">
-        ${split("Interviews by Team Member", team, { cls: "span-12" })}
+        ${columns("Interviews per Week", weekly, { cls: "span-8 weekly", note: "Last 12 weeks, by interview date" })}
+        ${split("Interviews by Team Member", team, { cls: "span-4" })}
       </div>
       <div class="drawer-scrim ${drawer ? "open" : ""}" id="an-scrim"></div>
       <aside class="drawer ${drawer ? "open" : ""}" id="an-drawer">
@@ -1009,7 +1194,9 @@ async function renderAnalytics(seq) {
       XLSX.utils.book_append_sheet(wb, ws, "Summary");
       appendApplicantSheets(wb, rows);
       XLSX.writeFile(wb, `GR GT Applicant Analytics ${todayISO()}.xlsx`, { cellDates: true });
+      markExported();
     });
+    main.querySelector("#an-compare").addEventListener("change", (e) => { analyticsState.compare = e.target.value; draw(); });
     main.querySelector("#an-status").addEventListener("change", (e) => { analyticsState.status = e.target.value; draw(); });
     main.querySelector("#an-vip").addEventListener("click", () => { analyticsState.vip = !analyticsState.vip; draw(); });
     main.querySelectorAll("[data-g]").forEach((b) => b.addEventListener("click", () => {

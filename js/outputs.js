@@ -57,8 +57,10 @@ function fullText(a) {
   if (has(a.summary)) out.push("", "SUMMARY", clean(a.summary));
 
   const ms = [
-    line("HPDE Experience", a.hpde_experience),
-    line("Race Experience", a.race_experience),
+    line("HPDE Level", a.hpde_level),
+    line("HPDE Details", a.hpde_experience),
+    line("Race Level", a.race_level),
+    line("Race Details", a.race_experience),
     line("Key Events Attended", a.key_events),
     line("What Drives Them", a.what_drives_you),
   ].filter(Boolean);
@@ -77,7 +79,9 @@ function fullText(a) {
   car.push(`LFA Owner: ${a.lfa_owner ? "Yes" : "No"}`);
   const prev = line("Previous Toyota/Lexus", a.previous_toyota_lexus);
   if (prev) car.push(prev);
-  const flips = line("Recent Vehicle Flips", a.recent_flips);
+  const flipsYN = a.has_flips === true ? "Yes" : a.has_flips === false ? "No" : "";
+  const flipText = /^\s*(none|no|n\/?a|nope|0|nothing)\b/i.test(clean(a.recent_flips)) ? "" : clean(a.recent_flips);
+  const flips = line("Recent Vehicle Flips", [flipsYN, flipText].filter(has).join(": "));
   if (flips) car.push(flips);
   out.push("", "CAR PROFILE", ...car);
 
@@ -108,8 +112,8 @@ function compactText(a) {
   if (has(a.tmna_relationship)) parts.push(`TMNA: ${s(a.tmna_relationship)}.`);
   if (has(a.summary)) parts.push(s(a.summary).replace(/\.?$/, "."));
   const ms = [
-    has(a.hpde_experience) ? `HPDE: ${s(a.hpde_experience)}` : null,
-    has(a.race_experience) ? `Racing: ${s(a.race_experience)}` : null,
+    has(a.hpde_level) || has(a.hpde_experience) ? `HPDE: ${[a.hpde_level, s(a.hpde_experience)].filter(has).join(", ")}` : null,
+    has(a.race_level) || has(a.race_experience) ? `Racing: ${[a.race_level, s(a.race_experience)].filter(has).join(", ")}` : null,
     has(a.key_events) ? `Events: ${s(a.key_events)}` : null,
     has(a.what_drives_you) ? `Drive: ${s(a.what_drives_you)}` : null,
   ].filter(Boolean);
@@ -127,7 +131,7 @@ function compactText(a) {
     );
   }
   if (has(a.previous_toyota_lexus)) parts.push(`Prior Toyota/Lexus: ${s(a.previous_toyota_lexus)}.`);
-  if (has(a.recent_flips)) parts.push(`Recent flips: ${s(a.recent_flips)}.`);
+  if (a.has_flips === true || a.has_flips === false || has(a.recent_flips)) parts.push(`Recent flips: ${[a.has_flips === true ? "Yes" : a.has_flips === false ? "No" : "", s(a.recent_flips)].filter(has).join(", ")}.`);
   const buyer = [
     has(a.timing) ? `Timing: ${s(a.timing)}` : null,
     (a.gt_usage || []).length ? `Planned use: ${a.gt_usage.join("/")}` : null,

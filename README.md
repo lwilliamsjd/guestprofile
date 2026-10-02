@@ -23,13 +23,16 @@ Section checkmarks show what's been covered. Ctrl+S saves. Unsaved work is kept 
 
 **Analytics**: KPI tiles (applicants, LFA owner share, track experience share, VIP share, average garage size, average miles per year) and breakdowns for Age Ranges, LFA Ownership, Planned GR GT Use, Motorsports Experience, Current Garage Use, Garage Size, Timing, Profile Signals (VIP, prior Toyota/Lexus, TMNA relationship, recent flips), Most Common Makes, Preferred Dealers, and Interviews by Team Member. Filter by status or VIP. Click any bar to see the applicants behind it.
 
+**Data quality**: Timing, HPDE Level, Race Level and Recent Flips (Yes/No) are fixed choices so analytics count them exactly; the text boxes stay for detail. Interviewed By is picked from team logins. Preferred Dealer suggests names already used. Each garage vehicle has a Make (filled in automatically from the vehicle name, editable).
+
+**Decisions and history**: each profile has an Allocation Outcome (Pending, Awarded, Waitlist, Declined), shown and filterable on the Applicants list. A profile can't be marked Complete until the key fields are filled. Creating a profile with a name that already exists asks first. Every save records who changed what, shown under Change History at the bottom of the profile.
+
+**Backups and keep alive**: admins see a reminder on the Applicants page when nobody has exported Excel in 14 days. A GitHub Action (`.github/workflows/keepalive.yml`) pings Supabase daily so the free project doesn't pause; check it under the repo's **Actions** tab.
+
 **Account**: change your name and password. Admins get the Trash (restore or delete forever).
 
 ## Updating an existing database
-Already ran `schema.sql` before the Analytics update? Run this once in **SQL Editor**:
-```sql
-alter table applicants add column if not exists gt_usage jsonb not null default '[]'::jsonb;
-```
+Already set up before an update? Paste the whole `sql/schema.sql` into **SQL Editor** and run it. Every statement in it is safe to re-run, so it only adds what's missing.
 
 ## Setup (about 15 minutes)
 

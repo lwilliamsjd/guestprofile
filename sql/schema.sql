@@ -130,3 +130,41 @@ begin
   alter publication supabase_realtime add table applicants;
 exception when duplicate_object then null;
 end $$;
+
+-- ---------- update 2: structured fields, decisions, history, backups (safe to re-run) ----------
+alter table applicants add column if not exists hpde_level text;
+alter table applicants add column if not exists race_level text;
+alter table applicants add column if not exists has_flips boolean;
+alter table applicants add column if not exists allocation text not null default 'Pending';
+do $$ begin
+  alter table applicants add constraint applicants_allocation_check check (allocation in ('Pending','Awarded','Waitlist','Declined'));
+exception when duplicate_object then null; end $$;
+
+alter table profiles add column if not exists last_export_at timestamptz;
+create or replace function public.mark_exported()
+returns void language sql security definer set search_path = public as $$
+  update public.profiles set last_export_at = now() where id = auth.uid();
+$$;
+
+create table if not exists applicant_changes (
+  id uuid primary key default gen_random_uuid(),
+  applicant_id uuid not null references applicants(id) on delete cascade,
+  changed_by uuid references auth.users(id),
+  changed_by_name text,
+  changed_at timestamptz not null default now(),
+  changes jsonb not null default '[]'::jsonb
+);
+create index if not exists applicant_changes_idx on applicant_changes (applicant_id, changed_at desc);
+alter table applicant_changes enable row level security;
+drop policy if exists "changes_select" on applicant_changes;
+drop policy if exists "changes_insert" on applicant_changes;
+create policy "changes_select" on applicant_changes for select using (auth.role() = 'authenticated');
+create policy "changes_insert" on applicant_changes for insert with check (auth.role() = 'authenticated');
+-- history is append only: no update or delete policies
+
+-- lets the daily keep-alive ping touch the database without exposing any data
+create or replace function public.keepalive()
+returns int language sql security definer stable set search_path = public as $$
+  select 1;
+$$;
+grant execute on function public.keepalive() to anon;
