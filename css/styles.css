@@ -276,3 +276,27 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
   .account-grid { grid-template-columns: 1fr; }
   .editor-bar { position: static; margin: 8px 0 16px; }
 }
+
+/* ---------- print (Analytics report) ---------- */
+.print-only { display: none; }
+@media print {
+  @page { size: letter portrait; margin: 0.5in; }
+  :root { --panel: #fff; --panel-2: #f4f4f6; --panel-3: #ececf0; --border: #dcdce2; --text: #111114; --grey: #4a4a52; --grey-dim: #7a7a82; }
+  html, body { background: #fff !important; color: #111114; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .topbar, .no-print, .drawer, .drawer-scrim, .toast { display: none !important; }
+  .print-only { display: block; }
+  .print-meta { margin: 4px 0 0; font-size: 11px; color: #4a4a52; }
+  .main-content { padding: 0; max-width: none; }
+  .page-header { margin-bottom: 12px; }
+  .kpi, .an-card { box-shadow: none; }
+  .kpi { padding: 8px 10px; }
+  .kpi-num { font-size: 18px; }
+  .an-kpis { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .an-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .an-card { padding: 12px 14px 8px; break-inside: avoid; page-break-inside: avoid; }
+  .an-card h2 { font-size: 13px; }
+  .bar-row { padding: 3px 6px; font-size: 11px; }
+  .bar-row:disabled { opacity: .5; }
+  .bar-track { height: 8px; }
+}

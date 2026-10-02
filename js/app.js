@@ -336,6 +336,12 @@ async function renderList(seq) {
 
 function exportExcel(rows) {
   if (!window.XLSX) return alert("Excel library didn't load. Check your connection and try again.");
+  const wb = XLSX.utils.book_new();
+  appendApplicantSheets(wb, rows);
+  XLSX.writeFile(wb, `GR GT Applicants ${todayISO()}.xlsx`, { cellDates: true });
+}
+
+function appendApplicantSheets(wb, rows) {
   const people = rows.map((r) => ({
     Name: r.name, Status: r.status, "Age Range": r.age_range, "Preferred Dealer": r.preferred_dealer,
     VIP: r.vip ? "Yes" : "No", "LFA Owner": r.lfa_owner ? "Yes" : "No",
@@ -349,10 +355,8 @@ function exportExcel(rows) {
   }));
   const garage = [];
   rows.forEach((r) => garageOf(r).forEach((g) => garage.push({ Applicant: r.name, Vehicle: g.vehicle, Usage: (g.usage || []).join(", "), "Miles/Yr": Number(g.miles) || null })));
-  const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(people, { cellDates: true }), "Applicants");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(garage), "Garages");
-  XLSX.writeFile(wb, `GR GT Applicants ${todayISO()}.xlsx`, { cellDates: true });
 }
 
 // ============================================================
@@ -780,13 +784,15 @@ async function renderAnalytics(seq) {
     const rows = all.filter((r) => (!analyticsState.status || r.status === analyticsState.status) && (!analyticsState.vip || r.vip));
     const n = rows.length;
     const pct = (k) => (n ? Math.round((k / n) * 100) : 0);
-    const groups = {}; // id -> {label -> rows}
+    const groups = {}; // id -> items
+    const titles = {}; // id -> card title
     let gid = 0;
 
     // build a bar card; items: [{label, rows, sub?}]
     function card(title, items, opts = {}) {
       const id = `g${gid++}`;
       groups[id] = items;
+      titles[id] = title;
       const max = Math.max(1, ...items.map((i) => i.rows.length));
       const body = items.length && items.some((i) => i.rows.length)
         ? items.map((it, i) => `
@@ -849,10 +855,26 @@ async function renderAnalytics(seq) {
     const milesRows = rows.filter((r) => totalMiles(r) > 0);
     const avgMiles = milesRows.length ? Math.round(milesRows.reduce((t, r) => t + totalMiles(r), 0) / milesRows.length).toLocaleString() : "—";
 
+    const kpis = [
+      { label: "Applicants", value: n },
+      { label: "LFA owners", value: `${pct(rows.filter((r) => r.lfa_owner).length)}%` },
+      { label: "Track experience", value: `${pct(trackActive)}%` },
+      { label: "VIP", value: `${pct(rows.filter((r) => r.vip).length)}%` },
+      { label: "Avg garage size", value: avgGarage },
+      { label: "Avg miles / yr", value: avgMiles },
+    ];
+    function filterDesc() {
+      const f = [analyticsState.status ? `${analyticsState.status} profiles` : "All profiles", analyticsState.vip ? "VIP only" : null].filter(Boolean);
+      return f.join(", ");
+    }
+
     main.innerHTML = `
       <div class="page-header">
-        <div><h1>Analytics</h1><p class="muted">${n} applicant${n === 1 ? "" : "s"} in view · click any bar to see who's in it</p></div>
-        <div class="filters" style="margin:0">
+        <div><h1>Analytics</h1><p class="muted">${n} applicant${n === 1 ? "" : "s"} in view<span class="no-print"> · click any bar to see who's in it</span></p>
+          <p class="print-only print-meta">GR GT Applicant Profiles · ${escapeHtml(filterDesc())} · Generated ${fmtDate(new Date())}</p></div>
+        <div class="filters no-print" style="margin:0">
+          <button class="btn" id="an-excel">${I.excel}Export Excel</button>
+          <button class="btn btn-primary" id="an-print">${I.print}Print / Save PDF</button>
           <select id="an-status"><option value="">All statuses</option><option ${analyticsState.status === "Complete" ? "selected" : ""}>Complete</option><option ${analyticsState.status === "Draft" ? "selected" : ""}>Draft</option></select>
           <button class="chip ${analyticsState.vip ? "active" : ""}" id="an-vip">${I.star}VIP only</button>
         </div>
@@ -890,6 +912,28 @@ async function renderAnalytics(seq) {
             </a>`).join("")}</div>` : ""}
       </aside>`;
 
+    main.querySelector("#an-print").addEventListener("click", () => {
+      const t = document.title;
+      document.title = `GR GT Applicant Analytics ${todayISO()}`;
+      window.print();
+      document.title = t;
+    });
+    main.querySelector("#an-excel").addEventListener("click", () => {
+      if (!window.XLSX) return alert("Excel library didn't load. Check your connection and try again.");
+      const aoa = [["GR GT Applicant Analytics"], [`Filter: ${filterDesc()}`], [`Generated: ${fmtDate(new Date())}`], [],
+        ["Key Figures", "Value"], ...kpis.map((k) => [k.label, k.value]), []];
+      Object.keys(groups).forEach((id) => {
+        aoa.push([titles[id], "Applicants", "% of total"]);
+        groups[id].forEach((it) => aoa.push([it.label, it.rows.length, n ? Math.round((it.rows.length / n) * 1000) / 10 + "%" : "0%"]));
+        aoa.push([]);
+      });
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws["!cols"] = [{ wch: 34 }, { wch: 12 }, { wch: 12 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Summary");
+      appendApplicantSheets(wb, rows);
+      XLSX.writeFile(wb, `GR GT Applicant Analytics ${todayISO()}.xlsx`, { cellDates: true });
+    });
     main.querySelector("#an-status").addEventListener("change", (e) => { analyticsState.status = e.target.value; draw(); });
     main.querySelector("#an-vip").addEventListener("click", () => { analyticsState.vip = !analyticsState.vip; draw(); });
     main.querySelectorAll(".bar-row").forEach((b) => b.addEventListener("click", () => {
