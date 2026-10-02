@@ -788,22 +788,91 @@ async function renderAnalytics(seq) {
     const titles = {}; // id -> card title
     let gid = 0;
 
-    // build a bar card; items: [{label, rows, sub?}]
-    function card(title, items, opts = {}) {
-      const id = `g${gid++}`;
-      groups[id] = items;
-      titles[id] = title;
+    // ---- chart renderers (each registers its items for drill down + Excel) ----
+    const PALETTE = ["#e0263f", "#4d8bff", "#b87a0e", "#1f9e8f", "#9b6cff"];
+    const NEUTRAL = "#55555d";
+    const reg = (title, items) => { const id = `g${gid++}`; groups[id] = items; titles[id] = title; return id; };
+    const tip = (it) => `${it.label}: ${it.rows.length} applicant${it.rows.length === 1 ? "" : "s"} (${pct(it.rows.length)}%)`;
+    const empty = `<div class="an-empty">Nothing recorded yet</div>`;
+    const any = (items) => items.some((i) => i.rows.length);
+    const head = (title, note) => `<div class="an-head"><h2>${title}</h2>${note ? `<span class="an-note">${note}</span>` : ""}</div>`;
+    const wrap = (cls, title, note, body) => `<div class="an-card ${cls}">${head(title, note)}${body}</div>`;
+
+    // vertical columns, for ordered buckets (age, garage size)
+    function columns(title, items, opts = {}) {
+      const id = reg(title, items);
       const max = Math.max(1, ...items.map((i) => i.rows.length));
-      const body = items.length && items.some((i) => i.rows.length)
-        ? items.map((it, i) => `
-          <button class="bar-row" data-g="${id}" data-i="${i}" ${it.rows.length ? "" : "disabled"}>
-            <span class="bar-label">${escapeHtml(it.label)}</span>
-            <span class="bar-track"><span class="bar-fill ${it.tone || ""}" style="width:${(it.rows.length / max) * 100}%"></span></span>
-            <span class="bar-num">${it.rows.length}<span class="bar-pct">${opts.denom === false ? "" : pct(it.rows.length) + "%"}</span></span>
-          </button>`).join("")
-        : `<div class="muted" style="padding:18px 0">Nothing recorded yet.</div>`;
-      return `<div class="an-card ${opts.wide ? "wide" : ""}"><div class="an-head"><h2>${title}</h2>${opts.note ? `<span class="muted">${opts.note}</span>` : ""}</div>${body}</div>`;
+      const body = any(items) ? `<div class="cols">${items.map((it, i) => `
+        <button class="col" data-g="${id}" data-i="${i}" ${it.rows.length ? "" : "disabled"} title="${escapeHtml(tip(it))}">
+          <span class="col-val">${it.rows.length ? it.rows.length : ""}</span>
+          <span class="col-bar-wrap"><span class="col-bar" style="height:${(it.rows.length / max) * 100}%"></span></span>
+          <span class="col-label">${escapeHtml(it.label)}</span>
+        </button>`).join("")}</div>` : empty;
+      return wrap(opts.cls || "", title, opts.note, body);
     }
+
+    // horizontal bars, sorted, top item highlighted (usage lists, makes, dealers)
+    function hbars(title, items, opts = {}) {
+      const id = reg(title, items);
+      const max = Math.max(1, ...items.map((i) => i.rows.length));
+      const sorted = items.map((it, i) => ({ it, i })).sort((x, y) => y.it.rows.length - x.it.rows.length);
+      const body = any(items) ? `<div class="hbars">${sorted.map(({ it, i }, rank) => `
+        <button class="hbar ${rank === 0 && it.rows.length ? "top" : ""}" data-g="${id}" data-i="${i}" ${it.rows.length ? "" : "disabled"} title="${escapeHtml(tip(it))}">
+          ${opts.ranked ? `<span class="hbar-rank">${rank + 1}</span>` : ""}
+          <span class="hbar-text"><span class="hbar-label">${escapeHtml(it.label)}</span><span class="hbar-num">${it.rows.length}<span class="hbar-pct">${pct(it.rows.length)}%</span></span></span>
+          <span class="hbar-track"><span class="hbar-fill" style="width:${(it.rows.length / max) * 100}%"></span></span>
+        </button>`).join("")}</div>` : empty;
+      return wrap(opts.cls || "", title, opts.note, body);
+    }
+
+    // one 100% bar split into parts + legend (motorsports, timing, team)
+    function split(title, items, opts = {}) {
+      const id = reg(title, items);
+      const total = items.reduce((t, i) => t + i.rows.length, 0) || 1;
+      const color = (it, i) => it.neutral ? NEUTRAL : PALETTE[i % PALETTE.length];
+      const body = any(items) ? `
+        <div class="split">${items.map((it, i) => it.rows.length ? `<button class="seg" data-g="${id}" data-i="${i}" style="flex:${it.rows.length};background:${color(it, i)}" title="${escapeHtml(tip(it))}"></button>` : "").join("")}</div>
+        <div class="legend">${items.map((it, i) => `
+          <button class="leg" data-g="${id}" data-i="${i}" ${it.rows.length ? "" : "disabled"} title="${escapeHtml(tip(it))}">
+            <span class="leg-dot" style="background:${color(it, i)}"></span>
+            <span class="leg-label">${escapeHtml(it.label)}</span>
+            <span class="leg-num">${it.rows.length}</span>
+            <span class="leg-pct">${Math.round((it.rows.length / total) * 100)}%</span>
+          </button>`).join("")}</div>` : empty;
+      return wrap(opts.cls || "", title, opts.note, body);
+    }
+
+    // headline number (LFA ownership)
+    function hero(title, yes, no, caption, opts = {}) {
+      const items = [yes, no];
+      const id = reg(title, items);
+      const p = pct(yes.rows.length);
+      const body = `
+        <button class="hero" data-g="${id}" data-i="0" ${yes.rows.length ? "" : "disabled"} title="${escapeHtml(tip(yes))}">
+          <span class="hero-num">${p}<small>%</small></span>
+          <span class="hero-cap">${caption}<br><b>${yes.rows.length} of ${n}</b> applicants</span>
+        </button>
+        <div class="split thin">${yes.rows.length ? `<button class="seg" data-g="${id}" data-i="0" style="flex:${yes.rows.length};background:${PALETTE[0]}" title="${escapeHtml(tip(yes))}"></button>` : ""}${no.rows.length ? `<button class="seg" data-g="${id}" data-i="1" style="flex:${no.rows.length};background:${NEUTRAL}" title="${escapeHtml(tip(no))}"></button>` : ""}</div>
+        <div class="legend inline">
+          <button class="leg" data-g="${id}" data-i="0" ${yes.rows.length ? "" : "disabled"}><span class="leg-dot" style="background:${PALETTE[0]}"></span><span class="leg-label">${escapeHtml(yes.label)}</span><span class="leg-num">${yes.rows.length}</span></button>
+          <button class="leg" data-g="${id}" data-i="1" ${no.rows.length ? "" : "disabled"}><span class="leg-dot" style="background:${NEUTRAL}"></span><span class="leg-label">${escapeHtml(no.label)}</span><span class="leg-num">${no.rows.length}</span></button>
+        </div>`;
+      return wrap(opts.cls || "", title, opts.note, body);
+    }
+
+    // stat tiles (profile signals)
+    function tiles(title, items, opts = {}) {
+      const id = reg(title, items);
+      const body = `<div class="tiles">${items.map((it, i) => `
+        <button class="tile" data-g="${id}" data-i="${i}" ${it.rows.length ? "" : "disabled"} title="${escapeHtml(tip(it))}">
+          <span class="tile-num">${pct(it.rows.length)}<small>%</small></span>
+          <span class="tile-label">${escapeHtml(it.label)}</span>
+          <span class="tile-sub">${it.rows.length} of ${n}</span>
+          <span class="tile-track"><span style="width:${pct(it.rows.length)}%"></span></span>
+        </button>`).join("")}</div>`;
+      return wrap(opts.cls || "", title, opts.note, body);
+    }
+
     const by = (fn, order) => {
       const m = new Map();
       rows.forEach((r) => [].concat(fn(r)).filter((x) => x != null && x !== "").forEach((k) => { if (!m.has(k)) m.set(k, []); if (!m.get(k).includes(r)) m.get(k).push(r); }));
@@ -817,8 +886,8 @@ async function renderAnalytics(seq) {
     const age = by((r) => r.age_range || "Not set", [...AGE_RANGES, "Not set"]).filter((i) => i.label !== "Not set" || i.rows.length);
     // LFA / flags
     const lfa = [
-      { label: "LFA owner", rows: rows.filter((r) => r.lfa_owner), tone: "red" },
-      { label: "Not an LFA owner", rows: rows.filter((r) => !r.lfa_owner), tone: "dim" },
+      { label: "Owner", rows: rows.filter((r) => r.lfa_owner) },
+      { label: "Not an owner", rows: rows.filter((r) => !r.lfa_owner), neutral: true },
     ];
     const flags = [
       { label: "VIP", rows: rows.filter((r) => r.vip), tone: "gold" },
@@ -835,7 +904,7 @@ async function renderAnalytics(seq) {
       { label: "HPDE and racing", rows: rows.filter((r) => hpde(r) && racer(r)), tone: "red" },
       { label: "HPDE only", rows: rows.filter((r) => hpde(r) && !racer(r)) },
       { label: "Racing only", rows: rows.filter((r) => !hpde(r) && racer(r)) },
-      { label: "No track experience", rows: rows.filter((r) => !hpde(r) && !racer(r)), tone: "dim" },
+      { label: "No track experience", rows: rows.filter((r) => !hpde(r) && !racer(r)), neutral: true },
     ];
     // garage size
     const gsize = (r) => { const k = garageOf(r).length; return k === 0 ? "None recorded" : k === 1 ? "1 vehicle" : k <= 3 ? "2 to 3" : k <= 5 ? "4 to 5" : k <= 9 ? "6 to 9" : "10 or more"; };
@@ -843,7 +912,9 @@ async function renderAnalytics(seq) {
     // makes
     const makes = by((r) => garageOf(r).map((g) => makeOf(g.vehicle))).slice(0, 10);
     // timing
-    const timing = by((r) => (r.timing || "").trim() || "Not set").slice(0, 8);
+    const timingRaw = by((r) => (r.timing || "").trim() || "Not set");
+    const tRank = (l) => { const i = TIMING_SUGGESTIONS.findIndex((t) => t.toLowerCase() === l.toLowerCase()); return i < 0 ? (l === "Not set" ? 99 : 50) : i; };
+    const timing = timingRaw.sort((x, y) => tRank(x.label) - tRank(y.label) || y.rows.length - x.rows.length).slice(0, 5);
     // dealers
     const dealers = by((r) => (r.preferred_dealer || "").trim() || "Not set").slice(0, 10);
     // team
@@ -887,18 +958,28 @@ async function renderAnalytics(seq) {
         <div class="kpi"><span class="kpi-num">${avgGarage}</span><span class="kpi-label">Avg garage size</span></div>
         <div class="kpi"><span class="kpi-num">${avgMiles}</span><span class="kpi-label">Avg miles / yr</span></div>
       </div>
+      <div class="an-section-title">Who they are</div>
       <div class="an-grid">
-        ${card("Age Ranges", age)}
-        ${card("LFA Ownership", lfa)}
-        ${card("Planned GR GT Use", gtUse, { note: "Applicants can pick several" })}
-        ${card("Motorsports Experience", ms)}
-        ${card("Current Garage Use", garageUse, { note: "Applicants with a car used this way" })}
-        ${card("Garage Size", garageSize)}
-        ${card("Timing", timing)}
-        ${card("Profile Signals", flags)}
-        ${card("Most Common Makes Owned", makes, { note: "Top 10, from garage entries" })}
-        ${card("Preferred Dealers", dealers, { note: "Top 10" })}
-        ${card("Interviews by Team Member", team)}
+        ${columns("Age Ranges", age, { cls: "span-5" })}
+        ${hero("LFA Ownership", lfa[0], lfa[1], "currently own or have owned a Lexus LFA", { cls: "span-3" })}
+        ${tiles("Profile Signals", flags, { cls: "span-4" })}
+      </div>
+      <div class="an-section-title">What they want</div>
+      <div class="an-grid">
+        ${hbars("Planned GR GT Use", gtUse, { cls: "span-7", note: "Applicants can pick several" })}
+        ${split("Timing", timing, { cls: "span-5" })}
+      </div>
+      <div class="an-section-title">Driving and ownership</div>
+      <div class="an-grid">
+        ${split("Motorsports Experience", ms, { cls: "span-5" })}
+        ${hbars("Current Garage Use", garageUse, { cls: "span-7", note: "Applicants with a car used this way" })}
+        ${columns("Garage Size", garageSize, { cls: "span-5", note: "Vehicles per applicant" })}
+        ${hbars("Most Common Makes Owned", makes, { cls: "span-7", ranked: true, note: "Top 10" })}
+      </div>
+      <div class="an-section-title">Program</div>
+      <div class="an-grid">
+        ${hbars("Preferred Dealers", dealers, { cls: "span-7", ranked: true, note: "Top 10" })}
+        ${split("Interviews by Team Member", team, { cls: "span-5" })}
       </div>
       <div class="drawer-scrim ${drawer ? "open" : ""}" id="an-scrim"></div>
       <aside class="drawer ${drawer ? "open" : ""}" id="an-drawer">
@@ -936,9 +1017,10 @@ async function renderAnalytics(seq) {
     });
     main.querySelector("#an-status").addEventListener("change", (e) => { analyticsState.status = e.target.value; draw(); });
     main.querySelector("#an-vip").addEventListener("click", () => { analyticsState.vip = !analyticsState.vip; draw(); });
-    main.querySelectorAll(".bar-row").forEach((b) => b.addEventListener("click", () => {
+    main.querySelectorAll("[data-g]").forEach((b) => b.addEventListener("click", () => {
+      if (b.disabled) return;
       const it = groups[b.dataset.g][+b.dataset.i];
-      const group = b.closest(".an-card").querySelector("h2").textContent;
+      const group = titles[b.dataset.g];
       drawer = { group, title: it.label, rows: [...it.rows].sort((x, y) => x.name.localeCompare(y.name)) };
       draw();
     }));
