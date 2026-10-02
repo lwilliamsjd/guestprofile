@@ -890,7 +890,6 @@ async function renderAnalytics(seq) {
       { label: "Not an owner", rows: rows.filter((r) => !r.lfa_owner), neutral: true },
     ];
     const flags = [
-      { label: "VIP", rows: rows.filter((r) => r.vip), tone: "gold" },
       { label: "Prior Toyota / Lexus owner", rows: rows.filter((r) => hasText(r.previous_toyota_lexus) && !isNone(r.previous_toyota_lexus)) },
       { label: "TMNA relationship noted", rows: rows.filter((r) => hasText(r.tmna_relationship) && !isNone(r.tmna_relationship)) },
       { label: "Recent flips noted", rows: rows.filter(hasFlips), tone: "amber" },
@@ -915,8 +914,7 @@ async function renderAnalytics(seq) {
     const timingRaw = by((r) => (r.timing || "").trim() || "Not set");
     const tRank = (l) => { const i = TIMING_SUGGESTIONS.findIndex((t) => t.toLowerCase() === l.toLowerCase()); return i < 0 ? (l === "Not set" ? 99 : 50) : i; };
     const timing = timingRaw.sort((x, y) => tRank(x.label) - tRank(y.label) || y.rows.length - x.rows.length).slice(0, 5);
-    // dealers
-    const dealers = by((r) => (r.preferred_dealer || "").trim() || "Not set").slice(0, 10);
+
     // team
     const team = by((r) => (r.interviewed_by || "").trim() || "Not set");
 
@@ -930,7 +928,6 @@ async function renderAnalytics(seq) {
       { label: "Applicants", value: n },
       { label: "LFA owners", value: `${pct(rows.filter((r) => r.lfa_owner).length)}%` },
       { label: "Track experience", value: `${pct(trackActive)}%` },
-      { label: "VIP", value: `${pct(rows.filter((r) => r.vip).length)}%` },
       { label: "Avg garage size", value: avgGarage },
       { label: "Avg miles / yr", value: avgMiles },
     ];
@@ -954,7 +951,6 @@ async function renderAnalytics(seq) {
         <div class="kpi"><span class="kpi-num">${n}</span><span class="kpi-label">Applicants</span></div>
         <div class="kpi"><span class="kpi-num">${pct(rows.filter((r) => r.lfa_owner).length)}%</span><span class="kpi-label">LFA owners</span></div>
         <div class="kpi"><span class="kpi-num">${pct(trackActive)}%</span><span class="kpi-label">Track experience</span></div>
-        <div class="kpi"><span class="kpi-num">${pct(rows.filter((r) => r.vip).length)}%</span><span class="kpi-label">VIP</span></div>
         <div class="kpi"><span class="kpi-num">${avgGarage}</span><span class="kpi-label">Avg garage size</span></div>
         <div class="kpi"><span class="kpi-num">${avgMiles}</span><span class="kpi-label">Avg miles / yr</span></div>
       </div>
@@ -962,7 +958,7 @@ async function renderAnalytics(seq) {
       <div class="an-grid">
         ${columns("Age Ranges", age, { cls: "span-5" })}
         ${hero("LFA Ownership", lfa[0], lfa[1], "currently own or have owned a Lexus LFA", { cls: "span-3" })}
-        ${tiles("Profile Signals", flags, { cls: "span-4" })}
+        ${tiles("Profile Signals", flags, { cls: "span-4 tiles-stack" })}
       </div>
       <div class="an-section-title">What they want</div>
       <div class="an-grid">
@@ -978,8 +974,7 @@ async function renderAnalytics(seq) {
       </div>
       <div class="an-section-title">Program</div>
       <div class="an-grid">
-        ${hbars("Preferred Dealers", dealers, { cls: "span-7", ranked: true, note: "Top 10" })}
-        ${split("Interviews by Team Member", team, { cls: "span-5" })}
+        ${split("Interviews by Team Member", team, { cls: "span-12" })}
       </div>
       <div class="drawer-scrim ${drawer ? "open" : ""}" id="an-scrim"></div>
       <aside class="drawer ${drawer ? "open" : ""}" id="an-drawer">
