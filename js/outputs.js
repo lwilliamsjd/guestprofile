@@ -83,6 +83,7 @@ function fullText(a) {
 
   const buyer = [
     line("Timing", a.timing),
+    line("Planned GR GT Use", (a.gt_usage || []).join(", ")),
     line("Spec Consideration", a.spec_consideration),
     line("Intended Use", a.intended_use),
   ].filter(Boolean);
@@ -129,6 +130,7 @@ function compactText(a) {
   if (has(a.recent_flips)) parts.push(`Recent flips: ${s(a.recent_flips)}.`);
   const buyer = [
     has(a.timing) ? `Timing: ${s(a.timing)}` : null,
+    (a.gt_usage || []).length ? `Planned use: ${a.gt_usage.join("/")}` : null,
     has(a.spec_consideration) ? `Spec: ${s(a.spec_consideration)}` : null,
     has(a.intended_use) ? `Intended use: ${s(a.intended_use)}` : null,
   ].filter(Boolean);

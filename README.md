@@ -16,12 +16,20 @@ Same stack and look as the GR GT Concierge CRM: static site on GitHub Pages, Sup
 * Summary
 * Motorsports / Events: HPDE Experience, Race Experience, Key Events Attended, What Drives You
 * Car Profile: Current Garage (one row per vehicle with usage chips for Private Collection, Public Collection, Street, Track Only, Daily, and miles per year), LFA Ownership, Previous Toyota/Lexus, Recent Flips
-* Buyer Profile: Timing, Spec Consideration, Why the GR GT (intended use)
+* Buyer Profile: Timing, Planned GR GT Use (Track Days, Weekend Street, Collection, Daily Driver, Shows & Events), Spec Consideration, Why the GR GT (intended use)
 * Call details: Interviewed By, Interview Date
 
 Section checkmarks show what's been covered. Ctrl+S saves. Unsaved work is kept on that computer and offered back if the tab closes. If a teammate saved the same profile while you were editing, you're told instead of overwriting them. Draft / Complete status per profile.
 
+**Analytics**: KPI tiles (applicants, LFA owner share, track experience share, VIP share, average garage size, average miles per year) and breakdowns for Age Ranges, LFA Ownership, Planned GR GT Use, Motorsports Experience, Current Garage Use, Garage Size, Timing, Profile Signals (VIP, prior Toyota/Lexus, TMNA relationship, recent flips), Most Common Makes, Preferred Dealers, and Interviews by Team Member. Filter by status or VIP. Click any bar to see the applicants behind it.
+
 **Account**: change your name and password. Admins get the Trash (restore or delete forever).
+
+## Updating an existing database
+Already ran `schema.sql` before the Analytics update? Run this once in **SQL Editor**:
+```sql
+alter table applicants add column if not exists gt_usage jsonb not null default '[]'::jsonb;
+```
 
 ## Setup (about 15 minutes)
 

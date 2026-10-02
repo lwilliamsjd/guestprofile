@@ -82,6 +82,7 @@ create table if not exists applicants (
 
   -- BUYER PROFILE
   timing text,
+  gt_usage jsonb not null default '[]'::jsonb,
   spec_consideration text,
   intended_use text,
 
@@ -93,6 +94,9 @@ create table if not exists applicants (
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
+
+-- added after first release (safe to re-run)
+alter table applicants add column if not exists gt_usage jsonb not null default '[]'::jsonb;
 
 create index if not exists applicants_updated_idx on applicants (updated_at desc);
 create index if not exists applicants_name_idx on applicants (lower(name));

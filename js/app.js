@@ -69,6 +69,7 @@ function navigate(h) { window.location.hash = h; }
 
 // ---------- form definition ----------
 const AGE_RANGES = ["Under 30", "30s", "40s", "50s", "60s", "70+"];
+const GT_USE_OPTIONS = ["Track Days", "Weekend Street", "Collection", "Daily Driver", "Shows & Events"];
 const TIMING_SUGGESTIONS = ["Ready now", "Within 6 months", "Within 12 months", "Flexible / whenever allocated"];
 
 const SECTIONS = [
@@ -76,7 +77,7 @@ const SECTIONS = [
   { id: "summary", title: "Summary", icon: I.text, check: (a) => !!a.summary },
   { id: "motorsports", title: "Motorsports / Events", icon: I.flag, check: (a) => !!(a.hpde_experience || a.race_experience || a.key_events || a.what_drives_you) },
   { id: "car", title: "Car Profile", icon: I.car, check: (a) => garageOf(a).length > 0 },
-  { id: "buyer", title: "Buyer Profile", icon: I.target, check: (a) => !!(a.timing || a.spec_consideration || a.intended_use) },
+  { id: "buyer", title: "Buyer Profile", icon: I.target, check: (a) => !!(a.timing || a.spec_consideration || a.intended_use || (a.gt_usage || []).length) },
 ];
 
 const TEXT_FIELDS = [
@@ -96,7 +97,7 @@ function blankApplicant() {
     summary: "",
     hpde_experience: "", race_experience: "", key_events: "", what_drives_you: "",
     garage: [{ vehicle: "", usage: [], miles: "" }], lfa_owner: false, previous_toyota_lexus: "", recent_flips: "",
-    timing: "", spec_consideration: "", intended_use: "",
+    timing: "", spec_consideration: "", intended_use: "", gt_usage: [],
   };
 }
 
@@ -119,6 +120,7 @@ function parseRoute() {
   if (parts[0] === "p" && parts[1] && parts[2] === "outputs") return { name: "outputs", id: parts[1] };
   if (parts[0] === "p" && parts[1]) return { name: "editor", id: parts[1] };
   if (parts[0] === "account") return { name: "account" };
+  if (parts[0] === "analytics") return { name: "analytics" };
   return { name: "list" };
 }
 
@@ -150,6 +152,7 @@ async function render() {
   if (route.name === "editor") return renderEditor(route, seq);
   if (route.name === "outputs") return renderOutputs(route, seq);
   if (route.name === "account") return renderAccount(seq);
+  if (route.name === "analytics") return renderAnalytics(seq);
 }
 
 onAuthChange((s) => {
@@ -167,6 +170,7 @@ function shell(active, inner) {
         <nav class="nav">
           <a href="#/" class="${active === "list" ? "active" : ""}">Applicants</a>
           <a href="#/new" class="${active === "new" ? "active" : ""}">New Profile</a>
+          <a href="#/analytics" class="${active === "analytics" ? "active" : ""}">Analytics</a>
         </nav>
         <div class="user-area">
           <a href="#/account" class="user-chip ${active === "account" ? "active" : ""}" title="Account">
@@ -339,7 +343,7 @@ function exportExcel(rows) {
     "HPDE Experience": r.hpde_experience, "Race Experience": r.race_experience, "Key Events": r.key_events, "What Drives Them": r.what_drives_you,
     "Vehicles": garageOf(r).length, "Combined Miles/Yr": totalMiles(r),
     "Previous Toyota/Lexus": r.previous_toyota_lexus, "Recent Flips": r.recent_flips,
-    Timing: r.timing, "Spec Consideration": r.spec_consideration, "Intended Use": r.intended_use,
+    Timing: r.timing, "Spec Consideration": r.spec_consideration, "GR GT Use": (r.gt_usage || []).join(", "), "Intended Use": r.intended_use,
     "Interviewed By": r.interviewed_by, "Interview Date": r.interview_date ? new Date(r.interview_date + "T12:00:00") : null,
     "Last Updated": r.updated_at ? new Date(r.updated_at) : null,
   }));
@@ -418,7 +422,7 @@ async function renderEditor(route, seq) {
           <div class="form-grid">
             ${field("name", "Name", { ph: "First and last name" })}
             ${field("age_range", "Age Range", { type: "select", options: AGE_RANGES })}
-            ${field("preferred_dealer", "Preferred Dealer", { ph: "Dealership name and city" })}
+            ${field("preferred_dealer", "Preferred Dealer", { ph: "Dealership name" })}
             ${field("social_media", "Social Media Accounts", { type: "textarea", rows: 2, ph: "One per line, e.g. Instagram @handle" })}
             ${field("tmna_relationship", "Relationships / Affiliation with TMNA", { type: "textarea", rows: 2, span: true, ph: "Who they know, prior programs, events, ambassador roles…" })}
             <div class="span-2">${toggle("vip", "VIP", "Flag this applicant as a VIP")}</div>
@@ -458,6 +462,7 @@ async function renderEditor(route, seq) {
           <div class="form-grid">
             ${field("timing", "Timing", { list: "timing-list", ph: "When they'd take delivery" })}
             ${field("spec_consideration", "Spec Consideration", { type: "textarea", rows: 2, ph: "Color, options, packages" })}
+            <div class="form-field span-2"><label>How they plan to use the GR GT <span class="hint">(pick all that apply)</span></label><div class="use-chips" id="gt-use"></div></div>
             ${field("intended_use", "Why do they want the GR GT? (Intended use)", { type: "textarea", rows: 3, span: true })}
           </div>
         </section>
@@ -526,6 +531,21 @@ async function renderEditor(route, seq) {
   });
   drawGarage();
 
+  // ----- GR GT intended use chips -----
+  function drawGtUse() {
+    if (!Array.isArray(a.gt_usage)) a.gt_usage = [];
+    main.querySelector("#gt-use").innerHTML = GT_USE_OPTIONS.map((u) => `<button type="button" class="use-chip ${a.gt_usage.includes(u) ? "on" : ""}" data-gtuse="${u}">${u}</button>`).join("");
+  }
+  main.querySelector("#gt-use").addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-gtuse]"); if (!chip) return;
+    const u = chip.dataset.gtuse, at = a.gt_usage.indexOf(u);
+    at >= 0 ? a.gt_usage.splice(at, 1) : a.gt_usage.push(u);
+    a.gt_usage.sort((x, y) => GT_USE_OPTIONS.indexOf(x) - GT_USE_OPTIONS.indexOf(y));
+    chip.classList.toggle("on", at < 0);
+    markDirty();
+  });
+  drawGtUse();
+
   // ----- plain fields -----
   main.addEventListener("input", (e) => {
     const k = e.target.dataset?.f;
@@ -591,6 +611,7 @@ async function renderEditor(route, seq) {
       BOOL_FIELDS.forEach((k) => { const el = main.querySelector(`[data-f="${k}"]`); el.checked = !!a[k]; el.closest(".toggle-card").classList.toggle("on", !!a[k]); });
       if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [{ vehicle: "", usage: [], miles: "" }];
       drawGarage();
+      drawGtUse();
       main.querySelector("#ed-name").textContent = a.name || "New applicant";
       main.querySelector("#ed-avatar").textContent = initials(a.name);
       main.querySelector("#draft-banner").remove();
@@ -612,6 +633,7 @@ async function renderEditor(route, seq) {
     TEXT_FIELDS.forEach((k) => (payload[k] = typeof a[k] === "string" ? a[k].trim() || null : a[k] ?? null));
     payload.status = a.status || "Draft";
     BOOL_FIELDS.forEach((k) => (payload[k] = !!a[k]));
+    payload.gt_usage = Array.isArray(a.gt_usage) ? a.gt_usage : [];
     payload.garage = garageOf(a).map((g) => ({ vehicle: g.vehicle.trim(), usage: g.usage || [], miles: Number(g.miles) || null }));
     const btn = main.querySelector("#save-btn");
     btn.disabled = true;
@@ -722,6 +744,169 @@ async function renderOutputs(route, seq) {
     toast("Summary copied");
   });
 
+}
+
+// ============================================================
+// ANALYTICS
+// ============================================================
+const analyticsState = Object.assign({ status: "", vip: false }, store.get("gtap-analytics") || {});
+const TWO_WORD_MAKES = ["land rover", "aston martin", "alfa romeo", "rolls royce", "range rover"];
+const MAKE_ALIASES = { gr: "Toyota", vw: "Volkswagen", mercedes: "Mercedes Benz", "mercedes-benz": "Mercedes Benz", benz: "Mercedes Benz", chevy: "Chevrolet", mclaren: "McLaren", bmw: "BMW", gmc: "GMC", "rolls-royce": "Rolls Royce", "range rover": "Land Rover" };
+function makeOf(vehicle) {
+  const v = (vehicle || "").trim().replace(/^'?\d{2,4}\s+/, "").toLowerCase();
+  if (!v) return null;
+  const two = TWO_WORD_MAKES.find((m) => v.startsWith(m));
+  const raw = two || v.split(/\s+/)[0];
+  if (MAKE_ALIASES[raw]) return MAKE_ALIASES[raw];
+  return raw.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+const hasText = (t) => !!(t && String(t).trim());
+const isNone = (t) => /^\s*(none|no|nope|n\/?a|0|nothing)\b/i.test(t || "");
+const hasFlips = (r) => hasText(r.recent_flips) && !isNone(r.recent_flips);
+const hpde = (r) => hasText(r.hpde_experience) && !isNone(r.hpde_experience);
+const racer = (r) => hasText(r.race_experience) && !isNone(r.race_experience);
+
+async function renderAnalytics(seq) {
+  const main = shell("analytics", `<div class="loading">Crunching numbers…</div>`);
+  let all;
+  try { all = await listApplicants(); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  if (seq !== renderSeq) return;
+  liveRefresh = async () => { try { all = await listApplicants(); draw(); } catch {} };
+
+  let drawer = null; // { title, rows }
+
+  function draw() {
+    store.set("gtap-analytics", analyticsState);
+    const rows = all.filter((r) => (!analyticsState.status || r.status === analyticsState.status) && (!analyticsState.vip || r.vip));
+    const n = rows.length;
+    const pct = (k) => (n ? Math.round((k / n) * 100) : 0);
+    const groups = {}; // id -> {label -> rows}
+    let gid = 0;
+
+    // build a bar card; items: [{label, rows, sub?}]
+    function card(title, items, opts = {}) {
+      const id = `g${gid++}`;
+      groups[id] = items;
+      const max = Math.max(1, ...items.map((i) => i.rows.length));
+      const body = items.length && items.some((i) => i.rows.length)
+        ? items.map((it, i) => `
+          <button class="bar-row" data-g="${id}" data-i="${i}" ${it.rows.length ? "" : "disabled"}>
+            <span class="bar-label">${escapeHtml(it.label)}</span>
+            <span class="bar-track"><span class="bar-fill ${it.tone || ""}" style="width:${(it.rows.length / max) * 100}%"></span></span>
+            <span class="bar-num">${it.rows.length}<span class="bar-pct">${opts.denom === false ? "" : pct(it.rows.length) + "%"}</span></span>
+          </button>`).join("")
+        : `<div class="muted" style="padding:18px 0">Nothing recorded yet.</div>`;
+      return `<div class="an-card ${opts.wide ? "wide" : ""}"><div class="an-head"><h2>${title}</h2>${opts.note ? `<span class="muted">${opts.note}</span>` : ""}</div>${body}</div>`;
+    }
+    const by = (fn, order) => {
+      const m = new Map();
+      rows.forEach((r) => [].concat(fn(r)).filter((x) => x != null && x !== "").forEach((k) => { if (!m.has(k)) m.set(k, []); if (!m.get(k).includes(r)) m.get(k).push(r); }));
+      let items = [...m.entries()].map(([label, rs]) => ({ label, rows: rs }));
+      if (order) items = order.map((o) => ({ label: o, rows: m.get(o) || [] }));
+      else items.sort((x, y) => y.rows.length - x.rows.length || x.label.localeCompare(y.label));
+      return items;
+    };
+
+    // age
+    const age = by((r) => r.age_range || "Not set", [...AGE_RANGES, "Not set"]).filter((i) => i.label !== "Not set" || i.rows.length);
+    // LFA / flags
+    const lfa = [
+      { label: "LFA owner", rows: rows.filter((r) => r.lfa_owner), tone: "red" },
+      { label: "Not an LFA owner", rows: rows.filter((r) => !r.lfa_owner), tone: "dim" },
+    ];
+    const flags = [
+      { label: "VIP", rows: rows.filter((r) => r.vip), tone: "gold" },
+      { label: "Prior Toyota / Lexus owner", rows: rows.filter((r) => hasText(r.previous_toyota_lexus) && !isNone(r.previous_toyota_lexus)) },
+      { label: "TMNA relationship noted", rows: rows.filter((r) => hasText(r.tmna_relationship) && !isNone(r.tmna_relationship)) },
+      { label: "Recent flips noted", rows: rows.filter(hasFlips), tone: "amber" },
+    ];
+    // planned GR GT use
+    const gtUse = by((r) => r.gt_usage || [], GT_USE_OPTIONS);
+    // garage usage (applicants with at least one vehicle in that use)
+    const garageUse = by((r) => garageOf(r).flatMap((g) => g.usage || []), USAGE_OPTIONS);
+    // motorsports
+    const ms = [
+      { label: "HPDE and racing", rows: rows.filter((r) => hpde(r) && racer(r)), tone: "red" },
+      { label: "HPDE only", rows: rows.filter((r) => hpde(r) && !racer(r)) },
+      { label: "Racing only", rows: rows.filter((r) => !hpde(r) && racer(r)) },
+      { label: "No track experience", rows: rows.filter((r) => !hpde(r) && !racer(r)), tone: "dim" },
+    ];
+    // garage size
+    const gsize = (r) => { const k = garageOf(r).length; return k === 0 ? "None recorded" : k === 1 ? "1 vehicle" : k <= 3 ? "2 to 3" : k <= 5 ? "4 to 5" : k <= 9 ? "6 to 9" : "10 or more"; };
+    const garageSize = by(gsize, ["1 vehicle", "2 to 3", "4 to 5", "6 to 9", "10 or more", "None recorded"]).filter((i) => i.label !== "None recorded" || i.rows.length);
+    // makes
+    const makes = by((r) => garageOf(r).map((g) => makeOf(g.vehicle))).slice(0, 10);
+    // timing
+    const timing = by((r) => (r.timing || "").trim() || "Not set").slice(0, 8);
+    // dealers
+    const dealers = by((r) => (r.preferred_dealer || "").trim() || "Not set").slice(0, 10);
+    // team
+    const team = by((r) => (r.interviewed_by || "").trim() || "Not set");
+
+    const trackActive = rows.filter((r) => hpde(r) || racer(r)).length;
+    const vehicles = rows.reduce((t, r) => t + garageOf(r).length, 0);
+    const avgGarage = n ? (vehicles / n).toFixed(1) : "0";
+    const milesRows = rows.filter((r) => totalMiles(r) > 0);
+    const avgMiles = milesRows.length ? Math.round(milesRows.reduce((t, r) => t + totalMiles(r), 0) / milesRows.length).toLocaleString() : "—";
+
+    main.innerHTML = `
+      <div class="page-header">
+        <div><h1>Analytics</h1><p class="muted">${n} applicant${n === 1 ? "" : "s"} in view · click any bar to see who's in it</p></div>
+        <div class="filters" style="margin:0">
+          <select id="an-status"><option value="">All statuses</option><option ${analyticsState.status === "Complete" ? "selected" : ""}>Complete</option><option ${analyticsState.status === "Draft" ? "selected" : ""}>Draft</option></select>
+          <button class="chip ${analyticsState.vip ? "active" : ""}" id="an-vip">${I.star}VIP only</button>
+        </div>
+      </div>
+      <div class="kpi-strip an-kpis">
+        <div class="kpi"><span class="kpi-num">${n}</span><span class="kpi-label">Applicants</span></div>
+        <div class="kpi"><span class="kpi-num">${pct(rows.filter((r) => r.lfa_owner).length)}%</span><span class="kpi-label">LFA owners</span></div>
+        <div class="kpi"><span class="kpi-num">${pct(trackActive)}%</span><span class="kpi-label">Track experience</span></div>
+        <div class="kpi"><span class="kpi-num">${pct(rows.filter((r) => r.vip).length)}%</span><span class="kpi-label">VIP</span></div>
+        <div class="kpi"><span class="kpi-num">${avgGarage}</span><span class="kpi-label">Avg garage size</span></div>
+        <div class="kpi"><span class="kpi-num">${avgMiles}</span><span class="kpi-label">Avg miles / yr</span></div>
+      </div>
+      <div class="an-grid">
+        ${card("Age Ranges", age)}
+        ${card("LFA Ownership", lfa)}
+        ${card("Planned GR GT Use", gtUse, { note: "Applicants can pick several" })}
+        ${card("Motorsports Experience", ms)}
+        ${card("Current Garage Use", garageUse, { note: "Applicants with a car used this way" })}
+        ${card("Garage Size", garageSize)}
+        ${card("Timing", timing)}
+        ${card("Profile Signals", flags)}
+        ${card("Most Common Makes Owned", makes, { note: "Top 10, from garage entries" })}
+        ${card("Preferred Dealers", dealers, { note: "Top 10" })}
+        ${card("Interviews by Team Member", team)}
+      </div>
+      <div class="drawer-scrim ${drawer ? "open" : ""}" id="an-scrim"></div>
+      <aside class="drawer ${drawer ? "open" : ""}" id="an-drawer">
+        ${drawer ? `
+          <div class="drawer-head"><div><div class="sec-kicker">${escapeHtml(drawer.group)}</div><h2>${escapeHtml(drawer.title)}</h2><span class="muted">${drawer.rows.length} applicant${drawer.rows.length === 1 ? "" : "s"}</span></div><button class="icon-btn" id="an-close" title="Close">✕</button></div>
+          <div class="drawer-list">${drawer.rows.map((r) => `
+            <a class="drawer-item" href="#/p/${r.id}">
+              <span class="user-avatar" style="width:30px;height:30px;font-size:11px">${escapeHtml(initials(r.name))}</span>
+              <span style="min-width:0"><b>${escapeHtml(r.name)}</b><div class="muted">${escapeHtml([r.age_range, r.preferred_dealer].filter(Boolean).join(" · "))}</div></span>
+              <span class="pill-row" style="margin-left:auto">${r.vip ? `<span class="pill pill-vip">VIP</span>` : ""}${r.lfa_owner ? `<span class="pill pill-lfa">LFA</span>` : ""}</span>
+            </a>`).join("")}</div>` : ""}
+      </aside>`;
+
+    main.querySelector("#an-status").addEventListener("change", (e) => { analyticsState.status = e.target.value; draw(); });
+    main.querySelector("#an-vip").addEventListener("click", () => { analyticsState.vip = !analyticsState.vip; draw(); });
+    main.querySelectorAll(".bar-row").forEach((b) => b.addEventListener("click", () => {
+      const it = groups[b.dataset.g][+b.dataset.i];
+      const group = b.closest(".an-card").querySelector("h2").textContent;
+      drawer = { group, title: it.label, rows: [...it.rows].sort((x, y) => x.name.localeCompare(y.name)) };
+      draw();
+    }));
+    const close = () => { drawer = null; draw(); };
+    main.querySelector("#an-scrim").addEventListener("click", close);
+    const cb = main.querySelector("#an-close");
+    if (cb) cb.addEventListener("click", close);
+  }
+  const esc = (e) => { if (e.key === "Escape" && drawer) { drawer = null; draw(); } };
+  document.addEventListener("keydown", esc);
+  window.addEventListener("hashchange", () => document.removeEventListener("keydown", esc), { once: true });
+  draw();
 }
 
 // ============================================================
