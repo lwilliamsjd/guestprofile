@@ -77,6 +77,26 @@ const RACE_LEVELS = ["None", "Time Attack / Autocross", "Club Racing", "Pro / Se
 const ALLOCATION_OPTIONS = ["Pending", "Awarded", "Waitlist", "Declined"];
 const COMMON_MAKES = ["Acura","Alfa Romeo","Aston Martin","Audi","Bentley","BMW","Bugatti","Cadillac","Chevrolet","Dodge","Ferrari","Ford","Honda","Hyundai","Jaguar","Jeep","Koenigsegg","Lamborghini","Land Rover","Lexus","Lotus","Lucid","Maserati","Mazda","McLaren","Mercedes Benz","Nissan","Pagani","Porsche","Ram","Rimac","Rivian","Rolls Royce","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
 
+// garage vehicles: Year, Make and Model are entered separately; "vehicle" is the combined name used everywhere else
+function composeVehicle(g) {
+  return [g.year, g.make, g.model].map((x) => String(x ?? "").trim()).filter(Boolean).join(" ");
+}
+function splitVehicle(v) {
+  let rest = String(v || "").trim(), year = "", make = "";
+  const ym = rest.match(/^'?(\d{4}|\d{2})\s+(.*)$/);
+  if (ym) { year = ym[1]; rest = ym[2]; }
+  const low = rest.toLowerCase();
+  const hit = [...COMMON_MAKES].sort((x, y) => y.length - x.length).find((m) => low.startsWith(m.toLowerCase() + " ") || low === m.toLowerCase() || low.startsWith(m.toLowerCase().replace(" ", "-") + " "));
+  if (hit) { make = hit; rest = rest.slice(hit.length).trim(); }
+  else {
+    const first = low.split(/\s+/)[0];
+    const alias = { chevy: "Chevrolet", vw: "Volkswagen", mercedes: "Mercedes Benz", benz: "Mercedes Benz", "mercedes-benz": "Mercedes Benz" }[first];
+    if (alias) { make = alias; rest = rest.slice(first.length).trim(); }
+    else if (first === "gr") make = "Toyota";
+  }
+  return { year, make, model: rest };
+}
+
 // fields required before a profile can be marked Complete
 const REQUIRED_FOR_COMPLETE = [
   ["name", "Name"], ["age_range", "Age Range"], ["preferred_dealer", "Preferred Dealer"], ["summary", "Summary"],
@@ -150,7 +170,7 @@ function blankApplicant() {
     name: "", age_range: "", preferred_dealer: "", social_media: "", tmna_relationship: "", vip: false,
     summary: "",
     hpde_experience: "", race_experience: "", key_events: "", what_drives_you: "",
-    garage: [{ vehicle: "", usage: [], miles: "" }], lfa_owner: false, previous_toyota_lexus: "", recent_flips: "",
+    garage: [{ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" }], lfa_owner: false, previous_toyota_lexus: "", recent_flips: "",
     timing: "", spec_consideration: "", intended_use: "", gt_usage: [],
     hpde_level: "", race_level: "", has_flips: null, allocation: "Pending",
   };
@@ -426,7 +446,7 @@ function appendApplicantSheets(wb, rows) {
     "Last Updated": r.updated_at ? new Date(r.updated_at) : null,
   }));
   const garage = [];
-  rows.forEach((r) => garageOf(r).forEach((g) => garage.push({ Applicant: r.name, Vehicle: g.vehicle, Make: g.make || makeOf(g.vehicle), Usage: (g.usage || []).join(", "), "Miles/Yr": Number(g.miles) || null })));
+  rows.forEach((r) => garageOf(r).forEach((g) => garage.push({ Applicant: r.name, Vehicle: g.vehicle, Year: g.year || splitVehicle(g.vehicle).year, Make: g.make || makeOf(g.vehicle), Model: g.model || splitVehicle(g.vehicle).model, Usage: (g.usage || []).join(", "), "Miles/Yr": Number(g.miles) || null })));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(people, { cellDates: true }), "Applicants");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(garage), "Garages");
 }
@@ -449,8 +469,13 @@ async function renderEditor(route, seq) {
   const dealerNames = [...new Set(others.map((o) => (o.preferred_dealer || "").trim()).filter(Boolean))].sort();
   const draftKey = `gtap-draft-${route.id || "new"}`;
   let a = record ? JSON.parse(JSON.stringify(record)) : blankApplicant();
-  if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [{ vehicle: "", usage: [], miles: "" }];
-  a.garage.forEach((g) => { if (g.make) g.makeTouched = true; });
+  if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [{ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" }];
+  a.garage.forEach((g) => {
+    if (g.vehicle && !g.model && !g.year) {
+      const p = splitVehicle(g.vehicle);
+      g.year = p.year; g.model = p.model; g.make = g.make || p.make;
+    }
+  });
   if (!a.allocation) a.allocation = "Pending";
 
   const localDraft = store.get(draftKey);
@@ -536,7 +561,7 @@ async function renderEditor(route, seq) {
         <section class="form-section" id="sec-car">
           <header><div><div class="sec-kicker">04</div><h2>${I.car}Car Profile</h2></div><span class="garage-total" id="garage-total"></span></header>
           <div class="form-field"><label>Current Garage <span class="hint">(how each is used and miles per year)</span></label></div>
-          <div class="garage-head"><span></span><span>Vehicle</span><span>Make</span><span>How it's used</span><span>Miles / yr</span><span></span></div>
+          <div class="garage-head"><span></span><span>Year</span><span>Make</span><span>Model</span><span>How it's used</span><span>Miles / yr</span><span></span></div>
           <div class="garage-list" id="garage-list"></div>
           <button type="button" class="btn" id="add-car">${I.plus}Add vehicle</button>
           <div class="form-grid" style="margin-top:18px">
@@ -586,8 +611,9 @@ async function renderEditor(route, seq) {
     list.innerHTML = a.garage.map((g, i) => `
       <div class="garage-row" data-i="${i}">
         <span class="g-num">${i + 1}</span>
-        <input data-g="vehicle" value="${escapeHtml(g.vehicle)}" placeholder="Year, make, model">
-        <input data-g="make" value="${escapeHtml(g.make || "")}" placeholder="${escapeHtml((g.vehicle && makeOf(g.vehicle)) || "Make")}" list="make-list" title="Leave blank to use the make detected from the vehicle name">
+        <input data-g="year" value="${escapeHtml(g.year ?? "")}" placeholder="Year" inputmode="numeric" maxlength="4">
+        <input data-g="make" value="${escapeHtml(g.make || "")}" placeholder="Make" list="make-list">
+        <input data-g="model" value="${escapeHtml(g.model || "")}" placeholder="Model">
         <div class="use-chips">${USAGE_OPTIONS.map((u) => `<button type="button" class="use-chip ${(g.usage || []).includes(u) ? "on" : ""}" data-use="${u}">${u}</button>`).join("")}</div>
         <input data-g="miles" type="number" min="0" step="500" value="${escapeHtml(g.miles ?? "")}" placeholder="Miles">
         <button type="button" class="icon-btn" data-rm title="Remove">${I.trash}</button>
@@ -601,17 +627,12 @@ async function renderEditor(route, seq) {
   main.querySelector("#garage-list").addEventListener("input", (e) => {
     const row = e.target.closest(".garage-row"); if (!row) return;
     const g = a.garage[+row.dataset.i];
-    if (e.target.dataset.g === "vehicle") {
-      g.vehicle = e.target.value;
-      // fill the make automatically until someone edits it by hand
-      if (!g.makeTouched) {
-        const guess = makeOf(g.vehicle);
-        const known = guess && COMMON_MAKES.find((m) => m.toLowerCase() === guess.toLowerCase());
-        g.make = known || "";
-        row.querySelector('[data-g="make"]').value = g.make;
-      }
+    const k = e.target.dataset.g;
+    if (k === "year" || k === "make" || k === "model") {
+      g[k] = k === "year" ? e.target.value.replace(/[^0-9]/g, "").slice(0, 4) : e.target.value;
+      if (k === "year" && e.target.value !== g.year) e.target.value = g.year;
+      g.vehicle = composeVehicle(g);
     }
-    if (e.target.dataset.g === "make") { g.make = e.target.value; g.makeTouched = true; }
     if (e.target.dataset.g === "miles") g.miles = e.target.value === "" ? "" : Number(e.target.value);
     updateGarageTotal(); markDirty();
   });
@@ -629,12 +650,12 @@ async function renderEditor(route, seq) {
     }
     if (e.target.closest("[data-rm]")) {
       a.garage.splice(i, 1);
-      if (!a.garage.length) a.garage.push({ vehicle: "", usage: [], miles: "" });
+      if (!a.garage.length) a.garage.push({ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" });
       drawGarage(); markDirty();
     }
   });
   main.querySelector("#add-car").addEventListener("click", () => {
-    a.garage.push({ vehicle: "", usage: [], miles: "" });
+    a.garage.push({ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" });
     drawGarage();
     const rows = main.querySelectorAll(".garage-row");
     rows[rows.length - 1].querySelector("input").focus();
@@ -721,7 +742,7 @@ async function renderEditor(route, seq) {
       TEXT_FIELDS.forEach((k) => main.querySelectorAll(`[data-f="${k}"]`).forEach((el) => (el.value = a[k] ?? "")));
       BOOL_FIELDS.forEach((k) => { const el = main.querySelector(`[data-f="${k}"]`); el.checked = !!a[k]; el.closest(".toggle-card").classList.toggle("on", !!a[k]); });
       main.querySelector('[data-f="has_flips"]').value = a.has_flips === true ? "yes" : a.has_flips === false ? "no" : "";
-      if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [{ vehicle: "", usage: [], miles: "" }];
+      if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [{ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" }];
       drawGarage();
       drawGtUse();
       main.querySelector("#ed-name").textContent = a.name || "New applicant";
@@ -748,7 +769,10 @@ async function renderEditor(route, seq) {
     payload.gt_usage = Array.isArray(a.gt_usage) ? a.gt_usage : [];
     payload.has_flips = a.has_flips === true || a.has_flips === false ? a.has_flips : null;
     payload.allocation = a.allocation || "Pending";
-    payload.garage = garageOf(a).map((g) => ({ vehicle: g.vehicle.trim(), make: (g.make || "").trim() || makeOf(g.vehicle) || null, usage: g.usage || [], miles: Number(g.miles) || null }));
+    payload.garage = garageOf(a).map((g) => ({
+      year: String(g.year ?? "").trim() || null, make: (g.make || "").trim() || makeOf(g.vehicle) || null, model: (g.model || "").trim() || null,
+      vehicle: g.vehicle.trim(), usage: g.usage || [], miles: Number(g.miles) || null,
+    }));
     if (payload.status === "Complete") {
       const missing = missingForComplete(a);
       if (missing.length) {
