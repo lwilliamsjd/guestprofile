@@ -585,9 +585,9 @@ async function renderEditor(route, seq) {
   main.innerHTML = `
     <datalist id="dealer-list">${dealerNames.map((t) => `<option value="${escapeHtml(t)}">`).join("")}</datalist>
     <datalist id="make-list">${COMMON_MAKES.map((t) => `<option value="${t}">`).join("")}</datalist>
-    <a href="#/" class="back-link">${I.back}All applicants</a>
     <div class="editor-bar">
       <div class="editor-title">
+        <a href="#/" class="back-btn" title="Back to all applicants">${I.back}</a>
         <div class="avatar" id="ed-avatar">${escapeHtml(initials(a.name))}</div>
         <div style="min-width:0">
           <div class="editor-name" id="ed-name">${escapeHtml(a.name) || "New applicant"}</div>
