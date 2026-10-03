@@ -2,7 +2,8 @@ import {
   signIn, signOut, getSession, onAuthChange, getCurrentProfile, setDisplayName, changePassword,
   listApplicants, getApplicant, createApplicant, updateApplicant, trashApplicant,
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
-  listTeam, listChanges, addChange, markExported, lastExportAt,
+  listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
+  joinPresence, setEditing, leavePresence,
 } from "./api.js";
 import {
   USAGE_OPTIONS, escapeHtml, initials, garageOf, totalMiles, fmtDate,
@@ -31,6 +32,9 @@ const I = {
   text: svg('<path d="M4 6h16M4 12h16M4 18h10"/>'),
   star: svg('<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>'),
   excel: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m8 8 8 8m0-8-8 8"/>'),
+  warn: svg('<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>'),
+  notes: svg('<path d="M5 3h10l4 4v14H5z"/><path d="M8 10h8M8 14h8M8 18h5"/>'),
+  phone: svg('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'),
   save: svg('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/>'),
 };
 
@@ -120,8 +124,9 @@ const FIELD_LABELS = {
   previous_toyota_lexus: "Previous Toyota / Lexus", has_flips: "Recent Flips", recent_flips: "Recent Flips Detail", timing: "Timing",
   gt_usage: "Planned GR GT Use", spec_consideration: "Spec Consideration", intended_use: "Intended Use",
   interviewed_by: "Interviewed By", interview_date: "Interview Date", status: "Status", allocation: "Allocation Outcome",
+  call_notes: "Call Notes", needs_followup: "Needs Follow Up", followup_note: "Follow Up Note",
 };
-const LONG_FIELDS = ["summary", "hpde_experience", "race_experience", "key_events", "what_drives_you", "previous_toyota_lexus", "recent_flips", "spec_consideration", "intended_use", "social_media", "tmna_relationship"];
+const LONG_FIELDS = ["call_notes", "followup_note", "summary", "hpde_experience", "race_experience", "key_events", "what_drives_you", "previous_toyota_lexus", "recent_flips", "spec_consideration", "intended_use", "social_media", "tmna_relationship"];
 function fmtVal(k, v) {
   if (v === true) return "Yes";
   if (v === false) return "No";
@@ -136,6 +141,7 @@ function diffFields(before, after) {
     if (!(k in after)) return;
     const b = before[k] ?? null, a = after[k] ?? null;
     const norm = (x) => {
+      if (BOOL_FIELDS.includes(k)) return JSON.stringify(!!x);
       if (k === "garage" && Array.isArray(x)) x = x.filter((g) => g.vehicle).map((g) => ({ v: (g.vehicle || "").trim(), u: g.usage || [], m: Number(g.miles) || null }));
       return JSON.stringify(x === "" ? null : Array.isArray(x) && !x.length ? null : x);
     };
@@ -159,8 +165,9 @@ const TEXT_FIELDS = [
   "hpde_experience", "race_experience", "key_events", "what_drives_you",
   "previous_toyota_lexus", "recent_flips", "timing", "spec_consideration", "intended_use",
   "interviewed_by", "interview_date", "status", "hpde_level", "race_level", "allocation",
+  "call_notes", "followup_note",
 ];
-const BOOL_FIELDS = ["vip", "lfa_owner"];
+const BOOL_FIELDS = ["vip", "lfa_owner", "needs_followup"];
 
 function blankApplicant() {
   return {
@@ -173,6 +180,7 @@ function blankApplicant() {
     garage: [{ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" }], lfa_owner: false, previous_toyota_lexus: "", recent_flips: "",
     timing: "", spec_consideration: "", intended_use: "", gt_usage: [],
     hpde_level: "", race_level: "", has_flips: null, allocation: "Pending",
+    call_notes: "", needs_followup: false, followup_note: "",
   };
 }
 
@@ -182,7 +190,63 @@ let currentProfile = null;
 let renderSeq = 0;
 let unsubscribeLive = null;
 let dirty = false;
-let liveRefresh = null;
+let liveRefresh = null;     // current page's handler for teammate saves
+let presenceRefresh = null; // current page's handler for "who has what open"
+let editingMap = {};        // applicantId -> [teammate names] with that profile open
+let flushHook = null;       // editor: start an autosave before leaving; returns true if it did
+let reconnectHook = null;   // editor: called when the connection comes back
+let pageCleanup = null;     // current page's teardown (timers, listeners)
+
+function buildEditingMap(state) {
+  const map = {};
+  Object.entries(state || {}).forEach(([userId, metas]) => {
+    if (currentProfile && userId === currentProfile.id) return;
+    (metas || []).forEach((m) => {
+      if (!m.applicant) return;
+      (map[m.applicant] = map[m.applicant] || []);
+      if (m.name && !map[m.applicant].includes(m.name)) map[m.applicant].push(m.name);
+    });
+  });
+  return map;
+}
+function editingText(id) {
+  const names = editingMap[id] || [];
+  if (!names.length) return "";
+  return `${names.join(" and ")} ${names.length > 1 ? "are" : "is"} editing`;
+}
+
+// ---------- connection banner ----------
+const conn = { net: navigator.onLine, realtime: true, fetch: true, rtTimer: null, wasDown: false };
+function connDown() { return !!session && (!conn.net || !conn.realtime || !conn.fetch); }
+function paintConn() {
+  let el = document.getElementById("conn-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "conn-banner";
+    el.className = "conn-banner";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  const down = connDown();
+  el.innerHTML = `${I.warn}<span><b>Connection lost.</b> Keep this tab open and keep typing. Changes are kept on this computer and save automatically when the connection is back.</span>`;
+  el.classList.toggle("show", down);
+  if (conn.wasDown && !down) { toast("Back online"); if (reconnectHook) reconnectHook(); }
+  conn.wasDown = down;
+}
+window.addEventListener("online", () => { conn.net = true; conn.fetch = true; paintConn(); });
+window.addEventListener("offline", () => { conn.net = false; paintConn(); });
+function realtimeStatus(status) {
+  clearTimeout(conn.rtTimer);
+  if (status === "SUBSCRIBED") { conn.realtime = true; paintConn(); return; }
+  if (!session) return;
+  // give the live connection a few seconds to recover before warning
+  if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) conn.rtTimer = setTimeout(() => { conn.realtime = false; paintConn(); }, 4000);
+}
+function noteFetchResult(ok, err) {
+  if (ok) { if (!conn.fetch) { conn.fetch = true; paintConn(); } return; }
+  if (err && /fetch|network|load failed/i.test(err.message || String(err))) { conn.fetch = false; paintConn(); }
+}
+setInterval(() => { if (!conn.fetch && navigator.onLine) { conn.fetch = true; paintConn(); } }, 20000);
 
 window.addEventListener("beforeunload", (e) => {
   if (dirty) { e.preventDefault(); e.returnValue = ""; }
@@ -201,6 +265,7 @@ function parseRoute() {
 
 let lastHash = window.location.hash;
 window.addEventListener("hashchange", () => {
+  if (dirty && flushHook && flushHook()) { dirty = false; }
   if (dirty && !confirm("You have unsaved changes on this profile. Leave anyway? (A local copy is kept and offered next time you open it.)")) {
     history.replaceState(null, "", lastHash);
     return;
@@ -212,7 +277,11 @@ window.addEventListener("hashchange", () => {
 
 async function render() {
   const seq = ++renderSeq;
+  if (pageCleanup) { pageCleanup(); pageCleanup = null; }
   liveRefresh = null;
+  presenceRefresh = null;
+  flushHook = null;
+  reconnectHook = null;
   if (SUPABASE_URL.startsWith("PASTE")) return renderNotConfigured();
   const route = parseRoute();
   if (!session) session = await getSession();
@@ -221,8 +290,10 @@ async function render() {
   if (route.name === "login") return renderLogin();
   if (!currentProfile) currentProfile = await getCurrentProfile();
   if (!unsubscribeLive) {
-    unsubscribeLive = subscribeApplicants(() => liveRefresh && liveRefresh());
+    unsubscribeLive = subscribeApplicants((p) => liveRefresh && liveRefresh(p), realtimeStatus);
+    joinPresence(currentProfile, (state) => { editingMap = buildEditingMap(state); if (presenceRefresh) presenceRefresh(); });
   }
+  if (route.name !== "editor") setEditing(null);
   if (route.name === "list") return renderList(seq);
   if (route.name === "editor") return renderEditor(route, seq);
   if (route.name === "outputs") return renderOutputs(route, seq);
@@ -233,7 +304,7 @@ async function render() {
 onAuthChange((s) => {
   const was = !!session;
   session = s;
-  if (!s) { currentProfile = null; if (unsubscribeLive) { unsubscribeLive(); unsubscribeLive = null; } }
+  if (!s) { currentProfile = null; leavePresence(); if (unsubscribeLive) { unsubscribeLive(); unsubscribeLive = null; } paintConn(); }
   if (was !== !!s) render();
 });
 
@@ -312,8 +383,11 @@ async function renderList(seq) {
   try { rows = await listApplicants(); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
   if (seq !== renderSeq) return;
   liveRefresh = async () => {
+    // don't redraw while someone is typing in the search box
+    if (document.activeElement && document.activeElement.id === "q") return;
     try { rows = await listApplicants(); draw(); } catch {}
   };
+  presenceRefresh = () => main.querySelectorAll("[data-ed]").forEach((el) => { el.textContent = editingText(el.dataset.ed); });
 
   const dealers = [...new Set(rows.map((r) => (r.preferred_dealer || "").trim()).filter(Boolean))].sort();
   let backupNote = "";
@@ -334,6 +408,7 @@ async function renderList(seq) {
       if (listState.alloc && (r.allocation || "Pending") !== listState.alloc) return false;
       if (listState.flag === "vip" && !r.vip) return false;
       if (listState.flag === "lfa" && !r.lfa_owner) return false;
+      if (listState.flag === "followup" && !r.needs_followup) return false;
       if (q) {
         const hay = [r.name, r.preferred_dealer, r.summary, r.interviewed_by, r.social_media, r.tmna_relationship, ...garageOf(r).map((g) => g.vehicle)].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -373,24 +448,25 @@ async function renderList(seq) {
         ${kpi("Drafts", rows.filter((r) => r.status === "Draft").length, "status", "Draft")}
         ${kpi("VIP", rows.filter((r) => r.vip).length, "flag", "vip")}
         ${kpi("LFA Owners", rows.filter((r) => r.lfa_owner).length, "flag", "lfa")}
+        ${kpi("Need Follow Up", rows.filter((r) => r.needs_followup).length, "flag", "followup")}
       </div>
       <div class="filters">
         <label class="search-box">${I.search}<input id="q" placeholder="Search name, dealer, vehicle, summary…" value="${escapeHtml(listState.q)}"></label>
         <select id="f-status"><option value="">All statuses</option><option ${listState.status === "Draft" ? "selected" : ""}>Draft</option><option ${listState.status === "Complete" ? "selected" : ""}>Complete</option></select>
         <select id="f-dealer"><option value="">All dealers</option>${dealers.map((d) => `<option ${listState.dealer === d ? "selected" : ""}>${escapeHtml(d)}</option>`).join("")}</select>
         <select id="f-alloc"><option value="">Any outcome</option>${ALLOCATION_OPTIONS.map((o) => `<option ${listState.alloc === o ? "selected" : ""}>${o}</option>`).join("")}</select>
-        <select id="f-flag"><option value="">Any flags</option><option value="vip" ${listState.flag === "vip" ? "selected" : ""}>VIP only</option><option value="lfa" ${listState.flag === "lfa" ? "selected" : ""}>LFA owners only</option></select>
+        <select id="f-flag"><option value="">Any flags</option><option value="vip" ${listState.flag === "vip" ? "selected" : ""}>VIP only</option><option value="lfa" ${listState.flag === "lfa" ? "selected" : ""}>LFA owners only</option><option value="followup" ${listState.flag === "followup" ? "selected" : ""}>Needs follow up</option></select>
       </div>
       <div class="table-wrap">
         ${list.length ? `<table class="crm-table">
           <thead><tr>${th("Applicant", "name")}${th("Preferred Dealer", "preferred_dealer")}${th("Garage", "garage")}${th("Timing", "timing")}<th>Flags</th>${th("Status", "status")}${th("Outcome", "allocation")}${th("Interviewed By", "interviewed_by")}${th("Updated", "updated_at")}</tr></thead>
           <tbody>${list.map((r) => `
             <tr class="clickable-row" data-id="${r.id}">
-              <td><div class="cell-name">${escapeHtml(r.name)}</div><div class="cell-sub muted">${escapeHtml(r.age_range || "")}</div></td>
+              <td><div class="cell-name">${escapeHtml(r.name)}</div><div class="cell-sub muted">${escapeHtml(r.age_range || "")}</div><div class="editing-note" data-ed="${r.id}">${escapeHtml(editingText(r.id))}</div></td>
               <td>${escapeHtml(r.preferred_dealer || "")}</td>
               <td>${garageOf(r).length}<div class="cell-sub muted">${totalMiles(r) ? totalMiles(r).toLocaleString() + " mi/yr" : ""}</div></td>
               <td>${escapeHtml(r.timing || "")}</td>
-              <td><div class="pill-row">${r.vip ? `<span class="pill pill-vip">${I.star}VIP</span>` : ""}${r.lfa_owner ? `<span class="pill pill-lfa">LFA</span>` : ""}</div></td>
+              <td><div class="pill-row">${r.vip ? `<span class="pill pill-vip">${I.star}VIP</span>` : ""}${r.lfa_owner ? `<span class="pill pill-lfa">LFA</span>` : ""}${r.needs_followup ? `<span class="pill pill-followup" title="${escapeHtml(r.followup_note || "Needs another call")}">${I.phone}Follow up</span>` : ""}</div></td>
               <td><span class="pill pill-${r.status.toLowerCase()}">${r.status}</span></td>
               <td><span class="pill pill-alloc-${(r.allocation || "Pending").toLowerCase()}">${escapeHtml(r.allocation || "Pending")}</span></td>
               <td>${escapeHtml(r.interviewed_by || "")}<div class="cell-sub muted">${r.interview_date ? fmtDate(r.interview_date) : ""}</div></td>
@@ -442,7 +518,8 @@ function appendApplicantSheets(wb, rows) {
     "Vehicles": garageOf(r).length, "Combined Miles/Yr": totalMiles(r),
     "Previous Toyota/Lexus": r.previous_toyota_lexus, "Recent Flips": r.has_flips === true ? "Yes" : r.has_flips === false ? "No" : "", "Flip Details": r.recent_flips,
     Timing: r.timing, "Spec Consideration": r.spec_consideration, "GR GT Use": (r.gt_usage || []).join(", "), "Intended Use": r.intended_use,
-    "Allocation Outcome": r.allocation || "Pending", "Interviewed By": r.interviewed_by, "Interview Date": r.interview_date ? new Date(r.interview_date + "T12:00:00") : null,
+    "Allocation Outcome": r.allocation || "Pending", "Needs Follow Up": r.needs_followup ? "Yes" : "No", "Follow Up Note": r.followup_note,
+    "Call Notes": r.call_notes, "Interviewed By": r.interviewed_by, "Interview Date": r.interview_date ? new Date(r.interview_date + "T12:00:00") : null,
     "Last Updated": r.updated_at ? new Date(r.updated_at) : null,
   }));
   const garage = [];
@@ -455,8 +532,9 @@ function appendApplicantSheets(wb, rows) {
 // EDITOR (the interview form)
 // ============================================================
 async function renderEditor(route, seq) {
-  const isNew = !route.id;
+  let isNew = !route.id;
   const main = shell(isNew ? "new" : "list", `<div class="loading">Loading profile…</div>`);
+  main.classList.add("wide");
   let record = null;
   if (!isNew) {
     try { record = await getApplicant(route.id); } catch (e) { main.innerHTML = `<div class="banner error">Couldn't load this profile: ${escapeHtml(e.message)}</div>`; return; }
@@ -467,7 +545,11 @@ async function renderEditor(route, seq) {
   const changes = record ? await listChanges(record.id) : [];
   if (seq !== renderSeq) return;
   const dealerNames = [...new Set(others.map((o) => (o.preferred_dealer || "").trim()).filter(Boolean))].sort();
-  const draftKey = `gtap-draft-${route.id || "new"}`;
+  let draftKey = `gtap-draft-${route.id || "new"}`;
+  let edDirty = false; // this page's own flag; the global one only tracks the page on screen
+  const setDirty = (v) => { edDirty = v; if (seq === renderSeq) dirty = v; };
+  if (record) setEditing(record.id);
+  const notesOpen = store.get("gtap-notes-open") !== false;
   let a = record ? JSON.parse(JSON.stringify(record)) : blankApplicant();
   if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [{ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" }];
   a.garage.forEach((g) => {
@@ -509,23 +591,26 @@ async function renderEditor(route, seq) {
         <div class="avatar" id="ed-avatar">${escapeHtml(initials(a.name))}</div>
         <div style="min-width:0">
           <div class="editor-name" id="ed-name">${escapeHtml(a.name) || "New applicant"}</div>
-          <div class="save-state ${isNew ? "" : "saved"}" id="save-state"><span class="dot"></span><span>${isNew ? "Not saved yet" : `Saved ${timeAgo(record.updated_at)}${record.updated_by_name ? " by " + escapeHtml(record.updated_by_name) : ""}`}</span></div>
+          <div class="save-state ${isNew ? "" : "saved"}" id="save-state"><span class="dot"></span><span>${isNew ? "Not saved yet · autosaves once a name is entered" : `Saved ${timeAgo(record.updated_at)}${record.updated_by_name ? " by " + escapeHtml(record.updated_by_name) : ""}`}</span></div>
+          <div class="presence-note" id="presence-note"></div>
         </div>
       </div>
       <div class="page-actions">
+        <button type="button" class="btn ${notesOpen ? "on" : ""}" id="notes-toggle" title="Show or hide the call notes panel">${I.notes}Notes</button>
         <div class="form-field" style="margin:0"><select data-f="status" style="padding:8px 10px;font-size:13px">${["Draft", "Complete"].map((s) => `<option ${a.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
         ${isNew ? "" : `<a href="#/p/${record.id}/outputs" class="btn" id="outputs-btn">${I.doc}Outputs</a>`}
         <button class="btn btn-primary" id="save-btn">${I.save}Save<span class="muted" style="color:rgba(255,255,255,.65);font-size:11px;margin-left:2px">Ctrl S</span></button>
       </div>
     </div>
     ${draftIsNewer ? `<div class="banner" id="draft-banner"><span>There are unsaved changes to this profile from ${timeAgo(localDraft.savedAt)} on this computer.</span><span class="page-actions"><button class="btn btn-ghost" id="draft-discard">Discard</button><button class="btn btn-primary" id="draft-restore">Restore them</button></span></div>` : ""}
+    <div id="team-banner"></div>
     <div id="err-banner"></div>
 
-    <div class="editor-layout">
+    <div class="editor-layout ${notesOpen ? "with-notes" : ""}" id="editor-layout">
       <nav class="section-nav" id="section-nav">
         ${SECTIONS.map((s, i) => `<a href="javascript:void 0" data-sec="${s.id}"><span class="sn-num">0${i + 1}</span>${s.title}<span class="sn-done" data-done="${s.id}"></span></a>`).join("")}
         <div class="sep"></div>
-        ${isNew ? `<span class="muted" style="padding:6px 12px">Save once to unlock the outputs.</span>` : `<a href="#/p/${record.id}/outputs">${I.doc}&nbsp;Outputs</a>`}
+        <span id="nav-outputs">${isNew ? `<span class="muted" style="padding:6px 12px;display:block">Save once to unlock the outputs.</span>` : `<a href="#/p/${record.id}/outputs">${I.doc}&nbsp;Outputs</a>`}</span>
       </nav>
 
       <form id="ed-form" autocomplete="off" onsubmit="return false">
@@ -588,18 +673,26 @@ async function renderEditor(route, seq) {
             ${field("interviewed_by", "Interviewed By", { type: "select", options: team.map((t) => t.full_name).filter(Boolean) })}
             ${field("interview_date", "Interview Date", { type: "date" })}
             ${field("allocation", "Allocation Outcome", { type: "select", options: ALLOCATION_OPTIONS, noBlank: true, hint: "(set once the EVP decides)" })}
+            <div class="span-2">${toggle("needs_followup", "Needs another call", "Flag this guest for a follow up call")}</div>
+            <div class="span-2" id="followup-note-wrap" ${a.needs_followup ? "" : "hidden"}>${field("followup_note", "What to follow up on", { type: "textarea", rows: 2, ph: "What's left to cover, best time to call back…" })}</div>
           </div>
           ${!isNew && currentProfile?.is_admin ? `<div style="margin-top:16px;display:flex;justify-content:flex-end"><button type="button" class="btn btn-danger" id="trash-btn">${I.trash}Move to Trash</button></div>` : ""}
         </section>
         ${isNew ? "" : `<section class="form-section" id="sec-history">
           <header><div><div class="sec-kicker">Log</div><h2>Change History</h2></div><span class="muted">${changes.length} entr${changes.length === 1 ? "y" : "ies"}</span></header>
-          ${changes.length ? `<div class="history">${changes.map((c) => `
+          ${changes.length ? `<div class="history">${changes.filter((c) => (c.changes || []).length).map((c) => `
             <div class="hist-item">
               <div class="hist-meta"><b>${escapeHtml(c.changed_by_name || "Someone")}</b><span class="muted">${fmtDate(c.changed_at || new Date())} ${new Date(c.changed_at || Date.now()).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span></div>
               <ul>${(c.changes || []).map((x) => `<li><span class="hist-field">${escapeHtml(x.field)}</span>${x.note ? ` <span class="muted">${escapeHtml(x.note)}</span>` : x.from !== undefined ? ` <span class="hist-from">${escapeHtml(x.from)}</span> → <span class="hist-to">${escapeHtml(x.to)}</span>` : ""}</li>`).join("")}</ul>
             </div>`).join("")}</div>` : `<div class="muted">No changes recorded yet.</div>`}
         </section>`}
       </form>
+
+      <aside class="notes-panel" id="notes-panel">
+        <div class="np-head"><h3>${I.notes}Call Notes</h3><button type="button" class="icon-btn" id="notes-close" title="Hide notes">✕</button></div>
+        <textarea data-f="call_notes" placeholder="Jot things down while they talk, then sort them into the form after the call.">${escapeHtml(a.call_notes || "")}</textarea>
+        <div class="np-foot muted">Saved with the profile. Not included in the summary or Bio.</div>
+      </aside>
     </div>`;
 
   const form = main.querySelector("#ed-form");
@@ -697,6 +790,7 @@ async function renderEditor(route, seq) {
     if (BOOL_FIELDS.includes(k)) {
       a[k] = e.target.checked;
       e.target.closest(".toggle-card").classList.toggle("on", a[k]);
+      if (k === "needs_followup") main.querySelector("#followup-note-wrap").hidden = !a[k];
     } else a[k] = e.target.value;
     markDirty();
   });
@@ -723,9 +817,11 @@ async function renderEditor(route, seq) {
   updateProgress();
 
   // ----- dirty tracking + local safety copy -----
-  let draftTimer;
+  let draftTimer, dirtySince = 0, lastEditAt = 0;
   function markDirty() {
-    dirty = true;
+    if (!edDirty) dirtySince = Date.now();
+    lastEditAt = Date.now();
+    setDirty(true);
     saveState.className = "save-state dirty";
     saveState.lastElementChild.textContent = "Unsaved changes";
     updateProgress();
@@ -752,16 +848,19 @@ async function renderEditor(route, seq) {
     });
   }
 
-  // ----- save -----
+  // ----- save (manual, or automatic for Drafts) -----
   const errBanner = main.querySelector("#err-banner");
-  async function save() {
-    errBanner.innerHTML = "";
-    if (!(a.name || "").trim()) {
-      const n = main.querySelector('[data-f="name"]');
-      n.classList.add("invalid"); n.focus();
-      errBanner.innerHTML = `<div class="banner error">Add the applicant's name before saving.</div>`;
-      return false;
-    }
+  const teamBanner = main.querySelector("#team-banner");
+  let saving = false, autosavePaused = false, lastSavedAt = record ? new Date(record.updated_at).getTime() : 0, lastSaveWasAuto = false;
+  let lastSavedBy = record && record.updated_by_name && record.updated_by !== currentProfile.id ? record.updated_by_name : "";
+  // change history: one entry per editing session, updated as saves happen
+  let histId = null;
+  let histBase = record ? JSON.parse(JSON.stringify(record)) : null;
+  let lastSnapshot = histBase;
+  const norm = (x) => (x || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const findDup = () => (isNew ? others.find((o) => norm(o.name) === norm(a.name)) : null);
+
+  function buildPayload() {
     const payload = {};
     TEXT_FIELDS.forEach((k) => (payload[k] = typeof a[k] === "string" ? a[k].trim() || null : a[k] ?? null));
     payload.status = a.status || "Draft";
@@ -773,7 +872,67 @@ async function renderEditor(route, seq) {
       year: String(g.year ?? "").trim() || null, make: (g.make || "").trim() || makeOf(g.vehicle) || null, model: (g.model || "").trim() || null,
       vehicle: g.vehicle.trim(), usage: g.usage || [], miles: Number(g.miles) || null,
     }));
+    return payload;
+  }
+  function paintSaved() {
+    if (edDirty || saving || !lastSavedAt) return;
+    saveState.className = "save-state saved";
+    saveState.lastElementChild.textContent = `${lastSaveWasAuto ? "Autosaved" : "Saved"} ${timeAgo(lastSavedAt)}${lastSavedBy ? " by " + lastSavedBy : ""}`;
+  }
+  async function recordHistory(id, payload) {
+    const diffs = diffFields(histBase, payload);
+    if (histId) {
+      if (await updateChange(histId, diffs)) return;
+      // the session entry can't be updated any more: start a new one from the last save
+      histBase = lastSnapshot; histId = null;
+      const fresh = diffFields(histBase, payload);
+      if (fresh.length) histId = await addChange(id, fresh, currentProfile);
+      return;
+    }
+    if (diffs.length) histId = await addChange(id, diffs, currentProfile);
+  }
+  // a brand new profile was just stored: switch this page over without reloading it
+  function becameSaved(created) {
+    isNew = false;
+    record = created;
+    a.id = created.id;
+    a.updated_at = created.updated_at;
+    store.del(draftKey);
+    draftKey = `gtap-draft-${created.id}`;
+    histBase = JSON.parse(JSON.stringify(created));
+    lastSnapshot = histBase;
+    if (seq !== renderSeq) return; // they've already moved on to another page
+    lastHash = `#/p/${created.id}`;
+    history.replaceState(null, "", lastHash);
+    setEditing(created.id);
+    const bar = main.querySelector(".editor-bar .page-actions");
+    if (bar && !main.querySelector("#outputs-btn")) {
+      const link = document.createElement("a");
+      link.href = `#/p/${created.id}/outputs`; link.className = "btn"; link.id = "outputs-btn";
+      link.innerHTML = `${I.doc}Outputs`;
+      bar.insertBefore(link, main.querySelector("#save-btn"));
+      wireOutputs(link);
+    }
+    const nav = main.querySelector("#nav-outputs");
+    if (nav) nav.innerHTML = `<a href="#/p/${created.id}/outputs">${I.doc}&nbsp;Outputs</a>`;
+    const navNew = document.querySelector('.nav a[href="#/new"]');
+    if (navNew) navNew.classList.remove("active");
+  }
+
+  async function save(opts = {}) {
+    const auto = !!opts.auto;
+    if (saving) return false;
+    if (!auto) errBanner.innerHTML = "";
+    if (!(a.name || "").trim()) {
+      if (auto) return false;
+      const n = main.querySelector('[data-f="name"]');
+      n.classList.add("invalid"); n.focus();
+      errBanner.innerHTML = `<div class="banner error">Add the applicant's name before saving.</div>`;
+      return false;
+    }
+    const payload = buildPayload();
     if (payload.status === "Complete") {
+      if (auto) return false;
       const missing = missingForComplete(a);
       if (missing.length) {
         errBanner.innerHTML = `<div class="banner error"><span><b>Can't mark Complete yet.</b> Still needed: ${missing.map(escapeHtml).join(", ")}. Save as Draft for now, or fill these in.</span></div>`;
@@ -781,68 +940,152 @@ async function renderEditor(route, seq) {
         return false;
       }
     }
-    if (isNew) {
-      const norm = (x) => (x || "").trim().toLowerCase().replace(/\s+/g, " ");
-      const dup = others.find((o) => norm(o.name) === norm(payload.name));
-      if (dup && !confirm(`A profile for "${dup.name}" already exists${dup.interviewed_by ? ` (interviewed by ${dup.interviewed_by})` : ""}. Create another one anyway?`)) return false;
+    const dup = findDup();
+    if (dup) {
+      if (auto) return false; // a person should confirm this one
+      if (!confirm(`A profile for "${dup.name}" already exists${dup.interviewed_by ? ` (interviewed by ${dup.interviewed_by})` : ""}. Create another one anyway?`)) return false;
     }
     const btn = main.querySelector("#save-btn");
+    saving = true;
     btn.disabled = true;
+    const editStamp = lastEditAt;
+    if (auto) { saveState.className = "save-state dirty"; saveState.lastElementChild.textContent = "Autosaving…"; }
     try {
       if (isNew) {
         const created = await createApplicant(payload, currentProfile);
         await addChange(created.id, [{ field: "Profile", note: "created" }], currentProfile);
-        store.del(draftKey);
-        dirty = false;
-        toast("Profile created");
-        lastHash = `#/p/${created.id}`;
-        navigate(lastHash);
-        return true;
+        becameSaved(created);
+        if (!auto) toast("Profile created");
+      } else {
+        const saved = await updateApplicant(record.id, payload, currentProfile, record.updated_at);
+        await recordHistory(record.id, payload);
+        record = saved;
+        a.updated_at = saved.updated_at;
+        lastSnapshot = JSON.parse(JSON.stringify(saved));
+        if (!auto) toast("Saved");
       }
-      const before = record;
-      const saved = await updateApplicant(record.id, payload, currentProfile, record.updated_at);
-      await addChange(record.id, diffFields(before, payload), currentProfile);
-      record = saved;
-      a.updated_at = saved.updated_at;
-      store.del(draftKey);
-      dirty = false;
-      saveState.className = "save-state saved";
-      saveState.lastElementChild.textContent = "Saved just now";
-      toast("Saved");
+      noteFetchResult(true);
+      lastSavedAt = Date.now();
+      lastSaveWasAuto = auto;
+      lastSavedBy = "";
+      // only clear "unsaved" if nothing was typed while the save was in flight
+      if (lastEditAt === editStamp) { setDirty(false); store.del(draftKey); }
+      if (!auto) teamBanner.innerHTML = "";
+      paintSaved();
       return true;
     } catch (e) {
+      noteFetchResult(false, e);
       if (e.code === "CONFLICT") {
-        errBanner.innerHTML = `<div class="banner error"><span>${escapeHtml(e.message)} Your changes are kept on this computer.</span><span class="page-actions"><button class="btn" id="conf-reload">Load their version</button><button class="btn btn-danger" id="conf-force">Save mine over it</button></span></div>`;
-        errBanner.querySelector("#conf-reload").addEventListener("click", () => { store.del(draftKey); dirty = false; render(); });
-        errBanner.querySelector("#conf-force").addEventListener("click", async () => { record.updated_at = new Date(Date.now() + 60000).toISOString(); await save(); });
-      } else {
-        errBanner.innerHTML = `<div class="banner error">Couldn't save: ${escapeHtml(e.message)}. Your changes are kept on this computer.</div>`;
+        autosavePaused = true;
+        teamBanner.innerHTML = "";
+        errBanner.innerHTML = `<div class="banner error"><span>${escapeHtml(e.message)} Autosave is paused and your changes are kept on this computer.</span><span class="page-actions"><button class="btn" id="conf-reload">Load their version</button><button class="btn btn-danger" id="conf-force">Save mine over it</button></span></div>`;
+        errBanner.querySelector("#conf-reload").addEventListener("click", () => reloadFresh(true));
+        errBanner.querySelector("#conf-force").addEventListener("click", async () => { record.updated_at = new Date(Date.now() + 60000).toISOString(); autosavePaused = false; await save(); });
+      } else if (!auto || conn.fetch) {
+        errBanner.innerHTML = `<div class="banner error">Couldn't save: ${escapeHtml(e.message)}. Your changes are kept on this computer${auto ? " and autosave will keep trying" : ""}.</div>`;
       }
+      if (auto) { saveState.className = "save-state dirty"; saveState.lastElementChild.textContent = "Unsaved changes"; }
       return false;
     } finally {
+      saving = false;
       btn.disabled = false;
+      paintSaved();
+      if (queued) { queued = false; setTimeout(() => maybeAutosave(true), 0); }
     }
   }
-  main.querySelector("#save-btn").addEventListener("click", save);
+
+  // ----- autosave: Drafts save themselves every 30 seconds while being edited -----
+  const canAutosave = () => edDirty && !saving && !autosavePaused && (a.status || "Draft") === "Draft" && !!(a.name || "").trim() && !findDup();
+  let queued = false;
+  function maybeAutosave(force) {
+    if (force && saving && edDirty) { queued = true; return true; }
+    if (!canAutosave()) return false;
+    const now = Date.now();
+    if (force || now - dirtySince >= 30000 || now - lastEditAt >= 8000) { save({ auto: true }); return true; }
+    return false;
+  }
+  const autoTimer = setInterval(() => { maybeAutosave(false); paintSaved(); }, 4000);
+  const onHidden = () => { if (document.visibilityState === "hidden") maybeAutosave(true); };
+  document.addEventListener("visibilitychange", onHidden);
+  flushHook = () => maybeAutosave(true);
+  reconnectHook = () => maybeAutosave(true);
+
+  // ----- teammates -----
+  async function reloadFresh(discardMine) {
+    if (discardMine) store.del(draftKey);
+    setDirty(false);
+    const y = window.scrollY;
+    await render();
+    window.scrollTo(0, y);
+  }
+  liveRefresh = (p) => {
+    const row = p && p.new;
+    if (!record || !row || row.id !== record.id) return;
+    const mine = row.updated_by ? row.updated_by === currentProfile.id : row.updated_by_name === currentProfile.full_name;
+    if (mine || new Date(row.updated_at).getTime() <= new Date(record.updated_at).getTime()) return;
+    const who = escapeHtml(row.updated_by_name || "A teammate");
+    if (row.deleted_at) {
+      autosavePaused = true;
+      teamBanner.innerHTML = `<div class="banner error"><span><b>${who}</b> moved this profile to the Trash. Autosave is paused.</span><a class="btn" href="#/">Back to applicants</a></div>`;
+      return;
+    }
+    if (!edDirty && !saving) {
+      reloadFresh(false).then(() => toast(`Updated with ${row.updated_by_name || "a teammate"}'s changes`));
+      return;
+    }
+    autosavePaused = true;
+    teamBanner.innerHTML = `<div class="banner"><span><b>${who}</b> just saved this profile while you have unsaved changes. Autosave is paused so nothing gets overwritten.</span><span class="page-actions"><button class="btn" id="tb-load">Load their version</button><button class="btn btn-primary" id="tb-keep">Keep mine</button></span></div>`;
+    teamBanner.querySelector("#tb-load").addEventListener("click", () => reloadFresh(true));
+    teamBanner.querySelector("#tb-keep").addEventListener("click", () => { teamBanner.innerHTML = ""; save(); });
+  };
+  const presenceNote = main.querySelector("#presence-note");
+  presenceRefresh = () => {
+    const names = record ? editingMap[record.id] || [] : [];
+    presenceNote.innerHTML = names.length ? `<span class="dot-live"></span>${escapeHtml(`${names.join(" and ")} also ${names.length > 1 ? "have" : "has"} this open`)}` : "";
+  };
+  presenceRefresh();
+
+  // ----- call notes panel -----
+  const layout = main.querySelector("#editor-layout");
+  const notesBtn = main.querySelector("#notes-toggle");
+  function setNotes(open) {
+    layout.classList.toggle("with-notes", open);
+    notesBtn.classList.toggle("on", open);
+    store.set("gtap-notes-open", open);
+    if (open) main.querySelector('[data-f="call_notes"]').focus();
+  }
+  notesBtn.addEventListener("click", () => setNotes(!layout.classList.contains("with-notes")));
+  main.querySelector("#notes-close").addEventListener("click", () => setNotes(false));
+
+  main.querySelector("#save-btn").addEventListener("click", () => save());
   const onKey = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "j") { e.preventDefault(); setNotes(!layout.classList.contains("with-notes")); }
   };
   document.addEventListener("keydown", onKey);
-  const cleanup = () => { document.removeEventListener("keydown", onKey); spy.disconnect(); window.removeEventListener("hashchange", cleanup); };
-  window.addEventListener("hashchange", cleanup);
+  const cleanup = () => {
+    document.removeEventListener("keydown", onKey);
+    document.removeEventListener("visibilitychange", onHidden);
+    clearInterval(autoTimer);
+    spy.disconnect();
+  };
+  pageCleanup = cleanup;
 
+  function wireOutputs(link) {
+    link.addEventListener("click", async (e) => {
+      if (!edDirty) return;
+      e.preventDefault();
+      if (await save()) { setDirty(false); navigate(`#/p/${record.id}/outputs`); }
+    });
+  }
   const outBtn = main.querySelector("#outputs-btn");
-  if (outBtn) outBtn.addEventListener("click", async (e) => {
-    if (!dirty) return;
-    e.preventDefault();
-    if (await save()) { lastHash = `#/p/${record.id}/outputs`; navigate(lastHash); }
-  });
+  if (outBtn) wireOutputs(outBtn);
 
   const trashBtn = main.querySelector("#trash-btn");
   if (trashBtn) trashBtn.addEventListener("click", async () => {
     if (!confirm(`Move ${record.name} to the Trash? An admin can restore it from the Account page.`)) return;
     await trashApplicant(record.id);
-    dirty = false; store.del(draftKey);
+    setDirty(false); store.del(draftKey);
     toast("Moved to Trash");
     navigate("#/");
   });

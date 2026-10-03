@@ -29,6 +29,10 @@ Section checkmarks show what's been covered. Ctrl+S saves. Unsaved work is kept 
 
 **Backups and keep alive**: admins see a reminder on the Applicants page when nobody has exported Excel in 14 days. A GitHub Action (`.github/workflows/keepalive.yml`) pings Supabase daily so the free project doesn't pause; check it under the repo's **Actions** tab.
 
+**During calls**: Drafts autosave every 30 seconds (and whenever you pause typing, switch tabs or leave the page), so nothing depends on clicking Save. Complete profiles still save with the Save button. The **Notes** button (or Ctrl+J) opens a Call Notes panel beside the form for quick typing during the call; it saves with the profile but isn't included in the summary or Bio. Autosave history is grouped into one Change History entry per editing session.
+
+**Working together**: the Applicants list shows who has a profile open ("Freddie is editing"), and the profile itself shows "Freddie also has this open". If a teammate saves a profile you have open, it refreshes with their changes; if you have unsaved changes, you get a banner to load theirs or keep yours, and autosave pauses so nothing is overwritten. **Needs another call** (with a note) flags a guest for a follow up, with a count and filter on the Applicants list. A **Connection lost** banner appears if the internet or the live connection drops; keep typing, and it saves when the connection is back.
+
 **Account**: change your name and password. Admins get the Trash (restore or delete forever).
 
 ## Updating an existing database

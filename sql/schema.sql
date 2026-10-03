@@ -168,3 +168,16 @@ returns int language sql security definer stable set search_path = public as $$
   select 1;
 $$;
 grant execute on function public.keepalive() to anon;
+
+-- ---------- update 3: autosave, call notes, follow ups (safe to re-run) ----------
+alter table applicants add column if not exists call_notes text;
+alter table applicants add column if not exists needs_followup boolean not null default false;
+alter table applicants add column if not exists followup_note text;
+alter table applicants add column if not exists updated_by uuid references auth.users(id);
+
+-- autosave keeps one history entry per editing session up to date,
+-- so people may update their own entries for a few hours (never anyone else's)
+drop policy if exists "changes_update_own_recent" on applicant_changes;
+create policy "changes_update_own_recent" on applicant_changes for update
+  using (changed_by = auth.uid() and changed_at > now() - interval '3 hours')
+  with check (changed_by = auth.uid());

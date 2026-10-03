@@ -52,7 +52,7 @@ export async function getApplicant(id) {
 export async function createApplicant(fields, profile) {
   const { data, error } = await supabase
     .from("applicants")
-    .insert({ ...fields, created_by: profile.id, created_by_name: profile.full_name, updated_by_name: profile.full_name })
+    .insert({ ...fields, created_by: profile.id, created_by_name: profile.full_name, updated_by: profile.id, updated_by_name: profile.full_name })
     .select()
     .single();
   if (error) throw error;
@@ -70,7 +70,7 @@ export async function updateApplicant(id, fields, profile, expectedUpdatedAt) {
   }
   const { data, error } = await supabase
     .from("applicants")
-    .update({ ...fields, updated_by_name: profile.full_name })
+    .update({ ...fields, updated_by: profile.id, updated_by_name: profile.full_name })
     .eq("id", id)
     .select()
     .single();
@@ -95,12 +95,33 @@ export async function deleteApplicantForever(id) {
   if (error) throw error;
 }
 
-export function subscribeApplicants(cb) {
+export function subscribeApplicants(cb, onStatus) {
   const ch = supabase
     .channel("applicants-live")
     .on("postgres_changes", { event: "*", schema: "public", table: "applicants" }, (p) => cb(p))
-    .subscribe();
+    .subscribe((status) => onStatus && onStatus(status));
   return () => supabase.removeChannel(ch);
+}
+
+// ---------- who has which profile open (live, nothing stored) ----------
+let presenceCh = null;
+let presenceMeta = { name: "", applicant: null };
+export function joinPresence(profile, onSync) {
+  if (presenceCh) return;
+  presenceMeta.name = profile.full_name;
+  presenceCh = supabase.channel("who-is-editing", { config: { presence: { key: profile.id } } });
+  presenceCh
+    .on("presence", { event: "sync" }, () => onSync(presenceCh.presenceState()))
+    .subscribe(async (status) => { if (status === "SUBSCRIBED") await presenceCh.track({ ...presenceMeta }); });
+}
+export function setEditing(applicantId) {
+  if (presenceMeta.applicant === applicantId) return;
+  presenceMeta.applicant = applicantId;
+  if (presenceCh) presenceCh.track({ ...presenceMeta }).catch(() => {});
+}
+export function leavePresence() {
+  if (presenceCh) { supabase.removeChannel(presenceCh); presenceCh = null; }
+  presenceMeta.applicant = null;
 }
 
 // ---------- team ----------
@@ -121,14 +142,21 @@ export async function listChanges(applicantId) {
   return data;
 }
 export async function addChange(applicantId, changes, profile) {
-  if (!changes || !changes.length) return;
-  const { error } = await supabase.from("applicant_changes").insert({
+  if (!changes || !changes.length) return null;
+  const { data, error } = await supabase.from("applicant_changes").insert({
     applicant_id: applicantId,
     changed_by: profile.id,
     changed_by_name: profile.full_name,
     changes,
-  });
-  if (error) console.warn("History not recorded:", error.message);
+  }).select("id").single();
+  if (error) { console.warn("History not recorded:", error.message); return null; }
+  return data.id;
+}
+// one editing session = one history entry, kept up to date as autosave runs
+export async function updateChange(id, changes) {
+  const { error } = await supabase.from("applicant_changes").update({ changes, changed_at: new Date().toISOString() }).eq("id", id);
+  if (error) console.warn("History not updated:", error.message);
+  return !error;
 }
 
 // ---------- backups ----------
