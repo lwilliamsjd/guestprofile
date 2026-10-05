@@ -1,13 +1,15 @@
 import {
-  signIn, signOut, getSession, onAuthChange, getCurrentProfile, setDisplayName, changePassword,
+  signIn, signOut, getSession, onAuthChange, getCurrentProfile, setDisplayName, setJobTitle, changePassword,
   listApplicants, getApplicant, createApplicant, updateApplicant, trashApplicant,
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
 } from "./api.js";
 import {
-  USAGE_OPTIONS, escapeHtml, initials, garageOf, totalMiles, fmtDate,
-  buildSummaryText,
+  USAGE_OPTIONS, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
+  escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
+  avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
+  buildSummaryText, buildPersonaHtml,
 } from "./outputs.js";
 import { SUPABASE_URL } from "./config.js";
 
@@ -36,6 +38,8 @@ const I = {
   notes: svg('<path d="M5 3h10l4 4v14H5z"/><path d="M8 10h8M8 14h8M8 18h5"/>'),
   phone: svg('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'),
   save: svg('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/>'),
+  users: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5 6.5-5s5.5 1.5 6.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 14.2c2.5.2 4.3 1.7 5 4.8"/>'),
+  image: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>'),
 };
 
 // ---------- small helpers ----------
@@ -74,11 +78,10 @@ function navigate(h) { window.location.hash = h; }
 
 // ---------- form definition ----------
 const AGE_RANGES = ["Under 30", "30s", "40s", "50s", "60s", "70+"];
-const GT_USE_OPTIONS = ["Track Days", "Weekend Street", "Collection", "Daily Driver", "Shows & Events"];
-const TIMING_SUGGESTIONS = ["Ready now", "Within 6 months", "Within 12 months", "Flexible"];
-const HPDE_LEVELS = ["None", "Beginner", "Intermediate", "Advanced", "Instructor"];
-const RACE_LEVELS = ["None", "Time Attack / Autocross", "Club Racing", "Pro / Semi Pro"];
-const ALLOCATION_OPTIONS = ["Pending", "Awarded", "Waitlist", "Declined"];
+const ALLOCATION_OPTIONS = ["Pending", ...DECISIONS];
+const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
+const RACE_SERIES = ["NASA Competition", "NASA Time Trial", "SCCA Regional", "SCCA National", "SCCA Time Trials", "SCCA Solo", "PCA Club Racing", "Porsche Carrera Cup", "GR Cup", "Lucky Dog", "ChampCar", "WRL", "IMSA", "SRO", "Ferrari Challenge", "Lamborghini Super Trofeo"];
+const BIO_FITS = 1100; // characters of Bio that fit page 1 of the PDF alongside a short quote
 const COMMON_MAKES = ["Acura","Alfa Romeo","Aston Martin","Audi","Bentley","BMW","Bugatti","Cadillac","Chevrolet","Dodge","Ferrari","Ford","Honda","Hyundai","Jaguar","Jeep","Koenigsegg","Lamborghini","Land Rover","Lexus","Lotus","Lucid","Maserati","Mazda","McLaren","Mercedes Benz","Nissan","Pagani","Porsche","Ram","Rimac","Rivian","Rolls Royce","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
 
 // garage vehicles: Year, Make and Model are entered separately; "vehicle" is the combined name used everywhere else
@@ -103,14 +106,14 @@ function splitVehicle(v) {
 
 // fields required before a profile can be marked Complete
 const REQUIRED_FOR_COMPLETE = [
-  ["name", "Name"], ["age_range", "Age Range"], ["preferred_dealer", "Preferred Dealer"], ["summary", "Summary"],
-  ["hpde_level", "HPDE Level"], ["race_level", "Race Level"], ["garage", "At least one garage vehicle"],
-  ["has_flips", "Recent flips (Yes or No)"], ["timing", "Timing"], ["gt_usage", "Planned GR GT Use"], ["intended_use", "Intended Use"],
+  ["name", "Name"], ["age_range", "Age Range"], ["state", "State"], ["preferred_dealer", "Preferred Dealer"], ["summary", "Bio"],
+  ["hpde_level", "HPDE Level"], ["race_level", "Race Level"], ["garage", "At least one garage vehicle"], ["lfa_status", "LFA Experience"],
+  ["has_flips", "Recent flips (Yes or No)"], ["target_quarter", "Target delivery quarter"], ["usage_split", "Intended Usage adding up to 100%"], ["intended_use", "Why the GR GT"],
 ];
 function missingForComplete(a) {
   return REQUIRED_FOR_COMPLETE.filter(([k]) => {
     if (k === "garage") return garageOf(a).length === 0;
-    if (k === "gt_usage") return !(a.gt_usage || []).length;
+    if (k === "usage_split") return splitTotal(a) !== 100;
     if (k === "has_flips") return a.has_flips !== true && a.has_flips !== false;
     return !String(a[k] ?? "").trim();
   }).map(([, label]) => label);
@@ -118,21 +121,28 @@ function missingForComplete(a) {
 
 // labels used in change history
 const FIELD_LABELS = {
-  name: "Name", age_range: "Age Range", preferred_dealer: "Preferred Dealer", social_media: "Social Media", tmna_relationship: "TMNA Relationship",
-  vip: "VIP", summary: "Summary", hpde_level: "HPDE Level", hpde_experience: "HPDE Experience", race_level: "Race Level", race_experience: "Race Experience",
-  key_events: "Key Events", what_drives_you: "What Drives You", garage: "Current Garage", lfa_owner: "LFA Ownership",
+  name: "Name", age_range: "Age Range", city: "City", state: "State", preferred_dealer: "Preferred Dealer", social_media: "Social Media (older notes)", socials: "Social Media", tmna_relationship: "TMNA Relationships",
+  clubs: "Track and Driving Clubs", vip: "VIP", summary: "Bio",
+  years_on_track: "Years on Track", track_days: "Track Days", race_series: "Racing Series", driver_style: "Raw Numbers vs Experience", driver_style_note: "Driver Style Note",
+  lfa_status: "LFA Experience", lfa_note: "LFA Note", toyota_history: "Toyota / Lexus History", past_cars: "Significant Past Cars",
+  usage_split: "Intended Usage", usage_note: "Intended Usage Note", target_quarter: "Target Quarter", timing_flex: "Timing Flexibility", timing_note: "Timing Note",
+  spec_tags: "Spec Considerations", cross_shop: "Cross Shopping", concierge_rec: "Concierge Recommendation", assessment: "Concierge Assessment", strengths: "Strengths", concerns: "Flags", hpde_level: "HPDE Level", hpde_experience: "HPDE Experience", race_level: "Race Level", race_experience: "Race Experience",
+  key_events: "Key Events", what_drives_you: "What Drives You", garage: "Current Garage",
   previous_toyota_lexus: "Previous Toyota / Lexus", has_flips: "Recent Flips", recent_flips: "Recent Flips Detail", timing: "Timing",
-  gt_usage: "Planned GR GT Use", spec_consideration: "Spec Consideration", intended_use: "Intended Use",
-  interviewed_by: "Interviewed By", interview_date: "Interview Date", status: "Status", allocation: "Allocation Outcome",
+  gt_usage: "Planned GR GT Use", spec_consideration: "Spec Consideration (older notes)", intended_use: "Why the GR GT",
+  interviewed_by: "Interviewed By", interview_date: "Interview Date", status: "Status", allocation: "Leadership Decision",
   call_notes: "Call Notes", needs_followup: "Needs Follow Up", followup_note: "Follow Up Note",
 };
-const LONG_FIELDS = ["call_notes", "followup_note", "summary", "hpde_experience", "race_experience", "key_events", "what_drives_you", "previous_toyota_lexus", "recent_flips", "spec_consideration", "intended_use", "social_media", "tmna_relationship"];
+const LONG_FIELDS = ["call_notes", "followup_note", "summary", "hpde_experience", "race_experience", "key_events", "what_drives_you", "previous_toyota_lexus", "recent_flips", "spec_consideration", "intended_use", "social_media", "tmna_relationship",
+  "clubs", "driver_style_note", "lfa_note", "usage_note", "timing_note", "assessment", "strengths", "concerns"];
+const JSON_FIELDS = ["socials", "race_series", "toyota_history", "past_cars", "usage_split", "spec_tags", "cross_shop"];
 function fmtVal(k, v) {
   if (v === true) return "Yes";
   if (v === false) return "No";
   if (v == null || v === "" || (Array.isArray(v) && !v.length)) return "(blank)";
   if (k === "gt_usage") return v.join(", ");
   if (k === "garage") return v.map((g) => g.vehicle).join("; ");
+  if (k === "race_series") return v.join(", ");
   return String(v);
 }
 function diffFields(before, after) {
@@ -142,43 +152,53 @@ function diffFields(before, after) {
     const b = before[k] ?? null, a = after[k] ?? null;
     const norm = (x) => {
       if (BOOL_FIELDS.includes(k)) return JSON.stringify(!!x);
-      if (k === "garage" && Array.isArray(x)) x = x.filter((g) => g.vehicle).map((g) => ({ v: (g.vehicle || "").trim(), u: g.usage || [], m: Number(g.miles) || null }));
+      if (k === "garage" && Array.isArray(x)) x = x.filter((g) => g.vehicle).map((g) => ({ v: (g.vehicle || "").trim(), u: g.usage || [], m: Number(g.miles) || null, a: String(g.acquired || "") || null, n: (g.use_note || "").trim() || null }));
+      if (k === "usage_split" && x && typeof x === "object" && !USAGE_SPLIT.some(([s]) => Number(x[s]))) x = null;
+      if (NUM_FIELDS.includes(k)) x = x === "" || x == null ? null : Number(x);
       return JSON.stringify(x === "" ? null : Array.isArray(x) && !x.length ? null : x);
     };
     if (norm(b) === norm(a)) return;
-    if (LONG_FIELDS.includes(k) || k === "garage") out.push({ field: FIELD_LABELS[k], note: "edited" });
+    if (LONG_FIELDS.includes(k) || JSON_FIELDS.includes(k) || k === "garage") out.push({ field: FIELD_LABELS[k], note: "edited" });
     else out.push({ field: FIELD_LABELS[k], from: fmtVal(k, b), to: fmtVal(k, a) });
   });
   return out;
 }
 
 const SECTIONS = [
-  { id: "bio", title: "Bio", icon: I.user, check: (a) => !!(a.name && a.age_range && a.preferred_dealer) },
-  { id: "summary", title: "Summary", icon: I.text, check: (a) => !!a.summary },
+  { id: "bio", title: "Bio", icon: I.user, check: (a) => !!(a.name && a.age_range && a.state && a.preferred_dealer && a.summary) },
+  { id: "social", title: "Social & Connections", icon: I.users, check: (a) => rowsOf(a.socials, "handle").length > 0 || !!(a.tmna_relationship || a.clubs) },
   { id: "motorsports", title: "Motorsports / Events", icon: I.flag, check: (a) => !!(a.hpde_level && a.race_level) },
-  { id: "car", title: "Car Profile", icon: I.car, check: (a) => garageOf(a).length > 0 },
-  { id: "buyer", title: "Buyer Profile", icon: I.target, check: (a) => !!(a.timing && (a.gt_usage || []).length && a.intended_use) },
+  { id: "car", title: "Car Profile", icon: I.car, check: (a) => garageOf(a).length > 0 && !!a.lfa_status },
+  { id: "buyer", title: "Buyer Profile", icon: I.target, check: (a) => !!(a.target_quarter && splitTotal(a) === 100 && a.intended_use) },
+  { id: "assess", title: "Assessment", icon: I.check, check: (a) => !!(a.concierge_rec && a.assessment) },
 ];
 
 const TEXT_FIELDS = [
-  "name", "age_range", "preferred_dealer", "social_media", "tmna_relationship", "summary",
-  "hpde_experience", "race_experience", "key_events", "what_drives_you",
-  "previous_toyota_lexus", "recent_flips", "timing", "spec_consideration", "intended_use",
+  "name", "age_range", "city", "state", "preferred_dealer", "social_media", "tmna_relationship", "clubs", "summary",
+  "hpde_experience", "race_experience", "key_events", "what_drives_you", "driver_style_note",
+  "lfa_status", "lfa_note", "previous_toyota_lexus", "recent_flips", "timing", "spec_consideration", "intended_use",
+  "usage_note", "target_quarter", "timing_flex", "timing_note", "concierge_rec", "assessment", "strengths", "concerns",
   "interviewed_by", "interview_date", "status", "hpde_level", "race_level", "allocation",
   "call_notes", "followup_note",
 ];
-const BOOL_FIELDS = ["vip", "lfa_owner", "needs_followup"];
+const NUM_FIELDS = ["years_on_track", "track_days", "driver_style"];
+const BOOL_FIELDS = ["vip", "needs_followup"];
 
+const blankCar = () => ({ year: "", make: "", model: "", vehicle: "", usage: [], miles: "", acquired: "", use_note: "" });
 function blankApplicant() {
   return {
     status: "Draft",
     interview_date: todayISO(),
     interviewed_by: currentProfile?.full_name || "",
-    name: "", age_range: "", preferred_dealer: "", social_media: "", tmna_relationship: "", vip: false,
-    summary: "",
+    name: "", age_range: "", city: "", state: "", preferred_dealer: "", social_media: "", tmna_relationship: "", clubs: "", vip: false,
+    summary: "", socials: [{ platform: "Instagram", handle: "", note: "", followers: "" }],
     hpde_experience: "", race_experience: "", key_events: "", what_drives_you: "",
-    garage: [{ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" }], lfa_owner: false, previous_toyota_lexus: "", recent_flips: "",
+    years_on_track: "", track_days: "", race_series: [], driver_style: null, driver_style_note: "",
+    garage: [blankCar()], lfa_owner: false, lfa_status: "", lfa_note: "", previous_toyota_lexus: "", recent_flips: "",
+    toyota_history: [], past_cars: [],
     timing: "", spec_consideration: "", intended_use: "", gt_usage: [],
+    usage_split: null, usage_note: "", target_quarter: "", timing_flex: "", timing_note: "", spec_tags: [], cross_shop: [],
+    concierge_rec: "", assessment: "", strengths: "", concerns: "",
     hpde_level: "", race_level: "", has_flips: null, allocation: "Pending",
     call_notes: "", needs_followup: false, followup_note: "",
   };
@@ -196,6 +216,7 @@ let editingMap = {};        // applicantId -> [teammate names] with that profile
 let flushHook = null;       // editor: start an autosave before leaving; returns true if it did
 let reconnectHook = null;   // editor: called when the connection comes back
 let pageCleanup = null;     // current page's teardown (timers, listeners)
+let restoreDraftFor = null; // editor: reopen with the unsaved local copy
 
 function buildEditingMap(state) {
   const map = {};
@@ -407,16 +428,16 @@ async function renderList(seq) {
       if (listState.dealer && (r.preferred_dealer || "").trim() !== listState.dealer) return false;
       if (listState.alloc && (r.allocation || "Pending") !== listState.alloc) return false;
       if (listState.flag === "vip" && !r.vip) return false;
-      if (listState.flag === "lfa" && !r.lfa_owner) return false;
+      if (listState.flag === "lfa" && lfaStatusOf(r) !== "Owned") return false;
       if (listState.flag === "followup" && !r.needs_followup) return false;
       if (q) {
-        const hay = [r.name, r.preferred_dealer, r.summary, r.interviewed_by, r.social_media, r.tmna_relationship, ...garageOf(r).map((g) => g.vehicle)].join(" ").toLowerCase();
+        const hay = [profileId(r), r.name, r.city, r.state, r.preferred_dealer, r.summary, r.interviewed_by, r.social_media, r.tmna_relationship, ...garageOf(r).map((g) => g.vehicle)].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
     const k = listState.sort, dir = listState.dir === "asc" ? 1 : -1;
-    const val = (r) => (k === "garage" ? garageOf(r).length : k === "miles" ? totalMiles(r) : (r[k] || "").toString().toLowerCase());
+    const val = (r) => (k === "garage" ? garageOf(r).length : k === "miles" ? totalMiles(r) : k === "profile_no" ? Number(r.profile_no) || 0 : k === "timing" ? quarterKey(r.target_quarter) ?? 1e9 : (r[k] || "").toString().toLowerCase());
     out.sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * dir);
     return out;
   }
@@ -447,11 +468,11 @@ async function renderList(seq) {
         ${kpi("Complete", rows.filter((r) => r.status === "Complete").length, "status", "Complete")}
         ${kpi("Drafts", rows.filter((r) => r.status === "Draft").length, "status", "Draft")}
         ${kpi("VIP", rows.filter((r) => r.vip).length, "flag", "vip")}
-        ${kpi("LFA Owners", rows.filter((r) => r.lfa_owner).length, "flag", "lfa")}
+        ${kpi("LFA Owners", rows.filter((r) => lfaStatusOf(r) === "Owned").length, "flag", "lfa")}
         ${kpi("Need Follow Up", rows.filter((r) => r.needs_followup).length, "flag", "followup")}
       </div>
       <div class="filters">
-        <label class="search-box">${I.search}<input id="q" placeholder="Search name, dealer, vehicle, summary…" value="${escapeHtml(listState.q)}"></label>
+        <label class="search-box">${I.search}<input id="q" placeholder="Search name, ID, state, dealer, vehicle, bio…" value="${escapeHtml(listState.q)}"></label>
         <select id="f-status"><option value="">All statuses</option><option ${listState.status === "Draft" ? "selected" : ""}>Draft</option><option ${listState.status === "Complete" ? "selected" : ""}>Complete</option></select>
         <select id="f-dealer"><option value="">All dealers</option>${dealers.map((d) => `<option ${listState.dealer === d ? "selected" : ""}>${escapeHtml(d)}</option>`).join("")}</select>
         <select id="f-alloc"><option value="">Any outcome</option>${ALLOCATION_OPTIONS.map((o) => `<option ${listState.alloc === o ? "selected" : ""}>${o}</option>`).join("")}</select>
@@ -459,14 +480,15 @@ async function renderList(seq) {
       </div>
       <div class="table-wrap">
         ${list.length ? `<table class="crm-table">
-          <thead><tr>${th("Applicant", "name")}${th("Preferred Dealer", "preferred_dealer")}${th("Garage", "garage")}${th("Timing", "timing")}<th>Flags</th>${th("Status", "status")}${th("Outcome", "allocation")}${th("Interviewed By", "interviewed_by")}${th("Updated", "updated_at")}</tr></thead>
+          <thead><tr>${th("ID", "profile_no")}${th("Applicant", "name")}${th("Preferred Dealer", "preferred_dealer")}${th("Garage", "garage")}${th("Timing", "timing")}<th>Flags</th>${th("Status", "status")}${th("Outcome", "allocation")}${th("Interviewed By", "interviewed_by")}${th("Updated", "updated_at")}</tr></thead>
           <tbody>${list.map((r) => `
             <tr class="clickable-row" data-id="${r.id}">
-              <td><div class="cell-name">${escapeHtml(r.name)}</div><div class="cell-sub muted">${escapeHtml(r.age_range || "")}</div><div class="editing-note" data-ed="${r.id}">${escapeHtml(editingText(r.id))}</div></td>
+              <td><span class="muted" style="font-size:12px;white-space:nowrap">${escapeHtml(profileId(r))}</span></td>
+              <td><div class="cell-name">${escapeHtml(r.name)}</div><div class="cell-sub muted">${escapeHtml([r.age_range, location(r)].filter(Boolean).join(" · "))}</div><div class="editing-note" data-ed="${r.id}">${escapeHtml(editingText(r.id))}</div></td>
               <td>${escapeHtml(r.preferred_dealer || "")}</td>
               <td>${garageOf(r).length}<div class="cell-sub muted">${totalMiles(r) ? totalMiles(r).toLocaleString() + " mi/yr" : ""}</div></td>
-              <td>${escapeHtml(r.timing || "")}</td>
-              <td><div class="pill-row">${r.vip ? `<span class="pill pill-vip">${I.star}VIP</span>` : ""}${r.lfa_owner ? `<span class="pill pill-lfa">LFA</span>` : ""}${r.needs_followup ? `<span class="pill pill-followup" title="${escapeHtml(r.followup_note || "Needs another call")}">${I.phone}Follow up</span>` : ""}</div></td>
+              <td>${escapeHtml(r.target_quarter || r.timing || "")}</td>
+              <td><div class="pill-row">${r.vip ? `<span class="pill pill-vip">${I.star}VIP</span>` : ""}${lfaStatusOf(r) === "Owned" ? `<span class="pill pill-lfa">LFA</span>` : ""}${r.needs_followup ? `<span class="pill pill-followup" title="${escapeHtml(r.followup_note || "Needs another call")}">${I.phone}Follow up</span>` : ""}</div></td>
               <td><span class="pill pill-${r.status.toLowerCase()}">${r.status}</span></td>
               <td><span class="pill pill-alloc-${(r.allocation || "Pending").toLowerCase()}">${escapeHtml(r.allocation || "Pending")}</span></td>
               <td>${escapeHtml(r.interviewed_by || "")}<div class="cell-sub muted">${r.interview_date ? fmtDate(r.interview_date) : ""}</div></td>
@@ -510,20 +532,31 @@ function exportExcel(rows) {
 }
 
 function appendApplicantSheets(wb, rows) {
-  const people = rows.map((r) => ({
-    Name: r.name, Status: r.status, "Age Range": r.age_range, "Preferred Dealer": r.preferred_dealer,
-    VIP: r.vip ? "Yes" : "No", "LFA Owner": r.lfa_owner ? "Yes" : "No",
-    "Social Media": r.social_media, "TMNA Relationship": r.tmna_relationship, Summary: r.summary,
-    "HPDE Level": r.hpde_level, "HPDE Details": r.hpde_experience, "Race Level": r.race_level, "Race Details": r.race_experience, "Key Events": r.key_events, "What Drives Them": r.what_drives_you,
-    "Vehicles": garageOf(r).length, "Combined Miles/Yr": totalMiles(r),
-    "Previous Toyota/Lexus": r.previous_toyota_lexus, "Recent Flips": r.has_flips === true ? "Yes" : r.has_flips === false ? "No" : "", "Flip Details": r.recent_flips,
-    Timing: r.timing, "Spec Consideration": r.spec_consideration, "GR GT Use": (r.gt_usage || []).join(", "), "Intended Use": r.intended_use,
-    "Allocation Outcome": r.allocation || "Pending", "Needs Follow Up": r.needs_followup ? "Yes" : "No", "Follow Up Note": r.followup_note,
+  const hist = (list) => rowsOf(list, "model").map((h) => `${[h.year, h.model].filter(Boolean).join(" ")}${Number(h.held) ? ` (${h.held}y)` : ""}${h.note ? `: ${h.note}` : ""}`).join("; ");
+  const people = rows.map((r) => {
+    const u = usageSplitOf(r) || {};
+    return {
+    "Profile ID": profileId(r), Name: r.name, Status: r.status, "Age Range": r.age_range, City: r.city, State: r.state, "Preferred Dealer": r.preferred_dealer,
+    VIP: r.vip ? "Yes" : "No", "LFA Experience": lfaStatusOf(r), "LFA Note": r.lfa_note,
+    "Social Media": rowsOf(r.socials, "handle").map((x) => `${x.platform || ""} ${x.handle}${Number(x.followers) ? ` (${fmtK(x.followers)})` : ""}`.trim()).join("; ") || r.social_media,
+    "TMNA Relationships": linesOf(r.tmna_relationship).join("; "), "Clubs": linesOf(r.clubs).join("; "), Bio: r.summary, "What Drives Them": r.what_drives_you,
+    "HPDE Level": r.hpde_level, "HPDE Details": r.hpde_experience, "Race Level": r.race_level, "Racing Series": (r.race_series || []).join(", "), "Race Details": r.race_experience,
+    "Years on Track": r.years_on_track ?? null, "Track Days": r.track_days ?? null, "Key Events": linesOf(r.key_events).join("; "),
+    "Driver Style (0 numbers, 100 experience)": r.driver_style ?? null, "Driver Style Note": r.driver_style_note,
+    "Vehicles": garageOf(r).length, "Combined Miles/Yr": totalMiles(r), "Avg Ownership (yrs)": avgOwnership(r),
+    "Toyota/Lexus History": hist(r.toyota_history) || r.previous_toyota_lexus, "Significant Past Cars": hist(r.past_cars),
+    "Recent Flips": r.has_flips === true ? "Yes" : r.has_flips === false ? "No" : "", "Flip Details": r.recent_flips,
+    "Why the GR GT": r.intended_use, ...Object.fromEntries(USAGE_SPLIT.map(([k, l]) => [`${l} %`, u[k] ?? null])), "Usage Note": r.usage_note,
+    "Target Quarter": r.target_quarter, "Timing Flexibility": r.timing_flex, "Timing Note": r.timing_note, "Timing (older answer)": r.timing,
+    "Spec Considerations": rowsOf(r.spec_tags, "label").map((t) => t.label + (t.priority ? " (priority)" : "")).join(", ") || r.spec_consideration,
+    "Cross Shopping": rowsOf(r.cross_shop, "model").map((c) => `${c.model}${c.status ? ` (${c.status})` : ""}`).join("; "),
+    "Concierge Rec": r.concierge_rec, "Assessment": r.assessment, Strengths: linesOf(r.strengths).join("; "), Flags: linesOf(r.concerns).join("; "),
+    "Leadership Decision": r.allocation || "Pending", "Needs Follow Up": r.needs_followup ? "Yes" : "No", "Follow Up Note": r.followup_note,
     "Call Notes": r.call_notes, "Interviewed By": r.interviewed_by, "Interview Date": r.interview_date ? new Date(r.interview_date + "T12:00:00") : null,
     "Last Updated": r.updated_at ? new Date(r.updated_at) : null,
-  }));
+  }; });
   const garage = [];
-  rows.forEach((r) => garageOf(r).forEach((g) => garage.push({ Applicant: r.name, Vehicle: g.vehicle, Year: g.year || splitVehicle(g.vehicle).year, Make: g.make || makeOf(g.vehicle), Model: g.model || splitVehicle(g.vehicle).model, Usage: (g.usage || []).join(", "), "Miles/Yr": Number(g.miles) || null })));
+  rows.forEach((r) => garageOf(r).forEach((g) => garage.push({ "Profile ID": profileId(r), Applicant: r.name, Vehicle: g.vehicle, Year: g.year || splitVehicle(g.vehicle).year, Make: g.make || makeOf(g.vehicle), Model: g.model || splitVehicle(g.vehicle).model, Usage: (g.usage || []).join(", "), "Miles/Yr": Number(g.miles) || null, "Year Acquired": g.acquired || null, "How It's Used": g.use_note || "" })));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(people, { cellDates: true }), "Applicants");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(garage), "Garages");
 }
@@ -550,18 +583,24 @@ async function renderEditor(route, seq) {
   const setDirty = (v) => { edDirty = v; if (seq === renderSeq) dirty = v; };
   if (record) setEditing(record.id);
   const notesOpen = store.get("gtap-notes-open") !== false;
-  let a = record ? JSON.parse(JSON.stringify(record)) : blankApplicant();
-  if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [{ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" }];
+  const localDraft = store.get(draftKey);
+  const restoring = restoreDraftFor === draftKey && localDraft;
+  restoreDraftFor = null;
+  let a = restoring ? Object.assign({}, localDraft.data, record ? { id: record.id, updated_at: record.updated_at } : {})
+    : record ? JSON.parse(JSON.stringify(record)) : blankApplicant();
+  if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [blankCar()];
   a.garage.forEach((g) => {
     if (g.vehicle && !g.model && !g.year) {
       const p = splitVehicle(g.vehicle);
       g.year = p.year; g.model = p.model; g.make = g.make || p.make;
     }
   });
+  ["socials", "race_series", "toyota_history", "past_cars", "spec_tags", "cross_shop"].forEach((k) => { if (!Array.isArray(a[k])) a[k] = []; });
+  if (!a.socials.length) a.socials.push({ platform: "Instagram", handle: "", note: "", followers: "" });
   if (!a.allocation) a.allocation = "Pending";
+  if (!a.lfa_status && a.lfa_owner) a.lfa_status = "Owned";
 
-  const localDraft = store.get(draftKey);
-  const draftIsNewer = localDraft && (!record || new Date(localDraft.savedAt) > new Date(record.updated_at));
+  const draftIsNewer = !restoring && localDraft && (!record || new Date(localDraft.savedAt) > new Date(record.updated_at));
 
   const field = (key, label, opts = {}) => {
     const v = a[key] ?? "";
@@ -572,8 +611,8 @@ async function renderEditor(route, seq) {
       const optsList = v && !opts.options.includes(v) ? [...opts.options, v] : opts.options;
       input = `<select data-f="${key}">${opts.noBlank ? "" : `<option value=""></option>`}${optsList.map((o) => `<option ${o === v ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
     }
-    else input = `<input type="${opts.type || "text"}" data-f="${key}" value="${escapeHtml(v)}" placeholder="${opts.ph || ""}" ${opts.list ? `list="${opts.list}"` : ""} autocomplete="off">`;
-    return `<div class="form-field ${opts.span ? "span-2" : ""}"><label>${label}${hint}</label>${input}</div>`;
+    else input = `<input type="${opts.type || "text"}" data-f="${key}" value="${escapeHtml(v)}" placeholder="${opts.ph || ""}" ${opts.list ? `list="${opts.list}"` : ""} ${opts.min != null ? `min="${opts.min}"` : ""} ${opts.step ? `step="${opts.step}"` : ""} autocomplete="off">`;
+    return `<div class="form-field ${opts.span ? "span-2" : ""}"><label>${label}${hint}</label>${input}${opts.after || ""}</div>`;
   };
   const toggle = (key, label, sub) => `
     <label class="toggle-card ${a[key] ? "on" : ""}" data-toggle="${key}">
@@ -581,16 +620,108 @@ async function renderEditor(route, seq) {
       <span class="tc-box">${I.check}</span>
       <span><div class="tc-label">${label}</div><div class="tc-sub">${sub}</div></span>
     </label>`;
+  // an older free text answer, shown only when there is one, so nothing already typed is lost
+  const legacy = (key, label) => (String(a[key] ?? "").trim() ? field(key, label, { type: "textarea", rows: 2, span: true, hint: "(from before this section changed; move it into the fields above, then clear it)" }) : "");
+
+  // ----- repeating rows (social media, car history, cross shopping) -----
+  const ROW_DEFS = {
+    socials: { blank: () => ({ platform: "Instagram", handle: "", note: "", followers: "" }), add: "Add account", cols: [
+      { k: "platform", type: "select", options: SOCIAL_PLATFORMS, w: "130px" },
+      { k: "handle", ph: "@handle or channel name", w: "1fr" },
+      { k: "note", ph: "What they post, e.g. Track days, builds", w: "1.3fr" },
+      { k: "followers", type: "number", ph: "Followers", w: "110px" },
+    ] },
+    toyota_history: { blank: () => ({ year: "", model: "", held: "", note: "" }), add: "Add Toyota or Lexus", cols: [
+      { k: "year", ph: "Year", w: "70px", num: true },
+      { k: "model", ph: "Model, e.g. Lexus IS F", w: "1.2fr" },
+      { k: "held", type: "number", ph: "Years held", w: "100px" },
+      { k: "note", ph: "Note, e.g. Traded for the 6MT", w: "1fr" },
+    ] },
+    past_cars: { blank: () => ({ year: "", model: "", held: "", note: "" }), add: "Add past car", cols: [
+      { k: "year", ph: "Year", w: "70px", num: true },
+      { k: "model", ph: "Make and model, e.g. BMW M3 (E92)", w: "1.2fr" },
+      { k: "held", type: "number", ph: "Years held", w: "100px" },
+      { k: "note", ph: "Note", w: "1fr" },
+    ] },
+    cross_shop: { blank: () => ({ model: "", status: "", note: "" }), add: "Add a car they're considering", cols: [
+      { k: "model", ph: "Model, e.g. Porsche 911 GT3", w: "1.3fr" },
+      { k: "status", type: "select", options: CROSS_STATUSES, w: "140px" },
+      { k: "note", ph: "Note, e.g. Keeping it", w: "1fr" },
+    ] },
+  };
+  const rowsBlock = (key) => `<div class="rows-ed" data-rows="${key}"></div><button type="button" class="btn btn-sm" data-add-row="${key}">${I.plus}${ROW_DEFS[key].add}</button>`;
+  function drawRows(key) {
+    const def = ROW_DEFS[key];
+    const box = main.querySelector(`[data-rows="${key}"]`);
+    if (!box) return;
+    const tpl = `${def.cols.map((c) => c.w).join(" ")} 32px`;
+    box.innerHTML = a[key].map((r, i) => `
+      <div class="row-ed" data-i="${i}" style="grid-template-columns:${tpl}">
+        ${def.cols.map((c) => c.type === "select"
+          ? `<select data-rc="${c.k}"><option value=""></option>${c.options.map((o) => `<option ${r[c.k] === o ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`
+          : `<input data-rc="${c.k}" ${c.type === "number" ? `type="number" min="0"` : ""} ${c.num ? `inputmode="numeric" maxlength="4"` : ""} value="${escapeHtml(r[c.k] ?? "")}" placeholder="${c.ph || ""}">`).join("")}
+        <button type="button" class="icon-btn" data-rm-row title="Remove">${I.trash}</button>
+      </div>`).join("");
+  }
+  function onRowInput(e) {
+    const el = e.target.closest("[data-rc]"); if (!el) return false;
+    const box = el.closest("[data-rows]"), row = el.closest(".row-ed");
+    const key = box.dataset.rows, k = el.dataset.rc;
+    const col = ROW_DEFS[key].cols.find((c) => c.k === k);
+    let v = el.value;
+    if (col.num) { v = v.replace(/[^0-9]/g, "").slice(0, 4); if (el.value !== v) el.value = v; }
+    a[key][+row.dataset.i][k] = col.type === "number" ? (v === "" ? "" : Number(v)) : v;
+    updateProgress(); markDirty();
+    return true;
+  }
+
+  // ----- tags (racing series, spec considerations) -----
+  const tagBlock = (key, ph, list) => `<div class="tag-ed" data-tags="${key}"><div class="tag-list"></div><input class="tag-in" placeholder="${ph}" ${list ? `list="${list}"` : ""}></div>`;
+  const tagLabel = (key, t) => (key === "spec_tags" ? t.label : t);
+  function drawTags(key) {
+    const box = main.querySelector(`[data-tags="${key}"] .tag-list`);
+    if (!box) return;
+    box.innerHTML = a[key].map((t, i) => `<span class="tag-chip ${key === "spec_tags" && t.priority ? "pri" : ""}" data-i="${i}">${key === "spec_tags" ? `<button type="button" class="tag-star" data-star title="Mark as their priority">${I.star}</button>` : ""}${escapeHtml(tagLabel(key, t))}<button type="button" class="tag-x" data-untag title="Remove">✕</button></span>`).join("");
+  }
+  function addTag(key, raw) {
+    const v = raw.trim(); if (!v) return;
+    if (a[key].some((t) => tagLabel(key, t).toLowerCase() === v.toLowerCase())) return;
+    a[key].push(key === "spec_tags" ? { label: v, priority: false } : v);
+    drawTags(key); markDirty();
+  }
+
+  // ----- intended usage split -----
+  const splitBlock = () => `
+    <div class="split-ed">${USAGE_SPLIT.map(([k, l]) => `<label class="split-in"><span>${l}</span><span class="pct-wrap"><input type="number" min="0" max="100" step="5" data-split="${k}" value="${a.usage_split && a.usage_split[k] !== "" && a.usage_split[k] != null ? a.usage_split[k] : ""}" placeholder="0"><i>%</i></span></label>`).join("")}
+      <div class="split-total" id="split-total"></div></div>`;
+  function paintSplitTotal() {
+    const t = splitTotal(a), el = main.querySelector("#split-total");
+    if (!el) return;
+    el.className = `split-total ${t === 100 ? "ok" : t ? "off" : ""}`;
+    el.innerHTML = t === 100 ? `${I.check}Adds up to 100%` : t ? `Total ${t}%, needs to add up to 100%` : "Enter how their time with the car splits, adding up to 100%";
+  }
+
+  // ----- driver style slider -----
+  const styleSet = () => a.driver_style !== null && a.driver_style !== "" && a.driver_style !== undefined;
+  const sliderBlock = () => `
+    <div class="style-ed ${styleSet() ? "" : "unset"}" id="style-ed">
+      <div class="style-ends"><span>Raw numbers</span><span>Overall experience</span></div>
+      <input type="range" min="0" max="100" step="5" id="style-range" value="${styleSet() ? a.driver_style : 50}">
+      <div class="style-foot"><b id="style-label">${styleSet() ? driverStyleLabel(a.driver_style) : "Not set yet. Drag the slider to set it."}</b><button type="button" class="btn btn-ghost btn-sm" id="style-clear" ${styleSet() ? "" : "hidden"}>Clear</button></div>
+    </div>`;
+
+  const bioCount = () => { const n = (a.summary || "").length; return `${n.toLocaleString()} / ~${BIO_FITS.toLocaleString()} characters fit on the PDF`; };
 
   main.innerHTML = `
     <datalist id="dealer-list">${dealerNames.map((t) => `<option value="${escapeHtml(t)}">`).join("")}</datalist>
     <datalist id="make-list">${COMMON_MAKES.map((t) => `<option value="${t}">`).join("")}</datalist>
+    <datalist id="series-list">${RACE_SERIES.map((t) => `<option value="${t}">`).join("")}</datalist>
     <div class="editor-bar">
       <div class="editor-title">
         <a href="#/" class="back-btn" title="Back to all applicants">${I.back}</a>
         <div class="avatar" id="ed-avatar">${escapeHtml(initials(a.name))}</div>
         <div style="min-width:0">
-          <div class="editor-name" id="ed-name">${escapeHtml(a.name) || "New applicant"}</div>
+          <div class="editor-name"><span id="ed-name">${escapeHtml(a.name) || "New applicant"}</span><span class="ed-id" id="ed-id">${escapeHtml(profileId(record || {}))}</span></div>
           <div class="save-state ${isNew ? "" : "saved"}" id="save-state"><span class="dot"></span><span>${isNew ? "Not saved yet · autosaves once a name is entered" : `Saved ${timeAgo(record.updated_at)}${record.updated_by_name ? " by " + escapeHtml(record.updated_by_name) : ""}`}</span></div>
           <div class="presence-note" id="presence-note"></div>
         </div>
@@ -619,16 +750,24 @@ async function renderEditor(route, seq) {
           <div class="form-grid">
             ${field("name", "Name", { ph: "First and last name" })}
             ${field("age_range", "Age Range", { type: "select", options: AGE_RANGES })}
+            ${field("city", "City", { ph: "City only, no street address" })}
+            ${field("state", "State", { type: "select", options: US_STATES })}
             ${field("preferred_dealer", "Preferred Dealer", { ph: "Start typing to pick an existing dealer", list: "dealer-list" })}
-            ${field("social_media", "Social Media Accounts", { type: "textarea", rows: 2, ph: "One per line, e.g. Instagram @handle" })}
-            ${field("tmna_relationship", "Relationships / Affiliation with TMNA", { type: "textarea", rows: 2, span: true, ph: "Who they know, prior programs, events, ambassador roles…" })}
-            <div class="span-2">${toggle("vip", "VIP", "Flag this applicant as a VIP")}</div>
+            <div class="form-field"><label>&nbsp;</label>${toggle("vip", "VIP", "Shows as a VIP badge on the PDF")}</div>
+            ${field("summary", "Bio", { type: "textarea", rows: 9, span: true, ph: "Who they are, how they got into driving, their relationship with Toyota and Lexus. Leave a blank line between paragraphs.", after: `<div class="field-foot" id="bio-count">${bioCount()}</div>` })}
+            ${field("what_drives_you", "What Drives You", { type: "textarea", rows: 2, span: true, hint: "(in their words; quoted at the top of the PDF)" })}
           </div>
         </section>
 
-        <section class="form-section" id="sec-summary">
-          <header><div><div class="sec-kicker">02</div><h2>${I.text}Summary</h2></div></header>
-          ${field("summary", "Short summary of the applicant", { type: "textarea", rows: 4, ph: "Two or three sentences on who they are and why they stand out." })}
+        <section class="form-section" id="sec-social">
+          <header><div><div class="sec-kicker">02</div><h2>${I.users}Social &amp; Connections</h2></div></header>
+          <div class="form-field"><label>Social Media <span class="hint">(follower counts can be filled in after the call; the PDF shows them as of the interview date)</span></label></div>
+          ${rowsBlock("socials")}
+          <div class="form-grid" style="margin-top:16px">
+            ${field("tmna_relationship", "TMC / TMNA Relationships", { type: "textarea", rows: 3, hint: "(one per line)", ph: "Former Tier 1 supplier executive (2014 to 2019)\nLexus Owner Advisory Panel since 2021" })}
+            ${field("clubs", "Track & Driving Clubs", { type: "textarea", rows: 3, hint: "(one per line)", ph: "NASA Arizona Region\nPorsche Club of America, Zone 8" })}
+            ${legacy("social_media", "Social Media notes")}
+          </div>
         </section>
 
         <section class="form-section" id="sec-motorsports">
@@ -636,34 +775,62 @@ async function renderEditor(route, seq) {
           <div class="form-grid">
             ${field("hpde_level", "HPDE Level", { type: "select", options: HPDE_LEVELS })}
             ${field("race_level", "Race Level", { type: "select", options: RACE_LEVELS })}
-            ${field("hpde_experience", "HPDE Details", { type: "textarea", ph: "Tracks, how often, run group" })}
-            ${field("race_experience", "Race Details", { type: "textarea", ph: "Series, license, results" })}
-            ${field("key_events", "Key Motorsports Events Attended", { type: "textarea", span: true, ph: "Le Mans, Rolex 24, Monterey Car Week, GR Academy…" })}
-            ${field("what_drives_you", "What Drives You", { type: "textarea", span: true, ph: "In their words, what they love about driving and the hobby" })}
+            ${field("years_on_track", "Years on Track", { type: "number", min: 0, step: "1" })}
+            ${field("track_days", "Total Track Days", { type: "number", min: 0, step: "1", hint: "(best estimate)" })}
+            ${field("hpde_experience", "HPDE Details", { type: "textarea", ph: "Tracks, how often, run group, instructor certifications" })}
+            <div class="form-field"><label>Racing Series <span class="hint">(type and press Enter)</span></label>${tagBlock("race_series", "e.g. NASA Competition", "series-list")}</div>
+            ${field("race_experience", "Race Details", { type: "textarea", span: true, ph: "Series, license, results" })}
+            ${field("key_events", "Key Motorsports Events Attended", { type: "textarea", span: true, hint: "(one per line)", ph: "Rolex 24 at Daytona\nMonterey Car Week" })}
+            <div class="form-field span-2"><label>Raw Numbers vs. Overall Experience <span class="hint">(what matters more to them in a car)</span></label>${sliderBlock()}</div>
+            ${field("driver_style_note", "Driver Style Note", { type: "textarea", rows: 2, span: true, ph: "Reads spec sheets but rarely quotes them. Values steering feel over peak horsepower." })}
           </div>
         </section>
 
         <section class="form-section" id="sec-car">
           <header><div><div class="sec-kicker">04</div><h2>${I.car}Car Profile</h2></div><span class="garage-total" id="garage-total"></span></header>
-          <div class="form-field"><label>Current Garage <span class="hint">(how each is used and miles per year)</span></label></div>
-          <div class="garage-head"><span></span><span>Year</span><span>Make</span><span>Model</span><span>How it's used</span><span>Miles / yr</span><span></span></div>
+          <div class="form-field"><label>Current Garage <span class="hint">(year acquired is used for average ownership)</span></label></div>
+          <div class="garage-head"><span></span><span>Year</span><span>Make</span><span>Model</span><span>Use</span><span>Miles / yr</span><span></span></div>
           <div class="garage-list" id="garage-list"></div>
           <button type="button" class="btn" id="add-car">${I.plus}Add vehicle</button>
           <div class="form-grid" style="margin-top:18px">
-            <div class="span-2">${toggle("lfa_owner", "LFA Ownership", "Currently owns or has owned a Lexus LFA")}</div>
-            ${field("previous_toyota_lexus", "Previous Toyota / Lexus Vehicles", { type: "textarea" })}
+            ${field("lfa_status", "Previous LFA Experience", { type: "select", options: LFA_STATUSES })}
+            ${field("lfa_note", "LFA Note", { type: "textarea", rows: 2, ph: "Drove one at the 2012 Lexus Performance Driving School…" })}
+          </div>
+          <div class="form-field" style="margin-top:16px"><label>Toyota / Lexus History <span class="hint">(cars they've owned)</span></label></div>
+          ${rowsBlock("toyota_history")}
+          <div class="form-field" style="margin-top:16px"><label>Significant Past Cars <span class="hint">(other makes worth noting)</span></label></div>
+          ${rowsBlock("past_cars")}
+          <div class="form-grid" style="margin-top:16px">
+            ${legacy("previous_toyota_lexus", "Previous Toyota / Lexus notes")}
             <div class="form-field"><label>Any Recent Vehicle Flips?</label><select data-f="has_flips"><option value=""></option><option value="yes" ${a.has_flips === true ? "selected" : ""}>Yes</option><option value="no" ${a.has_flips === false ? "selected" : ""}>No</option></select></div>
-            ${field("recent_flips", "Flip Details", { type: "textarea", span: true, ph: "What was bought and resold, and how quickly" })}
+            ${field("recent_flips", "Flip Details", { type: "textarea", rows: 2, ph: "What was bought and resold, and how quickly" })}
           </div>
         </section>
 
         <section class="form-section" id="sec-buyer">
           <header><div><div class="sec-kicker">05</div><h2>${I.target}Buyer Profile</h2></div></header>
           <div class="form-grid">
-            ${field("timing", "Timing", { type: "select", options: TIMING_SUGGESTIONS })}
-            ${field("spec_consideration", "Spec Consideration", { type: "textarea", rows: 2, ph: "Color, options, packages" })}
-            <div class="form-field span-2"><label>How they plan to use the GR GT <span class="hint">(pick all that apply)</span></label><div class="use-chips" id="gt-use"></div></div>
-            ${field("intended_use", "Why do they want the GR GT? (Intended use)", { type: "textarea", rows: 3, span: true })}
+            ${field("intended_use", "Why the GR GT", { type: "textarea", rows: 3, span: true, ph: "Why this car, and what they want to do with it" })}
+            <div class="form-field span-2"><label>Intended Usage</label>${splitBlock()}</div>
+            ${field("usage_note", "Usage Note", { span: true, ph: "One line, e.g. Primarily driven: HPDE and track days, plus long distance GT touring" })}
+            ${field("target_quarter", "Target Delivery Quarter", { type: "select", options: quarterOptions() })}
+            ${field("timing_flex", "Flexibility", { type: "select", options: TIMING_FLEX })}
+            ${field("timing_note", "Timing Note", { type: "textarea", rows: 2, span: true, ph: "Wants delivery before the summer track season…", hint: a.timing ? `(earlier answer: ${escapeHtml(a.timing)})` : "" })}
+            <div class="form-field span-2"><label>Spec Considerations <span class="hint">(type and press Enter; click the star on their top priority)</span></label>${tagBlock("spec_tags", "e.g. Carbon ceramic brakes")}</div>
+            ${legacy("spec_consideration", "Spec Consideration notes")}
+          </div>
+          <div class="form-field" style="margin-top:16px"><label>Cross Shopping</label></div>
+          ${rowsBlock("cross_shop")}
+        </section>
+
+        <section class="form-section" id="sec-assess">
+          <header><div><div class="sec-kicker">06</div><h2>${I.check}Concierge Assessment</h2></div></header>
+          <div class="form-grid">
+            ${field("concierge_rec", "Concierge Recommendation", { type: "select", options: DECISIONS })}
+            <div></div>
+            ${field("assessment", "Assessment", { type: "textarea", rows: 3, span: true, ph: "Two or three sentences for leadership on why they're a fit (or not)." })}
+            ${field("strengths", "Strengths", { type: "textarea", rows: 3, hint: "(one per line, shown with +)", ph: "Average hold of 4.9 yrs; no sale inside 3 yrs" })}
+            ${field("concerns", "Flags", { type: "textarea", rows: 3, hint: "(one per line, shown with !)", ph: "Confirm preferred dealer is GR GT certified" })}
           </div>
         </section>
 
@@ -672,7 +839,7 @@ async function renderEditor(route, seq) {
           <div class="form-grid">
             ${field("interviewed_by", "Interviewed By", { type: "select", options: team.map((t) => t.full_name).filter(Boolean) })}
             ${field("interview_date", "Interview Date", { type: "date" })}
-            ${field("allocation", "Allocation Outcome", { type: "select", options: ALLOCATION_OPTIONS, noBlank: true, hint: "(set once the EVP decides)" })}
+            ${field("allocation", "Leadership Decision", { type: "select", options: ALLOCATION_OPTIONS, noBlank: true, hint: "(set once leadership decides)" })}
             <div class="span-2">${toggle("needs_followup", "Needs another call", "Flag this guest for a follow up call")}</div>
             <div class="span-2" id="followup-note-wrap" ${a.needs_followup ? "" : "hidden"}>${field("followup_note", "What to follow up on", { type: "textarea", rows: 2, ph: "What's left to cover, best time to call back…" })}</div>
           </div>
@@ -691,7 +858,7 @@ async function renderEditor(route, seq) {
       <aside class="notes-panel" id="notes-panel">
         <div class="np-head"><h3>${I.notes}Call Notes</h3><button type="button" class="icon-btn" id="notes-close" title="Hide notes">✕</button></div>
         <textarea data-f="call_notes" placeholder="Jot things down while they talk, then sort them into the form after the call.">${escapeHtml(a.call_notes || "")}</textarea>
-        <div class="np-foot muted">Saved with the profile. Not included in the summary or Bio.</div>
+        <div class="np-foot muted">Saved with the profile. Not included in the summary or PDF.</div>
       </aside>
     </div>`;
 
@@ -710,23 +877,27 @@ async function renderEditor(route, seq) {
         <div class="use-chips">${USAGE_OPTIONS.map((u) => `<button type="button" class="use-chip ${(g.usage || []).includes(u) ? "on" : ""}" data-use="${u}">${u}</button>`).join("")}</div>
         <input data-g="miles" type="number" min="0" step="500" value="${escapeHtml(g.miles ?? "")}" placeholder="Miles">
         <button type="button" class="icon-btn" data-rm title="Remove">${I.trash}</button>
+        <div class="g-extra">
+          <input data-g="acquired" value="${escapeHtml(g.acquired ?? "")}" placeholder="Year acquired" inputmode="numeric" maxlength="4">
+          <input data-g="use_note" value="${escapeHtml(g.use_note || "")}" placeholder="How it's used, e.g. Primary track car, about 10 events a year">
+        </div>
       </div>`).join("");
     updateGarageTotal();
   }
   function updateGarageTotal() {
-    const n = garageOf(a).length, m = totalMiles(a);
-    main.querySelector("#garage-total").textContent = n ? `${n} vehicle${n === 1 ? "" : "s"}${m ? ` · ${m.toLocaleString()} mi/yr combined` : ""}` : "";
+    const n = garageOf(a).length, m = totalMiles(a), avg = avgOwnership(a);
+    main.querySelector("#garage-total").textContent = n ? `${n} vehicle${n === 1 ? "" : "s"}${m ? ` · ${m.toLocaleString()} mi/yr combined` : ""}${avg ? ` · ${avg} yr average ownership` : ""}` : "";
   }
   main.querySelector("#garage-list").addEventListener("input", (e) => {
     const row = e.target.closest(".garage-row"); if (!row) return;
     const g = a.garage[+row.dataset.i];
     const k = e.target.dataset.g;
-    if (k === "year" || k === "make" || k === "model") {
-      g[k] = k === "year" ? e.target.value.replace(/[^0-9]/g, "").slice(0, 4) : e.target.value;
-      if (k === "year" && e.target.value !== g.year) e.target.value = g.year;
-      g.vehicle = composeVehicle(g);
-    }
-    if (e.target.dataset.g === "miles") g.miles = e.target.value === "" ? "" : Number(e.target.value);
+    if (k === "year" || k === "acquired") {
+      g[k] = e.target.value.replace(/[^0-9]/g, "").slice(0, 4);
+      if (e.target.value !== g[k]) e.target.value = g[k];
+    } else if (k === "make" || k === "model" || k === "use_note") g[k] = e.target.value;
+    if (k === "year" || k === "make" || k === "model") g.vehicle = composeVehicle(g);
+    if (k === "miles") g.miles = e.target.value === "" ? "" : Number(e.target.value);
     updateGarageTotal(); markDirty();
   });
   main.querySelector("#garage-list").addEventListener("click", (e) => {
@@ -743,35 +914,85 @@ async function renderEditor(route, seq) {
     }
     if (e.target.closest("[data-rm]")) {
       a.garage.splice(i, 1);
-      if (!a.garage.length) a.garage.push({ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" });
+      if (!a.garage.length) a.garage.push(blankCar());
       drawGarage(); markDirty();
     }
   });
   main.querySelector("#add-car").addEventListener("click", () => {
-    a.garage.push({ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" });
+    a.garage.push(blankCar());
     drawGarage();
     const rows = main.querySelectorAll(".garage-row");
     rows[rows.length - 1].querySelector("input").focus();
   });
   drawGarage();
 
-  // ----- GR GT intended use chips -----
-  function drawGtUse() {
-    if (!Array.isArray(a.gt_usage)) a.gt_usage = [];
-    main.querySelector("#gt-use").innerHTML = GT_USE_OPTIONS.map((u) => `<button type="button" class="use-chip ${a.gt_usage.includes(u) ? "on" : ""}" data-gtuse="${u}">${u}</button>`).join("");
-  }
-  main.querySelector("#gt-use").addEventListener("click", (e) => {
-    const chip = e.target.closest("[data-gtuse]"); if (!chip) return;
-    const u = chip.dataset.gtuse, at = a.gt_usage.indexOf(u);
-    at >= 0 ? a.gt_usage.splice(at, 1) : a.gt_usage.push(u);
-    a.gt_usage.sort((x, y) => GT_USE_OPTIONS.indexOf(x) - GT_USE_OPTIONS.indexOf(y));
-    chip.classList.toggle("on", at < 0);
+  // ----- rows, tags, usage split, slider -----
+  Object.keys(ROW_DEFS).forEach(drawRows);
+  ["race_series", "spec_tags"].forEach(drawTags);
+  paintSplitTotal();
+  main.addEventListener("click", (e) => {
+    const add = e.target.closest("[data-add-row]");
+    if (add) {
+      const key = add.dataset.addRow;
+      a[key].push(ROW_DEFS[key].blank());
+      drawRows(key);
+      const rows = main.querySelectorAll(`[data-rows="${key}"] .row-ed`);
+      const last = rows[rows.length - 1];
+      (last.querySelector("input") || last.querySelector("select")).focus();
+      return;
+    }
+    const rm = e.target.closest("[data-rm-row]");
+    if (rm) {
+      const key = rm.closest("[data-rows]").dataset.rows;
+      a[key].splice(+rm.closest(".row-ed").dataset.i, 1);
+      drawRows(key); updateGarageTotal(); updateProgress(); markDirty();
+      return;
+    }
+    const chip = e.target.closest(".tag-chip");
+    if (chip) {
+      const key = chip.closest("[data-tags]").dataset.tags, i = +chip.dataset.i;
+      if (e.target.closest("[data-untag]")) { a[key].splice(i, 1); drawTags(key); markDirty(); }
+      else if (e.target.closest("[data-star]")) { a[key][i].priority = !a[key][i].priority; drawTags(key); markDirty(); }
+      return;
+    }
+    const tagBox = e.target.closest("[data-tags]");
+    if (tagBox) tagBox.querySelector(".tag-in").focus();
+  });
+  main.addEventListener("keydown", (e) => {
+    const inp = e.target.closest(".tag-in"); if (!inp) return;
+    const key = inp.closest("[data-tags]").dataset.tags;
+    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(key, inp.value); inp.value = ""; }
+    else if (e.key === "Backspace" && !inp.value && a[key].length) { a[key].pop(); drawTags(key); markDirty(); }
+  });
+  // picking from the suggestion list, or leaving the box, adds what was typed
+  main.addEventListener("change", (e) => { const inp = e.target.closest(".tag-in"); if (inp && inp.value.trim()) { addTag(inp.closest("[data-tags]").dataset.tags, inp.value); inp.value = ""; } });
+  const styleEd = main.querySelector("#style-ed");
+  main.querySelector("#style-range").addEventListener("input", (e) => {
+    a.driver_style = Number(e.target.value);
+    styleEd.classList.remove("unset");
+    main.querySelector("#style-label").textContent = driverStyleLabel(a.driver_style);
+    main.querySelector("#style-clear").hidden = false;
     markDirty();
   });
-  drawGtUse();
+  main.querySelector("#style-clear").addEventListener("click", () => {
+    a.driver_style = null;
+    styleEd.classList.add("unset");
+    main.querySelector("#style-range").value = 50;
+    main.querySelector("#style-label").textContent = "Not set yet. Drag the slider to set it.";
+    main.querySelector("#style-clear").hidden = true;
+    markDirty();
+  });
 
   // ----- plain fields -----
   main.addEventListener("input", (e) => {
+    if (onRowInput(e)) return;
+    const sp = e.target.dataset?.split;
+    if (sp) {
+      a.usage_split = Object.assign({}, a.usage_split || {});
+      a.usage_split[sp] = e.target.value === "" ? "" : Math.max(0, Math.min(100, Number(e.target.value)));
+      paintSplitTotal(); markDirty();
+      return;
+    }
     const k = e.target.dataset?.f;
     if (!k) return;
     if (BOOL_FIELDS.includes(k) || k === "has_flips") return;
@@ -781,9 +1002,12 @@ async function renderEditor(route, seq) {
       main.querySelector("#ed-avatar").textContent = initials(a.name);
       e.target.classList.remove("invalid");
     }
+    if (k === "summary") main.querySelector("#bio-count").textContent = bioCount();
+    if (k === "summary") main.querySelector("#bio-count").classList.toggle("over", (a.summary || "").length > BIO_FITS);
     markDirty();
   });
   main.addEventListener("change", (e) => {
+    if (e.target.closest("[data-rc]")) return;
     const k = e.target.dataset?.f;
     if (!k) return;
     if (k === "has_flips") { a.has_flips = e.target.value === "yes" ? true : e.target.value === "no" ? false : null; markDirty(); return; }
@@ -794,6 +1018,7 @@ async function renderEditor(route, seq) {
     } else a[k] = e.target.value;
     markDirty();
   });
+  main.querySelector("#bio-count").classList.toggle("over", (a.summary || "").length > BIO_FITS);
 
   // ----- section nav: progress + scroll spy -----
   function updateProgress() {
@@ -831,22 +1056,9 @@ async function renderEditor(route, seq) {
 
   if (draftIsNewer) {
     main.querySelector("#draft-discard").addEventListener("click", () => { store.del(draftKey); main.querySelector("#draft-banner").remove(); });
-    main.querySelector("#draft-restore").addEventListener("click", () => {
-      const keep = { id: a.id, updated_at: a.updated_at };
-      a = Object.assign({}, localDraft.data, keep);
-      // repaint fields
-      TEXT_FIELDS.forEach((k) => main.querySelectorAll(`[data-f="${k}"]`).forEach((el) => (el.value = a[k] ?? "")));
-      BOOL_FIELDS.forEach((k) => { const el = main.querySelector(`[data-f="${k}"]`); el.checked = !!a[k]; el.closest(".toggle-card").classList.toggle("on", !!a[k]); });
-      main.querySelector('[data-f="has_flips"]').value = a.has_flips === true ? "yes" : a.has_flips === false ? "no" : "";
-      if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [{ year: "", make: "", model: "", vehicle: "", usage: [], miles: "" }];
-      drawGarage();
-      drawGtUse();
-      main.querySelector("#ed-name").textContent = a.name || "New applicant";
-      main.querySelector("#ed-avatar").textContent = initials(a.name);
-      main.querySelector("#draft-banner").remove();
-      markDirty();
-    });
+    main.querySelector("#draft-restore").addEventListener("click", () => { restoreDraftFor = draftKey; render(); });
   }
+  if (restoring) markDirty();
 
   // ----- save (manual, or automatic for Drafts) -----
   const errBanner = main.querySelector("#err-banner");
@@ -871,7 +1083,20 @@ async function renderEditor(route, seq) {
     payload.garage = garageOf(a).map((g) => ({
       year: String(g.year ?? "").trim() || null, make: (g.make || "").trim() || makeOf(g.vehicle) || null, model: (g.model || "").trim() || null,
       vehicle: g.vehicle.trim(), usage: g.usage || [], miles: Number(g.miles) || null,
+      acquired: String(g.acquired ?? "").trim() || null, use_note: (g.use_note || "").trim() || null,
     }));
+    NUM_FIELDS.forEach((k) => (payload[k] = a[k] === "" || a[k] == null || isNaN(Number(a[k])) ? null : Number(a[k])));
+    const trimRows = (list, key, keys) => (list || []).filter((r) => String(r[key] ?? "").trim()).map((r) => Object.fromEntries(keys.map((k) => [k, typeof r[k] === "string" ? r[k].trim() || null : r[k] === "" ? null : r[k] ?? null])));
+    payload.socials = trimRows(a.socials, "handle", ["platform", "handle", "note", "followers"]);
+    payload.toyota_history = trimRows(a.toyota_history, "model", ["year", "model", "held", "note"]);
+    payload.past_cars = trimRows(a.past_cars, "model", ["year", "model", "held", "note"]);
+    payload.cross_shop = trimRows(a.cross_shop, "model", ["model", "status", "note"]);
+    payload.race_series = (a.race_series || []).filter(Boolean);
+    payload.spec_tags = (a.spec_tags || []).filter((t) => t && t.label).map((t) => ({ label: t.label, priority: !!t.priority }));
+    const sp = a.usage_split || {};
+    payload.usage_split = USAGE_SPLIT.some(([k]) => Number(sp[k])) ? Object.fromEntries(USAGE_SPLIT.map(([k]) => [k, Number(sp[k]) || 0])) : null;
+    // kept in step for older reports that only know the Yes/No toggle
+    payload.lfa_owner = payload.lfa_status === "Owned";
     return payload;
   }
   function paintSaved() {
@@ -901,7 +1126,9 @@ async function renderEditor(route, seq) {
     draftKey = `gtap-draft-${created.id}`;
     histBase = JSON.parse(JSON.stringify(created));
     lastSnapshot = histBase;
-    if (seq !== renderSeq) return; // they've already moved on to another page
+    if (seq !== renderSeq) return;
+    const idEl = main.querySelector("#ed-id");
+    if (idEl) idEl.textContent = profileId(created); // they've already moved on to another page
     lastHash = `#/p/${created.id}`;
     history.replaceState(null, "", lastHash);
     setEditing(created.id);
@@ -1094,19 +1321,26 @@ async function renderEditor(route, seq) {
 }
 
 // ============================================================
-// OUTPUTS (text summary; Bio Persona slot reserved)
+// OUTPUTS (text summary + Buyer Profile PDF)
 // ============================================================
 async function renderOutputs(route, seq) {
   const main = shell("list", `<div class="loading">Building outputs…</div>`);
-  let a;
-  try { a = await getApplicant(route.id); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  main.classList.add("wide");
+  let a, team;
+  try { [a, team] = await Promise.all([getApplicant(route.id), listTeam()]); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
   if (seq !== renderSeq) return;
   let mode = store.get("gtap-textmode") || "full";
+  let outputsPhoto = null; // { url }: held only while this page is open, never saved or uploaded
+  const preparer = () => {
+    const name = a.interviewed_by || currentProfile?.full_name || "";
+    const t = team.find((m) => m.full_name === name);
+    return { name, title: t ? t.job_title : name === currentProfile?.full_name ? currentProfile.job_title : "" };
+  };
 
   main.innerHTML = `
     <a href="#/p/${a.id}" class="back-link">${I.back}Back to the interview form</a>
     <div class="page-header" style="margin-top:8px">
-      <div><h1>${escapeHtml(a.name)}</h1><p class="muted">Outputs reflect the last saved version${a.status === "Draft" ? " · <span style='color:var(--amber)'>still marked Draft</span>" : ""}</p></div>
+      <div><h1>${escapeHtml(a.name)} <span class="muted" style="font-size:14px;font-weight:600">${escapeHtml(profileId(a))}</span></h1><p class="muted">Outputs reflect the last saved version${a.status === "Draft" ? " · <span style='color:var(--amber)'>still marked Draft</span>" : ""}</p></div>
     </div>
     <div class="outputs-grid">
       <div class="out-card sticky">
@@ -1119,8 +1353,17 @@ async function renderOutputs(route, seq) {
         <button class="btn btn-primary btn-full" id="copy-btn" style="margin-top:12px">${I.copy}Copy to clipboard</button>
       </div>
       <div class="out-card">
-        <div class="out-head"><h2>${I.doc}Bio Persona</h2></div>
-        <div class="empty-state">Bio Persona design coming soon.</div>
+        <div class="out-head">
+          <h2>${I.doc}Buyer Profile PDF</h2>
+          <div class="page-actions">
+            <label class="btn" id="photo-btn" title="Shown on this PDF only. The photo is never saved.">${I.image}<span id="photo-label">${outputsPhoto ? "Change photo" : "Add photo"}</span><input type="file" accept="image/*" id="photo-in" hidden></label>
+            <button class="btn btn-ghost" id="photo-rm" ${outputsPhoto ? "" : "hidden"}>Remove photo</button>
+            <button class="btn btn-primary" id="pdf-print">${I.print}Print / Save PDF</button>
+          </div>
+        </div>
+        <div class="muted" style="margin:-4px 0 10px">Drop a photo onto the preview to use it. It's only kept until you leave this page and is never stored in the tool. In the print window, choose <b>Save as PDF</b>.</div>
+        <div id="fit-warn"></div>
+        <div class="pdf-wrap" id="pdf-wrap"><iframe id="pdf-frame" title="Buyer Profile preview"></iframe><div class="pdf-drop" id="pdf-drop">${I.image}<span>Drop the photo here</span></div></div>
       </div>
     </div>`;
 
@@ -1141,6 +1384,91 @@ async function renderOutputs(route, seq) {
     toast("Summary copied");
   });
 
+  // ----- PDF preview -----
+  const frame = main.querySelector("#pdf-frame");
+  const wrap = main.querySelector("#pdf-wrap");
+  const PAGE_W = 816;
+  function fitPreview() {
+    const doc = frame.contentDocument;
+    if (!doc || !doc.body) return;
+    const h = doc.documentElement.scrollHeight;
+    const scale = Math.min(1, wrap.clientWidth / PAGE_W);
+    frame.style.width = `${PAGE_W}px`;
+    frame.style.height = `${h}px`;
+    frame.style.transform = `scale(${scale})`;
+    wrap.style.height = `${h * scale}px`;
+  }
+  function checkFit() {
+    const doc = frame.contentDocument;
+    const over = [...doc.querySelectorAll(".fit")].filter((el) => el.scrollHeight > el.clientHeight + 2).map((el) => el.dataset.fit);
+    const box = main.querySelector("#fit-warn");
+    box.innerHTML = over.length ? `<div class="banner"><span><b>Some text is cut off on the PDF:</b> ${over.map(escapeHtml).join(", ")}. Shorten ${over.length === 1 ? "it" : "them"} on the interview form to fit the two pages.</span></div>` : "";
+  }
+  function drawPdf() {
+    frame.onload = () => {
+      const doc = frame.contentDocument;
+      const done = () => { if (seq !== renderSeq) return; fitPreview(); checkFit(); };
+      done();
+      (doc.fonts ? doc.fonts.ready : Promise.resolve()).then(done);
+      doc.querySelectorAll("img").forEach((img) => img.addEventListener("load", done));
+    };
+    frame.srcdoc = buildPersonaHtml(a, { photo: outputsPhoto && outputsPhoto.url, preparer: preparer() });
+  }
+  drawPdf();
+  const onResize = () => fitPreview();
+  window.addEventListener("resize", onResize);
+  pageCleanup = () => window.removeEventListener("resize", onResize);
+
+  function usePhoto(file) {
+    if (!file || !/^image\//.test(file.type)) { if (file) alert("That file isn't an image."); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      outputsPhoto = { url: reader.result };
+      main.querySelector("#photo-label").textContent = "Change photo";
+      main.querySelector("#photo-rm").hidden = false;
+      drawPdf();
+    };
+    reader.readAsDataURL(file);
+  }
+  main.querySelector("#photo-in").addEventListener("change", (e) => { usePhoto(e.target.files[0]); e.target.value = ""; });
+  main.querySelector("#photo-rm").addEventListener("click", () => {
+    outputsPhoto = null;
+    main.querySelector("#photo-label").textContent = "Add photo";
+    main.querySelector("#photo-rm").hidden = true;
+    drawPdf();
+  });
+  // the iframe swallows drag events, so a cover appears over it while a file is dragged in
+  const drop = main.querySelector("#pdf-drop");
+  let dragDepth = 0;
+  const hasFile = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+  const onDragEnter = (e) => { if (!hasFile(e)) return; dragDepth++; drop.classList.add("show"); };
+  const onDragLeave = () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) drop.classList.remove("show"); };
+  const onDragOver = (e) => { if (hasFile(e)) e.preventDefault(); };
+  const onDrop = (e) => {
+    if (!hasFile(e)) return;
+    e.preventDefault();
+    dragDepth = 0; drop.classList.remove("show");
+    if (e.target.closest && e.target.closest("#pdf-wrap, #pdf-drop, .out-card")) usePhoto(e.dataTransfer.files[0]);
+  };
+  document.addEventListener("dragenter", onDragEnter);
+  document.addEventListener("dragleave", onDragLeave);
+  document.addEventListener("dragover", onDragOver);
+  document.addEventListener("drop", onDrop);
+  pageCleanup = () => {
+    window.removeEventListener("resize", onResize);
+    document.removeEventListener("dragenter", onDragEnter);
+    document.removeEventListener("dragleave", onDragLeave);
+    document.removeEventListener("dragover", onDragOver);
+    document.removeEventListener("drop", onDrop);
+  };
+
+  main.querySelector("#pdf-print").addEventListener("click", () => {
+    const t = document.title;
+    document.title = frame.contentDocument.title;
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+    setTimeout(() => (document.title = t), 1000);
+  });
 }
 
 // ============================================================
@@ -1164,6 +1492,16 @@ const hasFlips = (r) => (r.has_flips === true || r.has_flips === false ? r.has_f
 const hpde = (r) => (r.hpde_level ? r.hpde_level !== "None" : hasText(r.hpde_experience) && !isNone(r.hpde_experience));
 const racer = (r) => (r.race_level ? r.race_level !== "None" : hasText(r.race_experience) && !isNone(r.race_experience));
 const makeFor = (g) => (g.make && g.make.trim()) || makeOf(g.vehicle);
+const priorToyota = (r) => rowsOf(r.toyota_history, "model").length > 0 || (hasText(r.previous_toyota_lexus) && !isNone(r.previous_toyota_lexus));
+// main planned use: the biggest share of the usage split; older profiles fall back to their first use chip
+const OLD_USE = { "Track Days": "track", "Weekend Street": "street", "Daily Driver": "street", "Shows & Events": "events", Collection: "collection" };
+function primaryUse(r) {
+  const u = usageSplitOf(r);
+  if (u) return USAGE_SPLIT.reduce((best, [k]) => (u[k] > u[best] ? k : best), USAGE_SPLIT[0][0]);
+  const first = (r.gt_usage || []).find((x) => OLD_USE[x]);
+  return first ? OLD_USE[first] : null;
+}
+const quartersOut = (r) => { const q = quarterKey(r.target_quarter); if (q == null) return null; const now = new Date(); return q - (now.getFullYear() * 4 + Math.floor(now.getMonth() / 3)); };
 function weekStart(d) {
   const x = new Date(d); x.setHours(12, 0, 0, 0);
   x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); // Monday
@@ -1276,7 +1614,7 @@ async function renderAnalytics(seq) {
     // side by side comparison of groups
     function compare(title, opts = {}) {
       const defs = {
-        lfa: { label: "LFA ownership", groups: [["LFA owners", (r) => r.lfa_owner], ["Non owners", (r) => !r.lfa_owner]] },
+        lfa: { label: "LFA ownership", groups: [["LFA owners", (r) => lfaStatusOf(r) === "Owned"], ["Non owners", (r) => lfaStatusOf(r) !== "Owned"]] },
         allocation: { label: "Allocation outcome", groups: ALLOCATION_OPTIONS.map((o) => [o, (r) => (r.allocation || "Pending") === o]) },
         age: { label: "Age range", groups: AGE_RANGES.map((o) => [o, (r) => r.age_range === o]) },
       };
@@ -1287,9 +1625,9 @@ async function renderAnalytics(seq) {
       const metrics = [
         ["Track experience", (rs) => share(rs, (r) => hpde(r) || racer(r)), "%"],
         ["Advanced or Instructor HPDE", (rs) => share(rs, (r) => r.hpde_level === "Advanced" || r.hpde_level === "Instructor"), "%"],
-        ["Plans track days in the GR GT", (rs) => share(rs, (r) => (r.gt_usage || []).includes("Track Days")), "%"],
-        ["Ready now", (rs) => share(rs, (r) => (r.timing || "").toLowerCase() === "ready now"), "%"],
-        ["Prior Toyota / Lexus owner", (rs) => share(rs, (r) => hasText(r.previous_toyota_lexus) && !isNone(r.previous_toyota_lexus)), "%"],
+        ["Track is their main planned use", (rs) => share(rs, (r) => primaryUse(r) === "track"), "%"],
+        ["Wants delivery within a year", (rs) => share(rs, (r) => { const q = quartersOut(r); return q != null ? q <= 3 : (r.timing || "").toLowerCase() === "ready now"; }), "%"],
+        ["Prior Toyota / Lexus owner", (rs) => share(rs, priorToyota), "%"],
         ["Recent flips", (rs) => share(rs, hasFlips), "%"],
         ["Avg garage size", (rs) => (rs.length ? (rs.reduce((t, r) => t + garageOf(r).length, 0) / rs.length).toFixed(1) : "0"), ""],
       ];
@@ -1318,16 +1656,22 @@ async function renderAnalytics(seq) {
     const age = by((r) => r.age_range || "Not set", [...AGE_RANGES, "Not set"]).filter((i) => i.label !== "Not set" || i.rows.length);
     // LFA / flags
     const lfa = [
-      { label: "Owner", rows: rows.filter((r) => r.lfa_owner) },
-      { label: "Not an owner", rows: rows.filter((r) => !r.lfa_owner), neutral: true },
+      { label: "Owned", rows: rows.filter((r) => lfaStatusOf(r) === "Owned") },
+      { label: "No ownership", rows: rows.filter((r) => lfaStatusOf(r) !== "Owned"), neutral: true },
     ];
+    const LFA_COLORS = { Owned: PALETTE[0], Driven: PALETTE[1], Inquired: PALETTE[2], None: NEUTRAL, "Not set": "#3a3a40" };
+    const lfaExp = by((r) => lfaStatusOf(r) || "Not set", [...LFA_STATUSES, "Not set"]).filter((i) => i.label !== "Not set" || i.rows.length).map((it) => ({ ...it, color: LFA_COLORS[it.label] }));
     const flags = [
-      { label: "Prior Toyota / Lexus owner", rows: rows.filter((r) => hasText(r.previous_toyota_lexus) && !isNone(r.previous_toyota_lexus)) },
+      { label: "Prior Toyota / Lexus owner", rows: rows.filter(priorToyota) },
       { label: "TMNA relationship noted", rows: rows.filter((r) => hasText(r.tmna_relationship) && !isNone(r.tmna_relationship)) },
       { label: "Recent flips noted", rows: rows.filter(hasFlips), tone: "amber" },
     ];
-    // planned GR GT use
-    const gtUse = by((r) => r.gt_usage || [], GT_USE_OPTIONS);
+    // intended usage: main use per applicant, plus the average split
+    const useLabel = Object.fromEntries(USAGE_SPLIT);
+    const gtUse = by((r) => (primaryUse(r) ? useLabel[primaryUse(r)] : null), USAGE_SPLIT.map(([, l]) => l));
+    const splits = rows.map(usageSplitOf).filter(Boolean);
+    const avgSplit = splits.length ? USAGE_SPLIT.map(([k, l]) => `${l.split(" /")[0]} ${Math.round(splits.reduce((t, u) => t + u[k], 0) / splits.length)}%`).join(", ") : "";
+    const states = by((r) => (r.state || "").trim() || null).slice(0, 10);
     // garage usage (applicants with at least one vehicle in that use)
     const garageUse = by((r) => garageOf(r).flatMap((g) => g.usage || []), USAGE_OPTIONS);
     // motorsports
@@ -1344,8 +1688,9 @@ async function renderAnalytics(seq) {
     const makes = by((r) => garageOf(r).map(makeFor)).slice(0, 10);
     const hpdeLevels = by((r) => r.hpde_level || "Not set", [...HPDE_LEVELS, "Not set"]).filter((i) => i.label !== "Not set" || i.rows.length);
     const raceLevels = by((r) => r.race_level || "Not set", [...RACE_LEVELS, "Not set"]).filter((i) => i.label !== "Not set" || i.rows.length);
-    const ALLOC_COLORS = { Pending: NEUTRAL, Awarded: "#2a9d5c", Waitlist: "#b87a0e", Declined: "#a01c30" };
+    const ALLOC_COLORS = { Pending: NEUTRAL, Approve: "#2a9d5c", Waitlist: "#b87a0e", Decline: "#a01c30", "Not set": NEUTRAL };
     const alloc = by((r) => r.allocation || "Pending", ALLOCATION_OPTIONS).map((it) => ({ ...it, color: ALLOC_COLORS[it.label] }));
+    const recs = by((r) => r.concierge_rec || "Not set", [...DECISIONS, "Not set"]).filter((i) => i.label !== "Not set" || i.rows.length).map((it) => ({ ...it, color: ALLOC_COLORS[it.label] }));
     // interviews per week, last 12 weeks
     const thisWeek = weekStart(new Date());
     const weeks = [];
@@ -1354,10 +1699,10 @@ async function renderAnalytics(seq) {
       label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       rows: rows.filter((r) => { const when = r.interview_date ? new Date(r.interview_date + "T12:00:00") : new Date(r.created_at); return weekStart(when).getTime() === d.getTime(); }),
     }));
-    // timing
-    const timingRaw = by((r) => (r.timing || "").trim() || "Not set");
-    const tRank = (l) => { const i = TIMING_SUGGESTIONS.findIndex((t) => t.toLowerCase() === l.toLowerCase()); return i < 0 ? (l === "Not set" ? 99 : 50) : i; };
-    const timing = timingRaw.sort((x, y) => tRank(x.label) - tRank(y.label) || y.rows.length - x.rows.length).slice(0, 5);
+    // timing: target delivery quarter, in date order; older free answers after them
+    const timingRaw = by((r) => (r.target_quarter || "").trim() || ((r.timing || "").trim() ? `Earlier: ${r.timing.trim()}` : "Not set"));
+    const tRank = (l) => quarterKey(l) ?? (l === "Not set" ? 1e9 : 1e8);
+    const timing = timingRaw.sort((x, y) => tRank(x.label) - tRank(y.label) || y.rows.length - x.rows.length).slice(0, 10);
 
     // team
     const team = by((r) => (r.interviewed_by || "").trim() || "Not set");
@@ -1370,7 +1715,7 @@ async function renderAnalytics(seq) {
 
     const kpis = [
       { label: "Applicants", value: n },
-      { label: "LFA owners", value: `${pct(rows.filter((r) => r.lfa_owner).length)}%` },
+      { label: "LFA owners", value: `${pct(rows.filter((r) => lfaStatusOf(r) === "Owned").length)}%` },
       { label: "Track experience", value: `${pct(trackActive)}%` },
       { label: "Avg garage size", value: avgGarage },
       { label: "Avg miles / yr", value: avgMiles },
@@ -1393,7 +1738,7 @@ async function renderAnalytics(seq) {
       </div>
       <div class="kpi-strip an-kpis">
         <div class="kpi"><span class="kpi-num">${n}</span><span class="kpi-label">Applicants</span></div>
-        <div class="kpi"><span class="kpi-num">${pct(rows.filter((r) => r.lfa_owner).length)}%</span><span class="kpi-label">LFA owners</span></div>
+        <div class="kpi"><span class="kpi-num">${pct(rows.filter((r) => lfaStatusOf(r) === "Owned").length)}%</span><span class="kpi-label">LFA owners</span></div>
         <div class="kpi"><span class="kpi-num">${pct(trackActive)}%</span><span class="kpi-label">Track experience</span></div>
         <div class="kpi"><span class="kpi-num">${avgGarage}</span><span class="kpi-label">Avg garage size</span></div>
         <div class="kpi"><span class="kpi-num">${avgMiles}</span><span class="kpi-label">Avg miles / yr</span></div>
@@ -1403,11 +1748,13 @@ async function renderAnalytics(seq) {
         ${columns("Age Ranges", age, { cls: "span-5" })}
         ${hero("LFA Ownership", lfa[0], lfa[1], "currently own or have owned a Lexus LFA", { cls: "span-3" })}
         ${tiles("Profile Signals", flags, { cls: "span-4 tiles-stack" })}
+        ${hbars("Top States", states, { cls: "span-7", ranked: true, note: "Top 10" })}
+        ${split("LFA Experience", lfaExp, { cls: "span-5" })}
       </div>
       <div class="an-section-title">What they want</div>
       <div class="an-grid">
-        ${hbars("Planned GR GT Use", gtUse, { cls: "span-7", note: "Applicants can pick several" })}
-        ${split("Timing", timing, { cls: "span-5" })}
+        ${hbars("Main Planned Use", gtUse, { cls: "span-6", note: avgSplit ? `Average split: ${avgSplit}` : "Biggest share of each applicant's usage split" })}
+        ${columns("Target Delivery", timing, { cls: "span-6", note: "By quarter" })}
       </div>
       <div class="an-section-title">Driving and ownership</div>
       <div class="an-grid">
@@ -1420,7 +1767,7 @@ async function renderAnalytics(seq) {
       </div>
       <div class="an-section-title">Decisions</div>
       <div class="an-grid">
-        ${split("Allocation Outcome", alloc, { cls: "span-4" })}
+        <div class="span-4 an-stack">${split("Concierge Recommendation", recs)}${split("Leadership Decision", alloc)}</div>
         ${compare("Compare Groups", { cls: "span-8" })}
       </div>
       <div class="an-section-title">Program</div>
@@ -1436,7 +1783,7 @@ async function renderAnalytics(seq) {
             <a class="drawer-item" href="#/p/${r.id}">
               <span class="user-avatar" style="width:30px;height:30px;font-size:11px">${escapeHtml(initials(r.name))}</span>
               <span style="min-width:0"><b>${escapeHtml(r.name)}</b><div class="muted">${escapeHtml([r.age_range, r.preferred_dealer].filter(Boolean).join(" · "))}</div></span>
-              <span class="pill-row" style="margin-left:auto">${r.vip ? `<span class="pill pill-vip">VIP</span>` : ""}${r.lfa_owner ? `<span class="pill pill-lfa">LFA</span>` : ""}</span>
+              <span class="pill-row" style="margin-left:auto">${r.vip ? `<span class="pill pill-vip">VIP</span>` : ""}${lfaStatusOf(r) === "Owned" ? `<span class="pill pill-lfa">LFA</span>` : ""}</span>
             </a>`).join("")}</div>` : ""}
       </aside>`;
 
@@ -1493,9 +1840,10 @@ async function renderAccount(seq) {
     <div class="page-header"><div><h1>Account</h1><p class="muted">${escapeHtml(currentProfile?.email || "")}</p></div></div>
     <div class="account-grid">
       <div class="form-section">
-        <header><h2>Display name</h2></header>
+        <header><h2>Name and title</h2></header>
         <div class="form-field"><label>Shown as "Interviewed By" on new profiles</label><input type="text" id="acc-name" value="${escapeHtml(currentProfile?.full_name || "")}"></div>
-        <button class="btn btn-primary" id="acc-name-save" style="margin-top:12px">Save name</button>
+        <div class="form-field" style="margin-top:12px"><label>Job title <span class="hint">(shown in the PDF footer, e.g. Concierge Lead)</span></label><input type="text" id="acc-title" value="${escapeHtml(currentProfile?.job_title || "")}"></div>
+        <button class="btn btn-primary" id="acc-name-save" style="margin-top:12px">Save</button>
       </div>
       <div class="form-section">
         <header><h2>Password</h2></header>
@@ -1506,8 +1854,13 @@ async function renderAccount(seq) {
     </div>`;
   main.querySelector("#acc-name-save").addEventListener("click", async () => {
     const v = main.querySelector("#acc-name").value.trim();
+    const title = main.querySelector("#acc-title").value.trim();
     if (!v) return;
-    try { await setDisplayName(v); currentProfile.full_name = v; toast("Name updated"); render(); } catch (e) { alert(e.message); }
+    try {
+      await setDisplayName(v); currentProfile.full_name = v;
+      await setJobTitle(title); currentProfile.job_title = title;
+      toast("Saved"); render();
+    } catch (e) { alert(e.message); }
   });
   main.querySelector("#acc-pw-save").addEventListener("click", async () => {
     const v = main.querySelector("#acc-pw").value;

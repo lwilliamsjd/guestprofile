@@ -3,7 +3,7 @@
 Internal tool for the concierge team's applicant interviews. Fill in the form while you're on the phone, save, then open **Outputs** to get:
 
 1. **Text Summary**: plain text ready to paste into the other internal tool. Full (sectioned) or Compact (one paragraph) with a character count and a Copy button.
-2. **Bio Persona**: slot reserved on the Outputs page. Design to be added once the example layout is provided.
+2. **Buyer Profile PDF**: the two page leadership profile, previewed on the Outputs page. **Print / Save PDF** opens the print window; choose Save as PDF. A photo can be dropped onto the preview for that PDF only; it is never saved in the tool. If any text is too long to fit, a note above the preview says which field to shorten.
 
 Same stack and look as the GR GT Concierge CRM: static site on GitHub Pages, Supabase behind it, individual team logins, live updates between teammates.
 
@@ -11,13 +11,18 @@ Same stack and look as the GR GT Concierge CRM: static site on GitHub Pages, Sup
 
 **Applicants list**: counts (Total, Complete, Drafts, VIP, LFA Owners; click to filter), search across name, dealer, vehicles and summary, filters by status, dealer and flags, sortable columns, Export Excel (Applicants and Garages tabs).
 
+**Profile ID**: every profile gets an automatic ID like GRGT-26-0142 (year created, then its number). It shows on the list, the form, the outputs and the PDF.
+
 **Interview form**, in the order of the call:
-* Bio: Name, Age Range, Preferred Dealer, Social Media, Relationships/Affiliation with TMNA, VIP
-* Summary
-* Motorsports / Events: HPDE Experience, Race Experience, Key Events Attended, What Drives You
-* Car Profile: Current Garage (one row per vehicle with usage chips for Private Collection, Public Collection, Street, Track Only, Daily, and miles per year), LFA Ownership, Previous Toyota/Lexus, Recent Flips
-* Buyer Profile: Timing, Planned GR GT Use (Track Days, Weekend Street, Collection, Daily Driver, Shows & Events), Spec Consideration, Why the GR GT (intended use)
-* Call details: Interviewed By, Interview Date
+* Bio: Name, Age Range (decades), City, State, Preferred Dealer, VIP (shown as a badge on the PDF), Bio (long, with a guide to how much fits the PDF), What Drives You (quoted on the PDF)
+* Social & Connections: social accounts as rows (platform, handle, what they post, followers), TMC/TMNA relationships, track and driving clubs
+* Motorsports / Events: HPDE Level, Race Level (None, Autocross / Time Attack, Club Racer, Pro Am, Pro), years on track, track days, racing series tags, details, key events, raw numbers vs overall experience slider with a note
+* Car Profile: Current Garage (year, make, model, use, miles per year, year acquired, how it's used), Previous LFA Experience (Owned, Driven, Inquired, None) with a note, Toyota/Lexus history and significant past cars (years held), Recent Flips
+* Buyer Profile: Why the GR GT, Intended Usage as percentages (Track/HPDE, Street/GT, Events/Shows, Collection) with a note, target delivery quarter with flexibility and a note, spec considerations as tags (star the priority), cross shopping
+* Concierge Assessment: recommendation (Approve, Waitlist, Decline), write up, strengths and flags
+* Call details: Interviewed By, Interview Date, Leadership Decision (Pending, Approve, Waitlist, Decline)
+
+Average ownership, cars in garage, garage miles per year, the HPDE and racing scales and the pipeline on the PDF are calculated. The job title in the PDF footer comes from each person's Account page.
 
 Section checkmarks show what's been covered. Ctrl+S saves. Unsaved work is kept on that computer and offered back if the tab closes. If a teammate saved the same profile while you were editing, you're told instead of overwriting them. Draft / Complete status per profile.
 

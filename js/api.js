@@ -19,14 +19,18 @@ export async function getCurrentProfile() {
   if (!session) return null;
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, email, is_admin")
+    .select("id, full_name, email, is_admin, job_title")
     .eq("id", session.user.id)
     .single();
-  if (error) return { id: session.user.id, full_name: session.user.email, email: session.user.email, is_admin: false };
+  if (error) return { id: session.user.id, full_name: session.user.email, email: session.user.email, is_admin: false, job_title: "" };
   return data;
 }
 export async function setDisplayName(name) {
   const { error } = await supabase.rpc("set_display_name", { new_name: name });
+  if (error) throw error;
+}
+export async function setJobTitle(title) {
+  const { error } = await supabase.rpc("set_job_title", { new_title: title });
   if (error) throw error;
 }
 export async function changePassword(password) {
@@ -126,7 +130,7 @@ export function leavePresence() {
 
 // ---------- team ----------
 export async function listTeam() {
-  const { data, error } = await supabase.from("profiles").select("id, full_name").order("full_name");
+  const { data, error } = await supabase.from("profiles").select("id, full_name, job_title").order("full_name");
   if (error) return [];
   return data;
 }

@@ -181,3 +181,77 @@ drop policy if exists "changes_update_own_recent" on applicant_changes;
 create policy "changes_update_own_recent" on applicant_changes for update
   using (changed_by = auth.uid() and changed_at > now() - interval '3 hours')
   with check (changed_by = auth.uid());
+
+-- ---------- update 4: Buyer Profile PDF fields (safe to re-run) ----------
+-- profile ID: GRGT-<yy>-<number>, numbered in the order profiles were created
+create sequence if not exists applicant_no_seq;
+alter table applicants add column if not exists profile_no integer;
+do $$
+declare r record;
+begin
+  for r in select id from applicants where profile_no is null order by created_at loop
+    update applicants set profile_no = nextval('applicant_no_seq') where id = r.id;
+  end loop;
+end $$;
+alter table applicants alter column profile_no set default nextval('applicant_no_seq');
+create unique index if not exists applicants_profile_no_idx on applicants (profile_no);
+
+-- bio
+alter table applicants add column if not exists city text;
+alter table applicants add column if not exists state text;
+-- social rows: [{ "platform": "Instagram", "handle": "@x", "note": "Track days", "followers": 18200 }]
+alter table applicants add column if not exists socials jsonb not null default '[]'::jsonb;
+alter table applicants add column if not exists clubs text;
+
+-- motorsports
+alter table applicants add column if not exists years_on_track numeric;
+alter table applicants add column if not exists track_days integer;
+alter table applicants add column if not exists race_series jsonb not null default '[]'::jsonb;
+alter table applicants add column if not exists driver_style integer;   -- 0 raw numbers ... 100 overall experience
+alter table applicants add column if not exists driver_style_note text;
+
+-- car profile
+alter table applicants add column if not exists lfa_status text;        -- Owned, Driven, Inquired, None
+alter table applicants add column if not exists lfa_note text;
+-- history rows: [{ "year": "2008", "model": "Lexus IS F", "held": 6, "note": "" }]
+alter table applicants add column if not exists toyota_history jsonb not null default '[]'::jsonb;
+alter table applicants add column if not exists past_cars jsonb not null default '[]'::jsonb;
+
+-- buyer profile
+-- { "track": 45, "street": 40, "events": 10, "collection": 5 }
+alter table applicants add column if not exists usage_split jsonb;
+alter table applicants add column if not exists usage_note text;
+alter table applicants add column if not exists target_quarter text;    -- e.g. Q2 2027
+alter table applicants add column if not exists timing_flex text;
+alter table applicants add column if not exists timing_note text;
+-- [{ "label": "Carbon ceramic brakes", "priority": true }]
+alter table applicants add column if not exists spec_tags jsonb not null default '[]'::jsonb;
+-- [{ "model": "Porsche 911 GT3", "status": "Owns", "note": "Keeping" }]
+alter table applicants add column if not exists cross_shop jsonb not null default '[]'::jsonb;
+
+-- concierge assessment
+alter table applicants add column if not exists concierge_rec text;
+alter table applicants add column if not exists assessment text;
+alter table applicants add column if not exists strengths text;
+alter table applicants add column if not exists concerns text;
+
+-- decision wording now matches the PDF: Approve, Waitlist, Decline
+alter table applicants drop constraint if exists applicants_allocation_check;
+update applicants set allocation = 'Approve' where allocation = 'Awarded';
+update applicants set allocation = 'Decline' where allocation = 'Declined';
+alter table applicants add constraint applicants_allocation_check check (allocation in ('Pending','Approve','Waitlist','Decline'));
+
+-- race levels now run None, Autocross / Time Attack, Club Racer, Pro Am, Pro
+update applicants set race_level = 'Autocross / Time Attack' where race_level = 'Time Attack / Autocross';
+update applicants set race_level = 'Club Racer' where race_level = 'Club Racing';
+update applicants set race_level = 'Pro Am' where race_level = 'Pro / Semi Pro';
+
+-- LFA: carry the old Yes toggle over to the new status
+update applicants set lfa_status = 'Owned' where lfa_status is null and lfa_owner = true;
+
+-- job title for the "Prepared by" line on the PDF
+alter table profiles add column if not exists job_title text;
+create or replace function public.set_job_title(new_title text)
+returns void language sql security definer set search_path = public as $$
+  update public.profiles set job_title = nullif(trim(new_title), '') where id = auth.uid();
+$$;
