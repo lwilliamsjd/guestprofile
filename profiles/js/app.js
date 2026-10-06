@@ -329,11 +329,35 @@ onAuthChange((s) => {
   if (was !== !!s) render();
 });
 
+// ---------- switching to the CRM ----------
+try { localStorage.setItem("grc-last-tool", "profiles"); } catch {}
+function wireToolSwitch() {
+  const link = document.querySelector('.ts-opt[data-tool="crm"]');
+  if (!link) return;
+  link.addEventListener("click", (e) => {
+    try { localStorage.setItem("grc-last-tool", "crm"); } catch {}
+    if (!dirty) return;
+    // let autosave finish first so nothing typed is lost
+    e.preventDefault();
+    const started = flushHook ? flushHook() : false;
+    const t0 = Date.now();
+    const wait = () => {
+      if (!dirty || !started || Date.now() - t0 > 5000) { window.location.href = link.href; return; }
+      setTimeout(wait, 150);
+    };
+    wait();
+  });
+}
+
 function shell(active, inner) {
   app.innerHTML = `
     <div class="shell">
       <header class="topbar">
-        <a href="#/" class="brand"><span class="brand-dot"></span><span>GR GT Applicant Profiles</span></a>
+        <div class="tool-switch" role="tablist" aria-label="Switch tool">
+          <span class="brand-dot"></span>
+          <a href="../crm/" class="ts-opt " data-tool="crm" role="tab" aria-selected="false"><span class="ts-long">Concierge </span>CRM</a>
+          <a href="../profiles/" class="ts-opt on" data-tool="profiles" role="tab" aria-selected="true"><span class="ts-long">Applicant </span>Profiles</a>
+        </div>
         <nav class="nav">
           <a href="#/" class="${active === "list" ? "active" : ""}">Applicants</a>
           <a href="#/new" class="${active === "new" ? "active" : ""}">New Profile</a>
@@ -350,6 +374,7 @@ function shell(active, inner) {
       </header>
       <main class="main-content" id="main">${inner}</main>
     </div>`;
+  wireToolSwitch();
   document.getElementById("logout-btn").addEventListener("click", async () => {
     if (dirty && !confirm("Unsaved changes will be lost. Log out?")) return;
     dirty = false;

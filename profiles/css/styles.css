@@ -494,4 +494,12 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
   .hbar-fill { background: #9a9aa6; }
   .tile { padding: 8px; }
 }
-}
+
+/* ---------- tool switch (top left, shared with the other tool) ---------- */
+.tool-switch { display: inline-flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; border: 1px solid var(--border); border-radius: 100px; background: var(--panel-2); flex-shrink: 0; }
+.tool-switch .brand-dot { margin-right: 6px; }
+.ts-opt { padding: 6px 14px; border-radius: 100px; font-size: 12.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--grey); white-space: nowrap; transition: background .15s, color .15s; }
+.ts-opt:hover { color: var(--text); text-decoration: none; background: var(--panel-3); }
+.ts-opt.on { background: var(--red); color: #fff; box-shadow: 0 0 14px var(--red-glow); }
+.ts-opt.on:hover { background: var(--red); }
+@media (max-width: 1100px) { .ts-long { display: none; } }

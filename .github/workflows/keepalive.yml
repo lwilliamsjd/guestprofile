@@ -14,8 +14,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Ping Supabase
         run: |
-          URL=$(grep -oP 'SUPABASE_URL = "\K[^"]+' js/config.js)
-          KEY=$(grep -oP 'SUPABASE_ANON_KEY = "\K[^"]+' js/config.js)
+          URL=$(grep -oP 'SUPABASE_URL = "\K[^"]+' profiles/js/config.js)
+          KEY=$(grep -oP 'SUPABASE_ANON_KEY = "\K[^"]+' profiles/js/config.js)
           code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/rest/v1/rpc/keepalive" \
             -H "apikey: $KEY" -H "Content-Type: application/json" -d '{}')
           echo "Supabase responded $code"

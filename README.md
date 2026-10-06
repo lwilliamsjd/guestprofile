@@ -1,3 +1,37 @@
+# GR Concierge (www.gr-concierge.com)
+
+Two tools on one site, one database and one login:
+
+| Address | Tool |
+|---|---|
+| `/profiles/` | GR GT Applicant Profiles (interview form, outputs, analytics) |
+| `/crm/` | GR GT Concierge CRM (Meisters, conversations, follow ups) |
+
+`www.gr-concierge.com` opens whichever tool was used last on that computer. The switch at the top left of both tools jumps between them; signing in to one signs you in to both.
+
+## Repo layout
+```
+index.html          root: sends you to the last used tool
+CNAME               custom domain for GitHub Pages
+profiles/           Applicant Profiles app
+crm/                Concierge CRM app
+sql/schema.sql      Profiles tables (run first)
+sql/crm_schema.sql  CRM tables, added to the same database (run second)
+.github/workflows/  daily Supabase keep alive
+```
+Both apps' `js/config.js` must hold the same Supabase URL and key.
+
+## Adding the CRM to the database (one time)
+1. Supabase → SQL Editor → paste all of `sql/crm_schema.sql` → Run. Safe to re-run.
+2. Link each login to its Concierge name (this routes CRM notifications):
+   ```sql
+   update profiles set concierge = 'Logan'   where email = 'LOGAN_LOGIN_EMAIL';
+   update profiles set concierge = 'Freddie' where email = 'FREDDIE_LOGIN_EMAIL';
+   ```
+3. Import the CRM data (see "Importing CRM data" once set up).
+
+---
+
 # GR GT Applicant Profiles
 
 Internal tool for the concierge team's applicant interviews. Fill in the form while you're on the phone, save, then open **Outputs** to get:
