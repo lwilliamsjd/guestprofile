@@ -17,6 +17,7 @@ profiles/           Applicant Profiles app
 crm/                Concierge CRM app
 sql/schema.sql      Profiles tables (run first)
 sql/crm_schema.sql  CRM tables, added to the same database (run second)
+sql/crm_import.sql  one time import function for the old CRM's Excel export (run third)
 .github/workflows/  daily Supabase keep alive
 ```
 Both apps' `js/config.js` must hold the same Supabase URL and key.
@@ -28,7 +29,11 @@ Both apps' `js/config.js` must hold the same Supabase URL and key.
    update profiles set concierge = 'Logan'   where email = 'LOGAN_LOGIN_EMAIL';
    update profiles set concierge = 'Freddie' where email = 'FREDDIE_LOGIN_EMAIL';
    ```
-3. Import the CRM data (see "Importing CRM data" once set up).
+3. Import the old CRM's data:
+   * Supabase → SQL Editor → paste all of `sql/crm_import.sql` → Run.
+   * In the CRM, open **Account** (admins only) → **Import CRM export** → choose the `GR-GT-CRM-Export-….xlsx` file the old CRM exported.
+   * Check the preview: counts, and which current login each person in the file becomes. Then click **Import**.
+   * It refuses to run a second time if Meisters already exist, so nothing gets duplicated. Comments whose conversation was deleted in the old CRM are skipped.
 
 ---
 

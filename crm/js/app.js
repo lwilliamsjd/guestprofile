@@ -57,6 +57,7 @@ import {
   markMeisterNotificationsRead,
 } from "./api.js";
 import { exportToExcel } from "./export.js";
+import { wireImport } from "./import-export.js";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1860,6 +1861,13 @@ async function renderAccount(route, seq) {
         <button id="acct-export-btn" class="btn btn-primary">${I.download} Export to Excel now</button>
       </div>
 
+      <div class="form-card" id="import-card">
+        <h3>${I.download} Import CRM export</h3>
+        <p class="muted">One time move of the old CRM into this database. Choose the Excel file the old CRM exported (GR-GT-CRM-Export-….xlsx). It's read on this computer and sent straight to the database. Names in "Logged By", "Owner" and similar columns are matched to current logins; anything unmatched is kept as a name.</p>
+        <input type="file" id="import-file" accept=".xlsx" />
+        <div id="import-preview"></div>
+      </div>
+
       <div class="form-card trash-card">
         <h3>${I.trash} Trash <span class="muted">(${trashed.length})</span></h3>
         <p class="muted">Meisters you've removed. Restore puts everything back exactly as it was. Delete forever removes the Meister and all their history for good.</p>
@@ -1899,6 +1907,8 @@ async function renderAccount(route, seq) {
   });
 
   if (isAdmin()) wireCategoryManager(container);
+
+  if (isAdmin()) wireImport(container, team, () => render(), toast);
 
   document.getElementById("acct-export-btn")?.addEventListener("click", async (e) => {
     const btn = e.currentTarget; btn.disabled = true;

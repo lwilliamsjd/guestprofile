@@ -549,3 +549,10 @@ export async function fetchAllForExport() {
   for (const r of [meisters, interactions, guests, followUps, comments, categories, history]) if (r.error) throw r.error;
   return { meisters: meisters.data, interactions: interactions.data, guests: guests.data, followUps: followUps.data, comments: comments.data, categories: categories.data, statusHistory: history.data };
 }
+
+// ---------- one time import of the old CRM's Excel export ----------
+export async function importCrmExport(payload, allowExisting = false) {
+  const { data, error } = await supabase.rpc("import_crm_export", { p: payload, p_allow_existing: allowExisting });
+  if (error) throw error;
+  return data;
+}
