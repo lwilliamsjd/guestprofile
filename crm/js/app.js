@@ -615,7 +615,28 @@ async function renderDashboard(route, seq) {
   const searchInput = document.getElementById("search-input");
   const statusFilter = document.getElementById("status-filter");
   const conciergeFilter = document.getElementById("concierge-filter");
-  const draw = () => { drawMeisterRows(meisters); saveState("dash", dashState); };
+  const draw = () => { drawMeisterRows(meisters); updateKpiCounts(); saveState("dash", dashState); };
+
+  // Tiles count what the search and Concierge filter currently show. The status
+  // tiles are the status filter, so each one shows how many you'd get by clicking it.
+  function updateKpiCounts() {
+    const q = dashState.q.toLowerCase().trim();
+    const base = meisters.filter((m) =>
+      (!q || [m.name, m.job_title, m.dealership, m.city, m.phone, m.email, m.concierge].some((f) => (f || "").toLowerCase().includes(q))) &&
+      (!dashState.concierge || (dashState.concierge === "__none" ? !m.concierge : m.concierge === dashState.concierge)));
+    const n = { "": base.length,
+      __overdue: base.filter((m) => m.my_follow_up && followUpState(m.my_follow_up.due_at) === "overdue").length,
+      __stale: base.filter(isStale).length };
+    container.querySelectorAll(".kpi-strip .kpi").forEach((k) => {
+      const st = k.dataset.status;
+      const v = st in n ? n[st] : base.filter((m) => m.status === st).length;
+      const num = k.querySelector(".kpi-num");
+      if (num) num.textContent = v;
+    });
+    const filtered = !!(q || dashState.concierge);
+    const totalLabel = container.querySelector('.kpi-strip .kpi[data-status=""] .kpi-label');
+    if (totalLabel) totalLabel.textContent = filtered ? "Total · filtered" : "Total";
+  }
 
   searchInput.addEventListener("input", () => { dashState.q = searchInput.value; draw(); });
   statusFilter.addEventListener("change", () => { dashState.status = statusFilter.value; syncKpis(); draw(); });
