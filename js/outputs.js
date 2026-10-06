@@ -293,7 +293,7 @@ export function buildPersonaHtml(a, opts = {}) {
 
   const topbar = `
     <div class="topbar">
-      <div class="tb-left"><span class="mark"><i></i><i></i></span><b>TOYOTA GAZOO RACING</b><span>GR GT CONCIERGE BUYER PROGRAM</span></div>
+      <div class="tb-left"><span class="mark"><i></i><i></i></span><b>GAZOO RACING</b><span>GR GT CONCIERGE BUYER PROGRAM</span></div>
       <div class="tb-right">${id ? `<span class="tb-id">${e(id)}</span>` : ""}${a.vip ? `<span class="badge b-vip">VIP</span>` : ""}<span class="badge b-conf">CONFIDENTIAL</span></div>
     </div>`;
   const footer = (n) => `
