@@ -334,7 +334,16 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .weekly .cols { gap: 6px; }
 
 /* change history */
-.history { display: flex; flex-direction: column; gap: 12px; }
+.history-box > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 14px; user-select: none; }
+.history-box > summary::-webkit-details-marker { display: none; }
+.history-box > summary > div:first-child { flex-shrink: 0; }
+.history-box .hist-sum { margin-left: auto; text-align: right; font-size: 12.5px; }
+.history-box .hist-chev { display: inline-flex; color: var(--grey); transform: rotate(-90deg); transition: transform .15s; }
+.history-box .hist-chev svg { width: 16px; height: 16px; }
+.history-box[open] .hist-chev { transform: rotate(90deg); }
+.history-box > summary:hover h2, .history-box > summary:hover .hist-chev { color: var(--text); }
+.history-box[open] > summary { padding-bottom: 12px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+.history { display: flex; flex-direction: column; gap: 12px; max-height: 420px; overflow-y: auto; padding-right: 6px; }
 .hist-item { border-left: 2px solid var(--border-strong); padding: 2px 0 2px 14px; }
 .hist-meta { display: flex; gap: 10px; align-items: baseline; font-size: 13px; margin-bottom: 4px; }
 .hist-item ul { margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--grey); }

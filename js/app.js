@@ -844,14 +844,23 @@ async function renderEditor(route, seq) {
           </div>
           ${!isNew && currentProfile?.is_admin ? `<div style="margin-top:16px;display:flex;justify-content:flex-end"><button type="button" class="btn btn-danger" id="trash-btn">${I.trash}Move to Trash</button></div>` : ""}
         </section>
-        ${isNew ? "" : `<section class="form-section" id="sec-history">
-          <header><div><div class="sec-kicker">Log</div><h2>Change History</h2></div><span class="muted">${changes.length} entr${changes.length === 1 ? "y" : "ies"}</span></header>
-          ${changes.length ? `<div class="history">${changes.filter((c) => (c.changes || []).length).map((c) => `
+        ${isNew ? "" : (() => {
+          const entries = changes.filter((c) => (c.changes || []).length);
+          const last = entries[0];
+          const when = (c) => `${fmtDate(c.changed_at || new Date())} ${new Date(c.changed_at || Date.now()).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+          return `<details class="form-section history-box" id="sec-history">
+          <summary>
+            <div><div class="sec-kicker">Log</div><h2>Change History</h2></div>
+            <span class="hist-sum muted">${entries.length ? `${entries.length} entr${entries.length === 1 ? "y" : "ies"} · last by ${escapeHtml(last.changed_by_name || "someone")}, ${when(last)}` : "No changes yet"}</span>
+            <span class="hist-chev">${I.back}</span>
+          </summary>
+          ${entries.length ? `<div class="history">${entries.map((c) => `
             <div class="hist-item">
-              <div class="hist-meta"><b>${escapeHtml(c.changed_by_name || "Someone")}</b><span class="muted">${fmtDate(c.changed_at || new Date())} ${new Date(c.changed_at || Date.now()).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span></div>
+              <div class="hist-meta"><b>${escapeHtml(c.changed_by_name || "Someone")}</b><span class="muted">${when(c)}</span></div>
               <ul>${(c.changes || []).map((x) => `<li><span class="hist-field">${escapeHtml(x.field)}</span>${x.note ? ` <span class="muted">${escapeHtml(x.note)}</span>` : x.from !== undefined ? ` <span class="hist-from">${escapeHtml(x.from)}</span> → <span class="hist-to">${escapeHtml(x.to)}</span>` : ""}</li>`).join("")}</ul>
-            </div>`).join("")}</div>` : `<div class="muted">No changes recorded yet.</div>`}
-        </section>`}
+            </div>`).join("")}</div>` : `<div class="muted" style="margin-top:12px">No changes recorded yet.</div>`}
+        </details>`;
+        })()}
       </form>
 
       <aside class="notes-panel" id="notes-panel">
