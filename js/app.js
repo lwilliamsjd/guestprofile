@@ -789,7 +789,6 @@ async function renderEditor(route, seq) {
         <section class="form-section" id="sec-car">
           <header><div><div class="sec-kicker">04</div><h2>${I.car}Car Profile</h2></div><span class="garage-total" id="garage-total"></span></header>
           <div class="form-field"><label>Current Garage <span class="hint">(year acquired is used for average ownership)</span></label></div>
-          <div class="garage-head"><span></span><span>Year</span><span>Make</span><span>Model</span><span>Use</span><span>Miles / yr</span><span></span></div>
           <div class="garage-list" id="garage-list"></div>
           <button type="button" class="btn" id="add-car">${I.plus}Add vehicle</button>
           <div class="form-grid" style="margin-top:18px">
@@ -871,16 +870,20 @@ async function renderEditor(route, seq) {
     list.innerHTML = a.garage.map((g, i) => `
       <div class="garage-row" data-i="${i}">
         <span class="g-num">${i + 1}</span>
-        <input data-g="year" value="${escapeHtml(g.year ?? "")}" placeholder="Year" inputmode="numeric" maxlength="4">
-        <input data-g="make" value="${escapeHtml(g.make || "")}" placeholder="Make" list="make-list">
-        <input data-g="model" value="${escapeHtml(g.model || "")}" placeholder="Model">
-        <div class="use-chips">${USAGE_OPTIONS.map((u) => `<button type="button" class="use-chip ${(g.usage || []).includes(u) ? "on" : ""}" data-use="${u}">${u}</button>`).join("")}</div>
-        <input data-g="miles" type="number" min="0" step="500" value="${escapeHtml(g.miles ?? "")}" placeholder="Miles">
-        <button type="button" class="icon-btn" data-rm title="Remove">${I.trash}</button>
-        <div class="g-extra">
-          <input data-g="acquired" value="${escapeHtml(g.acquired ?? "")}" placeholder="Year acquired" inputmode="numeric" maxlength="4">
-          <input data-g="use_note" value="${escapeHtml(g.use_note || "")}" placeholder="How it's used, e.g. Primary track car, about 10 events a year">
+        <div class="g-col">
+          <label class="g-f"><span>Year</span><input data-g="year" value="${escapeHtml(g.year ?? "")}" placeholder="e.g. 2024" inputmode="numeric" maxlength="4"></label>
+          <label class="g-f"><span>Make</span><input data-g="make" value="${escapeHtml(g.make || "")}" placeholder="e.g. Porsche" list="make-list"></label>
+          <label class="g-f"><span>Model</span><input data-g="model" value="${escapeHtml(g.model || "")}" placeholder="e.g. 911 GT3 RS"></label>
         </div>
+        <div class="g-col">
+          <div class="g-f"><span>Use</span><div class="use-chips">${USAGE_OPTIONS.map((u) => `<button type="button" class="use-chip ${(g.usage || []).includes(u) ? "on" : ""}" data-use="${u}">${u}</button>`).join("")}</div></div>
+          <div class="g-pair">
+            <label class="g-f"><span>Miles / yr</span><input data-g="miles" type="number" min="0" step="500" value="${escapeHtml(g.miles ?? "")}" placeholder="Miles"></label>
+            <label class="g-f"><span>Year acquired</span><input data-g="acquired" value="${escapeHtml(g.acquired ?? "")}" placeholder="e.g. 2021" inputmode="numeric" maxlength="4"></label>
+          </div>
+          <label class="g-f"><span>How it's used</span><input data-g="use_note" value="${escapeHtml(g.use_note || "")}" placeholder="e.g. Primary track car, about 10 events a year"></label>
+        </div>
+        <button type="button" class="icon-btn" data-rm title="Remove">${I.trash}</button>
       </div>`).join("");
     updateGarageTotal();
   }
