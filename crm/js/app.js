@@ -420,7 +420,7 @@ function renderShell(route, contentFn) {
             <span class="user-name">${escapeHtml(currentProfile?.full_name || "")}</span>
             ${currentProfile?.is_admin ? `<span class="admin-tag">Admin</span>` : ""}
           </a>
-          <button id="logout-btn" class="btn btn-ghost">Log Out</button>
+          <button id="logout-btn" class="btn btn-ghost" title="Log out" aria-label="Log out">Log Out</button>
         </div>
       </header>
       <main id="main-content" class="main-content"></main>
