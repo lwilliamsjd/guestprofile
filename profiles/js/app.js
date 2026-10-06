@@ -746,7 +746,7 @@ async function renderEditor(route, seq) {
     <datalist id="series-list">${RACE_SERIES.map((t) => `<option value="${t}">`).join("")}</datalist>
     <div class="editor-bar">
       <div class="editor-title">
-        <a href="#/" class="back-btn" title="Back to all applicants">${I.back}</a>
+        <a href="#/" class="back-link">${I.back}Applicants</a>
         <div class="avatar" id="ed-avatar">${escapeHtml(initials(a.name))}</div>
         <div style="min-width:0">
           <div class="editor-name"><span id="ed-name">${escapeHtml(a.name) || "New applicant"}</span><span class="ed-id" id="ed-id">${escapeHtml(profileId(record || {}))}</span></div>
@@ -1378,7 +1378,7 @@ async function renderOutputs(route, seq) {
   };
 
   main.innerHTML = `
-    <a href="#/p/${a.id}" class="back-link">${I.back}Back to the interview form</a>
+    <a href="#/p/${a.id}" class="back-link">${I.back}Back to profile</a>
     <div class="page-header" style="margin-top:8px">
       <div><h1>${escapeHtml(a.name)} <span class="muted" style="font-size:14px;font-weight:600">${escapeHtml(profileId(a))}</span></h1><p class="muted">Outputs reflect the last saved version${a.status === "Draft" ? " · <span style='color:var(--amber)'>still marked Draft</span>" : ""}</p></div>
     </div>

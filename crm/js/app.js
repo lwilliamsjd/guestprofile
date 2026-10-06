@@ -2175,7 +2175,7 @@ async function renderImportPage(route, seq) {
 
   container.innerHTML = `
     <div class="page-header">
-      <div><a href="#/dashboard" class="back-link">${I.back} All Meisters</a><h1>Import Meisters</h1><p class="muted">Load a dealer list from Excel or CSV. Nothing is created until you click Import on the preview.</p></div>
+      <div><a href="#/dashboard" class="back-link">${I.back}All Meisters</a><h1>Import Meisters</h1><p class="muted">Load a dealer list from Excel or CSV. Nothing is created until you click Import on the preview.</p></div>
     </div>
     ${st.done ? `<div class="card import-done">
         <h3>${I.check} Imported ${st.done.created} Meister${st.done.created === 1 ? "" : "s"}</h3>
@@ -2487,7 +2487,7 @@ async function renderMeister(route, seq) {
   container.innerHTML = `
     <div class="page-header">
       <div>
-        <a href="#/dashboard" class="back-link">${I.back} All Meisters</a>
+        <a href="#/dashboard" class="back-link">${I.back}All Meisters</a>
         <h1>${isNew ? "New Meister" : escapeHtml(meister.name)}</h1>
       </div>
       ${!isNew && isAdmin() ? `<button id="delete-btn" class="btn btn-danger">${I.trash} Move to Trash</button>` : ""}
