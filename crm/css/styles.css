@@ -1242,3 +1242,6 @@ input.invalid, select.invalid, textarea.invalid { border-color: var(--red) !impo
 @media (max-width: 1440px) { .ts-long { display: none; } .search-kbd { display: none; } }
 @media (max-width: 1240px) { .user-name { display: none; } .nav a { padding: 7px 10px; } .nav a.active::after { left: 10px; right: 10px; } .topbar { padding-left: 18px; padding-right: 18px; gap: 12px; } }
 @media (max-width: 980px) { .nav { overflow-x: auto; scrollbar-width: none; } .nav::-webkit-scrollbar { display: none; } }
+
+/* status strip: sized to however many tiles are showing */
+.kpi-strip:not(.kpi-strip-4):not(.kpi-strip-5) { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important; }

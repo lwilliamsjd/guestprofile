@@ -68,7 +68,12 @@ let categories = []; // question categories (all, including retired)
 const activeCategories = () => categories.filter((c) => c.active);
 const catById = (id) => categories.find((c) => c.id === id);
 
-const STATUSES = ["New", "Contacted", "Engaged", "Sold", "Not Interested"];
+// Meisters are dealer contacts, not buyers: they're either New or Contacted.
+// The older stages are kept only so any Meister already saved with one still
+// displays it; they can't be picked any more.
+const STATUSES = ["New", "Contacted"];
+const LEGACY_STATUSES = ["Engaged", "Sold", "Not Interested"];
+const ALL_STATUSES = [...STATUSES, ...LEGACY_STATUSES];
 const CONCIERGES = ["Freddie", "Logan"];
 const METHODS = ["Phone", "Text", "Email", "In Person", "Other"];
 const DIRECTIONS = ["Outbound", "Inbound"];
@@ -493,12 +498,14 @@ async function renderDashboard(route, seq) {
   meisters.forEach((m) => Object.assign(m, rollups[m.id] || { last_contact: null, interaction_count: 0, guest_count: 0, my_follow_up: null }));
 
   const counts = { total: meisters.length, overdue: 0, stale: 0 };
-  STATUSES.forEach((s) => (counts[s] = 0));
+  ALL_STATUSES.forEach((s) => (counts[s] = 0));
   meisters.forEach((m) => {
     counts[m.status] = (counts[m.status] || 0) + 1;
     if (m.my_follow_up && followUpState(m.my_follow_up.due_at) === "overdue") counts.overdue++;
     if (isStale(m)) counts.stale++;
   });
+  // New and Contacted always; an old stage only shows while a Meister still has it
+  const shownStatuses = ALL_STATUSES.filter((s) => STATUSES.includes(s) || counts[s] > 0);
 
   // Today panel: what needs attention right now, for the signed-in user.
   const pendingFus = myFus.filter((f) => !f.done_at);
@@ -550,18 +557,18 @@ async function renderDashboard(route, seq) {
 
     <div class="kpi-strip">
       <button class="kpi ${dashState.status === "" ? "active" : ""}" data-status=""><span class="kpi-num">${counts.total}</span><span class="kpi-label">Total</span></button>
-      ${STATUSES.map(
+      ${shownStatuses.map(
         (s) => `<button class="kpi ${dashState.status === s ? "active" : ""}" data-status="${s}"><span class="kpi-num st-${slug(s)}">${counts[s]}</span><span class="kpi-label">${s}</span></button>`
       ).join("")}
       <button class="kpi kpi-alert ${dashState.status === "__overdue" ? "active" : ""}" data-status="__overdue"><span class="kpi-num">${counts.overdue}</span><span class="kpi-label">My overdue</span></button>
-      <button class="kpi kpi-stale ${dashState.status === "__stale" ? "active" : ""}" data-status="__stale" title="No contact in ${STALE_DAYS}+ days (excludes Sold / Not Interested)"><span class="kpi-num">${counts.stale}</span><span class="kpi-label">Going quiet</span></button>
+      <button class="kpi kpi-stale ${dashState.status === "__stale" ? "active" : ""}" data-status="__stale" title="No contact in ${STALE_DAYS}+ days"><span class="kpi-num">${counts.stale}</span><span class="kpi-label">Going quiet</span></button>
     </div>
 
     <div class="filters">
       <div class="search-box">${I.search}<input id="search-input" type="text" placeholder="Search name, title, dealership, city, phone, email…" value="${escapeAttr(dashState.q)}" /></div>
       <select id="status-filter">
         <option value="">All Statuses</option>
-        ${STATUSES.map((s) => `<option ${dashState.status === s ? "selected" : ""}>${s}</option>`).join("")}
+        ${shownStatuses.map((s) => `<option ${dashState.status === s ? "selected" : ""}>${s}</option>`).join("")}
         <option value="__overdue" ${dashState.status === "__overdue" ? "selected" : ""}>My overdue follow-ups</option>
         <option value="__stale" ${dashState.status === "__stale" ? "selected" : ""}>Going quiet (${STALE_DAYS}+ days)</option>
       </select>
@@ -672,7 +679,7 @@ function drawMeisterRows(meisters) {
     name: (m) => (m.name || "").toLowerCase(),
     dealership: (m) => (m.dealership || "").toLowerCase(),
     concierge: (m) => (m.concierge || "").toLowerCase(),
-    status: (m) => STATUSES.indexOf(m.status),
+    status: (m) => ALL_STATUSES.indexOf(m.status),
     follow_up: (m) => m.my_follow_up?.due_at || "",
     last_contact: (m) => m.last_contact || "",
     updated: (m) => m.updated_at || "",
@@ -1210,7 +1217,7 @@ async function renderAnalyticsPage(route, seq) {
   }).filter((x) => x.value || CONCIERGES.includes(x.key));
   const byCat = categories.map((c) => ({ key: c.id, label: c.name, value: ints.filter((i) => i.category_id === c.id).length, active: c.active })).filter((x) => x.value || x.active).sort((a, b) => b.value - a.value);
   const untyped = ints.filter((i) => !i.category_id || !catById(i.category_id)).length;
-  const byStatus = STATUSES.map((s) => ({ key: s, label: s, value: meisters.filter((m) => m.status === s).length, color: STATUS_COLOR[s] }));
+  const byStatus = ALL_STATUSES.filter((s) => STATUSES.includes(s) || meisters.some((m) => m.status === s)).map((s) => ({ key: s, label: s, value: meisters.filter((m) => m.status === s).length, color: STATUS_COLOR[s] }));
   const salesSeries = monthlySeries(d.guests.filter((g) => g.purchase_date && conciergeOk(concOf(g.meisters))).map((g) => g.purchase_date + "T12:00:00"), 12);
   const deliverySeries = monthlySeries(d.guests.filter((g) => g.delivery_date && conciergeOk(concOf(g.meisters))).map((g) => g.delivery_date + "T12:00:00"), 12);
   const engaged = groupBy(ints, (i) => i.meister_id)
@@ -2508,7 +2515,7 @@ async function renderMeister(route, seq) {
               <div class="form-field"><label>Name *</label><input id="f-name" data-draft required value="${escapeAttr(dv("f-name", meister?.name))}" /></div>
               <div class="form-field"><label>Job Title</label><input id="f-job-title" data-draft placeholder="e.g. General Manager" value="${escapeAttr(dv("f-job-title", meister?.job_title))}" /></div>
               <div class="form-field"><label>Status</label>
-                <select id="f-status" data-draft>${STATUSES.map((s) => `<option ${dv("f-status", meister?.status || "New") === s ? "selected" : ""}>${s}</option>`).join("")}</select>
+                <select id="f-status" data-draft>${(STATUSES.includes(meister?.status || "New") ? STATUSES : [...STATUSES, meister.status]).map((s) => `<option ${dv("f-status", meister?.status || "New") === s ? "selected" : ""}>${s}</option>`).join("")}</select>
               </div>
               <div class="form-field"><label>Concierge</label>
                 <select id="f-concierge" data-draft>
