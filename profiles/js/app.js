@@ -322,12 +322,15 @@ async function render() {
   if (route.name === "analytics") return renderAnalytics(seq);
 }
 
-onAuthChange((s) => {
+// Deferred with setTimeout: running Supabase calls inside the auth callback
+// deadlocks supabase-js's auth lock, which shows up as pages that never load.
+onAuthChange((s) => setTimeout(() => handleAuthChange(s), 0));
+function handleAuthChange(s) {
   const was = !!session;
   session = s;
   if (!s) { currentProfile = null; leavePresence(); if (unsubscribeLive) { unsubscribeLive(); unsubscribeLive = null; } paintConn(); }
   if (was !== !!s) render();
-});
+}
 
 // ---------- switching to the CRM ----------
 try { localStorage.setItem("grc-last-tool", "profiles"); } catch {}

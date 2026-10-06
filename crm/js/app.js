@@ -227,7 +227,11 @@ async function init() {
   }
   render();
 
-  onAuthChange(async (event, sess) => {
+  // Never await Supabase calls directly inside the auth callback: supabase-js
+  // holds its auth lock while the callback runs, so those calls deadlock and
+  // every later query hangs. Defer the work until the callback has returned.
+  onAuthChange((event, sess) => setTimeout(() => handleAuthEvent(event, sess), 0));
+  async function handleAuthEvent(event, sess) {
     if (event === "SIGNED_IN") {
       const alreadySignedIn = !!currentProfile;
       currentProfile = await getCurrentProfile();
@@ -243,7 +247,7 @@ async function init() {
     } else if (event === "TOKEN_REFRESHED") {
       setConn("ok");
     }
-  });
+  }
 
   // Connection awareness: browser offline/online + realtime channel health.
   window.addEventListener("offline", () => setConn("offline"));

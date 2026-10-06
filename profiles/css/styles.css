@@ -502,4 +502,15 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .ts-opt:hover { color: var(--text); text-decoration: none; background: var(--panel-3); }
 .ts-opt.on { background: var(--red); color: #fff; box-shadow: 0 0 14px var(--red-glow); }
 .ts-opt.on:hover { background: var(--red); }
-@media (max-width: 1100px) { .ts-long { display: none; } }
+
+/* ---------- top navigation: single line pill tabs (shared look across both tools) ---------- */
+.topbar { gap: 20px; }
+.nav { display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.015); flex-wrap: nowrap; min-width: 0; }
+.nav a { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; border-bottom: none !important; color: var(--grey); font-size: 13.5px; font-weight: 600; white-space: nowrap; line-height: 1.2; transition: background .15s, color .15s; }
+.nav a:hover { color: var(--text); background: var(--panel-2); text-decoration: none; }
+.nav a.active { color: var(--text); background: var(--panel-3); }
+.nav a.active::after { content: ""; position: absolute; left: 14px; right: 14px; bottom: 2px; height: 2px; border-radius: 2px; background: var(--red); }
+.user-area { flex-shrink: 0; }
+@media (max-width: 1440px) { .ts-long { display: none; } .search-kbd { display: none; } }
+@media (max-width: 1240px) { .user-name { display: none; } .nav a { padding: 7px 10px; } .nav a.active::after { left: 10px; right: 10px; } .topbar { padding-left: 18px; padding-right: 18px; gap: 12px; } }
+@media (max-width: 980px) { .nav { overflow-x: auto; scrollbar-width: none; } .nav::-webkit-scrollbar { display: none; } }
