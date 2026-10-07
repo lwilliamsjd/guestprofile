@@ -720,15 +720,30 @@ async function renderEditor(route, seq) {
 
   // ----- spec considerations checklist -----
   const specOn = (l) => a.spec_tags.some((t) => t.label === l);
-  const specBox = (l, text) => `<label class="spec-opt"><input type="checkbox" data-spec="${escapeHtml(l)}" ${specOn(l) ? "checked" : ""}><span class="spec-box">${I.check}</span>${escapeHtml(text)}</label>`;
-  const specBlock = () => `<div class="spec-grid">${SPEC_OPTIONS.map(([c, subs]) => `
-      <div class="spec-row"><div class="spec-cat">${c}</div><div class="spec-opts">${subs.map(([sub, opts]) =>
-        `<div class="spec-sub">${sub ? `<span class="spec-sub-name">${sub}</span>` : ""}${opts.map((o) => specBox(specLabel(c, sub, o), o)).join("")}</div>`).join("")}</div></div>`).join("")}
+  const specBox = (l, text) => `<label class="spec-opt ${specOn(l) ? "on" : ""}"><input type="checkbox" data-spec="${escapeHtml(l)}" ${specOn(l) ? "checked" : ""}><span class="spec-box">${I.check}</span>${escapeHtml(text)}</label>`;
+  // display layout: interior choices share one card
+  const SPEC_CARDS = [
+    { title: "Color", cats: ["Color"], cls: "full" },
+    { title: "Wheels", cats: ["Wheels"] },
+    { title: "Brakes", cats: ["Brakes"] },
+    { title: "Interior", cats: ["Interior Color", "Interior Material", "Seat Type"], names: ["Color", "Material", "Seat"], cls: "tall" },
+    { title: "Exhaust", cats: ["Exhaust"] },
+    { title: "Accessories", cats: ["Accessories"] },
+  ];
+  const specCount = (cats) => a.spec_tags.filter((t) => SPEC_LABELS.includes(t.label) && cats.some((c) => t.label.startsWith(c + ": "))).length;
+  const specBlock = () => `<div class="spec-grid">${SPEC_CARDS.map((card) => `
+      <div class="spec-card ${card.cls || ""}" data-spec-cat="${card.cats.join("|")}">
+        <div class="spec-head"><span>${card.title}</span><em>${specCount(card.cats) || ""}</em></div>
+        ${card.cats.map((c, ci) => SPEC_OPTIONS.find(([n]) => n === c)[1].map(([sub, opts]) => {
+          const name = sub || (card.names ? card.names[ci] : "");
+          return `<div class="spec-sub">${name ? `<div class="spec-sub-name">${name}</div>` : ""}<div class="spec-pills">${opts.map((o) => specBox(specLabel(c, sub, o), o)).join("")}</div></div>`;
+        }).join("")).join("")}
+      </div>`).join("")}
       <div id="spec-old"></div></div>`;
   function drawSpecOld() {
     const box = main.querySelector("#spec-old"); if (!box) return;
     const old = a.spec_tags.map((t, i) => [t, i]).filter(([t]) => !SPEC_LABELS.includes(t.label));
-    box.innerHTML = old.length ? `<div class="spec-row"><div class="spec-cat">Older entries</div><div class="spec-opts">${old.map(([t, i]) => `<span class="tag-chip" data-spec-i="${i}">${escapeHtml(t.label)}<button type="button" class="tag-x" data-spec-rm title="Remove">✕</button></span>`).join("")}</div></div>` : "";
+    box.innerHTML = old.length ? `<div class="spec-card"><div class="spec-head"><span>Older entries</span></div><div class="spec-pills">${old.map(([t, i]) => `<span class="tag-chip" data-spec-i="${i}">${escapeHtml(t.label)}<button type="button" class="tag-x" data-spec-rm title="Remove">✕</button></span>`).join("")}</div></div>` : "";
   }
 
   // ----- intended usage split -----
@@ -1026,6 +1041,8 @@ async function renderEditor(route, seq) {
     if (sp.checked && at < 0) a.spec_tags.push({ label: l, priority: false });
     if (!sp.checked && at >= 0) a.spec_tags.splice(at, 1);
     a.spec_tags.sort((x, y) => (SPEC_LABELS.indexOf(x.label) + 1 || 999) - (SPEC_LABELS.indexOf(y.label) + 1 || 999));
+    sp.closest(".spec-opt").classList.toggle("on", sp.checked);
+    const card = sp.closest("[data-spec-cat]"); card.querySelector(".spec-head em").textContent = specCount(card.dataset.specCat.split("|")) || "";
     drawSpecOld(); updateProgress(); markDirty();
   });
   main.addEventListener("change", (e) => { const inp = e.target.closest(".tag-in"); if (inp && inp.value.trim()) { addTag(inp.closest("[data-tags]").dataset.tags, inp.value); inp.value = ""; } });
