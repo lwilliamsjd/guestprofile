@@ -9,7 +9,7 @@ import {
   USAGE_OPTIONS, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
-  buildSummaryText, buildPersonaHtml,
+  buildSummaryText, buildPersonaHtml, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
 } from "./outputs.js";
 import { SUPABASE_URL } from "./config.js";
 
@@ -576,7 +576,7 @@ function appendApplicantSheets(wb, rows) {
     "Recent Flips": r.has_flips === true ? "Yes" : r.has_flips === false ? "No" : "", "Flip Details": r.recent_flips,
     "Why the GR GT": r.intended_use, ...Object.fromEntries(USAGE_SPLIT.map(([k, l]) => [`${l} %`, u[k] ?? null])), "Usage Note": r.usage_note,
     "Target Quarter": r.target_quarter, "Timing Flexibility": r.timing_flex, "Timing Note": r.timing_note, "Timing (older answer)": r.timing,
-    "Spec Considerations": rowsOf(r.spec_tags, "label").map((t) => t.label + (t.priority ? " (priority)" : "")).join(", ") || r.spec_consideration,
+    "Spec Considerations": specText(r) || r.spec_consideration,
     "Cross Shopping": rowsOf(r.cross_shop, "model").map((c) => `${c.model}${c.status ? ` (${c.status})` : ""}`).join("; "),
     "Concierge Rec": r.concierge_rec, "Assessment": r.assessment, Strengths: linesOf(r.strengths).join("; "), Flags: linesOf(r.concerns).join("; "),
     "Leadership Decision": r.allocation || "Pending", "Needs Follow Up": r.needs_followup ? "Yes" : "No", "Follow Up Note": r.followup_note,
@@ -718,6 +718,19 @@ async function renderEditor(route, seq) {
     drawTags(key); markDirty();
   }
 
+  // ----- spec considerations checklist -----
+  const specOn = (l) => a.spec_tags.some((t) => t.label === l);
+  const specBox = (l, text) => `<label class="spec-opt"><input type="checkbox" data-spec="${escapeHtml(l)}" ${specOn(l) ? "checked" : ""}><span class="spec-box">${I.check}</span>${escapeHtml(text)}</label>`;
+  const specBlock = () => `<div class="spec-grid">${SPEC_OPTIONS.map(([c, subs]) => `
+      <div class="spec-row"><div class="spec-cat">${c}</div><div class="spec-opts">${subs.map(([sub, opts]) =>
+        `<div class="spec-sub">${sub ? `<span class="spec-sub-name">${sub}</span>` : ""}${opts.map((o) => specBox(specLabel(c, sub, o), o)).join("")}</div>`).join("")}</div></div>`).join("")}
+      <div id="spec-old"></div></div>`;
+  function drawSpecOld() {
+    const box = main.querySelector("#spec-old"); if (!box) return;
+    const old = a.spec_tags.map((t, i) => [t, i]).filter(([t]) => !SPEC_LABELS.includes(t.label));
+    box.innerHTML = old.length ? `<div class="spec-row"><div class="spec-cat">Older entries</div><div class="spec-opts">${old.map(([t, i]) => `<span class="tag-chip" data-spec-i="${i}">${escapeHtml(t.label)}<button type="button" class="tag-x" data-spec-rm title="Remove">✕</button></span>`).join("")}</div></div>` : "";
+  }
+
   // ----- intended usage split -----
   const splitBlock = () => `
     <div class="split-ed">${USAGE_SPLIT.map(([k, l]) => `<label class="split-in"><span>${l}</span><span class="pct-wrap"><input type="number" min="0" max="100" step="5" data-split="${k}" value="${a.usage_split && a.usage_split[k] !== "" && a.usage_split[k] != null ? a.usage_split[k] : ""}" placeholder="0"><i>%</i></span></label>`).join("")}
@@ -843,7 +856,7 @@ async function renderEditor(route, seq) {
             ${field("target_quarter", "Target Delivery Quarter", { type: "select", options: quarterOptions() })}
             ${field("timing_flex", "Flexibility", { type: "select", options: TIMING_FLEX })}
             ${field("timing_note", "Timing Note", { type: "textarea", rows: 2, span: true, ph: "Wants delivery before the summer track season…", hint: a.timing ? `(earlier answer: ${escapeHtml(a.timing)})` : "" })}
-            <div class="form-field span-2"><label>Spec Considerations <span class="hint">(type and press Enter; click the star on their top priority)</span></label>${tagBlock("spec_tags", "e.g. Carbon ceramic brakes")}</div>
+            <div class="form-field span-2"><label>Spec Considerations <span class="hint">(check everything they're considering)</span></label>${specBlock()}</div>
             ${legacy("spec_consideration", "Spec Consideration notes")}
           </div>
           <div class="form-field" style="margin-top:16px"><label>Cross Shopping</label></div>
@@ -968,7 +981,7 @@ async function renderEditor(route, seq) {
 
   // ----- rows, tags, usage split, slider -----
   Object.keys(ROW_DEFS).forEach(drawRows);
-  ["race_series", "spec_tags"].forEach(drawTags);
+  drawTags("race_series"); drawSpecOld();
   paintSplitTotal();
   main.addEventListener("click", (e) => {
     const add = e.target.closest("[data-add-row]");
@@ -988,6 +1001,8 @@ async function renderEditor(route, seq) {
       drawRows(key); updateGarageTotal(); updateProgress(); markDirty();
       return;
     }
+    const oldSpec = e.target.closest("[data-spec-rm]");
+    if (oldSpec) { a.spec_tags.splice(+oldSpec.closest("[data-spec-i]").dataset.specI, 1); drawSpecOld(); markDirty(); return; }
     const chip = e.target.closest(".tag-chip");
     if (chip) {
       const key = chip.closest("[data-tags]").dataset.tags, i = +chip.dataset.i;
@@ -1005,6 +1020,14 @@ async function renderEditor(route, seq) {
     else if (e.key === "Backspace" && !inp.value && a[key].length) { a[key].pop(); drawTags(key); markDirty(); }
   });
   // picking from the suggestion list, or leaving the box, adds what was typed
+  main.addEventListener("change", (e) => {
+    const sp = e.target.closest("[data-spec]"); if (!sp) return;
+    const l = sp.dataset.spec, at = a.spec_tags.findIndex((t) => t.label === l);
+    if (sp.checked && at < 0) a.spec_tags.push({ label: l, priority: false });
+    if (!sp.checked && at >= 0) a.spec_tags.splice(at, 1);
+    a.spec_tags.sort((x, y) => (SPEC_LABELS.indexOf(x.label) + 1 || 999) - (SPEC_LABELS.indexOf(y.label) + 1 || 999));
+    drawSpecOld(); updateProgress(); markDirty();
+  });
   main.addEventListener("change", (e) => { const inp = e.target.closest(".tag-in"); if (inp && inp.value.trim()) { addTag(inp.closest("[data-tags]").dataset.tags, inp.value); inp.value = ""; } });
   const styleEd = main.querySelector("#style-ed");
   main.querySelector("#style-range").addEventListener("input", (e) => {

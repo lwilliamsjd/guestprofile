@@ -10,6 +10,33 @@ export const DECISIONS = ["Approve", "Waitlist", "Decline"];
 export const USAGE_SPLIT = [["track", "Track / HPDE"], ["street", "Street / GT"], ["events", "Events / Shows"], ["collection", "Collection"]];
 export const CROSS_STATUSES = ["Owns", "Test driven", "Considered", "Ruled out"];
 export const TIMING_FLEX = ["Firm", "±1 quarter", "±2 quarters", "Open"];
+// Spec considerations checklist. [category, [[sub group or "", [options]]]]
+// A checked box is saved in spec_tags as "Category: Sub Option", e.g. "Brakes: Carbon Ceramic Red".
+export const SPEC_OPTIONS = [
+  ["Color", [["", ["White", "Red", "Gray", "Dark Gray", "Black", "Silver", "Blue", "Green", "Yellow"]]]],
+  ["Wheels", [["BBS", ["Gloss Gray", "Black"]], ["Rays Racing", ["Light Gray", "Gold"]]]],
+  ["Interior Color", [["", ["Black", "Red", "Hazel"]]]],
+  ["Interior Material", [["", ["Standard", "Ultra Suede"]]]],
+  ["Seat Type", [["", ["Semi-Bucket", "Full Bucket"]]]],
+  ["Brakes", [["Steel", ["Black", "Red"]], ["Carbon Ceramic", ["Black", "Red", "Blue", "Silver", "Yellow"]]]],
+  ["Exhaust", [["", ["Standard", "Sport"]]]],
+  ["Accessories", [["", ["Wireless Charger", "Front Lift"]]]],
+];
+export const specLabel = (cat, sub, opt) => `${cat}: ${sub ? sub + " " : ""}${opt}`;
+export const SPEC_LABELS = SPEC_OPTIONS.flatMap(([c, subs]) => subs.flatMap(([sub, opts]) => opts.map((o) => specLabel(c, sub, o))));
+// checked options grouped by category (in checklist order), then any older typed entries
+export function specGroups(a) {
+  const tags = rowsOf(a.spec_tags, "label");
+  const out = [];
+  SPEC_OPTIONS.forEach(([c]) => {
+    const items = tags.filter((t) => SPEC_LABELS.includes(t.label) && t.label.startsWith(c + ": ")).map((t) => t.label.slice(c.length + 2));
+    if (items.length) out.push({ group: c, items });
+  });
+  tags.filter((t) => !SPEC_LABELS.includes(t.label)).forEach((t) => out.push({ group: "", items: [clean(t.label)], priority: !!t.priority }));
+  return out;
+}
+export const specText = (a) => specGroups(a).map((g) => (g.group ? `${g.group}: ${g.items.join(", ")}` : `${g.items[0]}${g.priority ? " (priority)" : ""}`)).join("; ");
+
 export const SOCIAL_PLATFORMS = ["Instagram", "YouTube", "TikTok", "Facebook", "X", "LinkedIn", "Threads", "Website", "Other"];
 
 const clean = (s) => (s == null ? "" : String(s).trim());
@@ -136,7 +163,6 @@ function timingText(a) {
   if (has(a.target_quarter)) return [clean(a.target_quarter), has(a.timing_flex) ? `(${a.timing_flex})` : ""].filter(Boolean).join(" ");
   return clean(a.timing);
 }
-const specText = (a) => rowsOf(a.spec_tags, "label").map((t) => `${clean(t.label)}${t.priority ? " (priority)" : ""}`).join(", ");
 const crossText = (a) => rowsOf(a.cross_shop, "model").map((c) => `${clean(c.model)}${[c.status, clean(c.note)].filter(has).length ? ` (${[c.status, clean(c.note)].filter(has).join(", ")})` : ""}`).join("; ");
 
 function fullText(a) {
@@ -433,7 +459,7 @@ export function buildPersonaHtml(a, opts = {}) {
       <div class="ulegend">${USAGE_SPLIT.map(([k, l]) => `<span><i style="background:${SPLIT_COLORS[k]}"></i>${l.toUpperCase()} ${u[k]}%</span>`).join("")}</div>`
     : (a.gt_usage || []).length ? `<div class="ulegend">${a.gt_usage.map((x) => `<span><i style="background:#eb0a1e"></i>${e(x).toUpperCase()}</span>`).join("")}</div>` : none();
 
-  const specs = rowsOf(a.spec_tags, "label");
+  const specs = specGroups(a);
   const cross = rowsOf(a.cross_shop, "model");
   const rec = has(a.concierge_rec) ? a.concierge_rec : "";
   const recBadge = (cls) => (rec ? `<span class="rec ${cls}" style="background:${DECISION_COLORS[rec] || "#555"}">${cls === "rec-sm" ? "CONCIERGE REC.&nbsp; " : ""}<b>${e(rec).toUpperCase()}</b></span>` : "");
@@ -472,7 +498,7 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
     </div>
     <div class="buy2">
-      <div><h3>SPEC CONSIDERATIONS</h3><div class="specs fit" data-fit="Spec considerations">${specs.length ? specs.map((t) => `<span class="${t.priority ? "pri" : ""}">${e(t.label).toUpperCase()}</span>`).join("") : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div></div>
+      <div><h3>SPEC CONSIDERATIONS</h3><div class="specs fit" data-fit="Spec considerations">${specs.length ? specs.map((g) => `<span class="${g.priority ? "pri" : ""}">${g.group ? `<b>${e(g.group).toUpperCase()}</b> ${e(g.items.join(" / ")).toUpperCase()}` : e(g.items[0]).toUpperCase()}</span>`).join("") : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div></div>
       <div><h3>CROSS SHOPPING</h3><div class="fit" data-fit="Cross shopping">${cross.length ? `<table class="cross">${cross.slice(0, 6).map((c) => `<tr><td>${e(c.model)}</td><td>${e([c.status, c.note].filter(has).join(" · ")).toUpperCase()}</td></tr>`).join("")}</table>` : none()}</div></div>
     </div>
     <div class="bottom">
@@ -656,6 +682,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .buy2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; padding: 0 36px; height: 120px; flex-shrink: 0; }
 .specs { display: flex; flex-wrap: wrap; gap: 5px; align-content: flex-start; max-height: 92px; }
 .specs span { border: 1px solid #111; font: 700 9px "Barlow Condensed"; letter-spacing: .08em; padding: 4px 8px; }
+.specs span b { color: #eb0a1e; margin-right: 2px; }
 .specs span.pri { background: #eb0a1e; border-color: #eb0a1e; color: #fff; }
 .cross { width: 100%; border-collapse: collapse; } .cross td { padding: 3px 0; border-bottom: 1px solid #e3e3e7; font-size: 10.5px; font-weight: 700; }
 .cross td + td { text-align: right; font: 600 8.5px "Barlow Condensed"; letter-spacing: .1em; color: #3a3a40; }
