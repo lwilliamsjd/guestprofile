@@ -311,7 +311,7 @@ export function bannerPhrases(a) {
   return [safe(a.persona_left), a.code_phrase ? CODE_PHRASE : safe(a.persona_center), safe(a.persona_right)];
 }
 // two or three sentences for the top of page 1; falls back to the start of the full bio
-export const SHORT_BIO_FITS = 300;
+export const SHORT_BIO_FITS = 400;
 const GLANCE_SPEC = { "Interior Color": "Interior", "Interior Material": "Material", "Seat Type": "Seats", Accessories: "Extras" };
 export function shortBio(a) {
   if (has(a.bio_short)) return clean(a.bio_short);
@@ -418,15 +418,22 @@ export function buildPersonaHtml(a, opts = {}) {
     ${topbar}
     <div class="hero">
       <div class="h-left">
-        <div class="ribbon"><b>GR GT</b><span>BUYER<br>PROFILE</span></div>
         <div class="idrow">
           <div class="thumb">${photo}</div>
-          <div class="names"><div class="fname">${e(first).toUpperCase()}</div><div class="lname">${e(last).toUpperCase()}</div></div>
+          <div class="names"><div class="tagline"><b>GR GT</b>BUYER PROFILE</div><div class="fname">${e(first).toUpperCase()}</div><div class="lname">${e(last).toUpperCase()}</div></div>
         </div>
         <div class="facts">
           <div><label>AGE RANGE</label><b>${e(a.age_range) || "—"}</b></div>
           <div><label>LOCATION</label><b>${e(loc) || "—"}</b></div>
           <div><label>PREFERRED DEALER</label><b>${e(a.preferred_dealer) || "—"}</b></div>
+        </div>
+        <div class="stats hstats">
+          <div><b>${has(a.years_on_track) ? e(a.years_on_track) : "—"}</b><span>YRS ON TRACK</span></div>
+          <div><b>${has(a.track_days) ? e(a.track_days) : "—"}</b><span>TRACK DAYS</span></div>
+          <div><b>${avg != null ? `${avg}<small>YR</small>` : "—"}</b><span>AVG HOLD</span></div>
+          <div><b>${g.length || "—"}</b><span>IN GARAGE</span></div>
+          <div><b>${miles ? fmtK(miles) : "—"}</b><span>GARAGE MI/YR</span></div>
+          <div><b>${th.length || "—"}</b><span>TOYOTA/LEXUS</span></div>
         </div>
       </div>
       <div class="h-right">
@@ -439,17 +446,10 @@ export function buildPersonaHtml(a, opts = {}) {
     ${band}
     <div class="grid3">
       <div class="panel-grey">
-        <div class="ph"><b>QUICK STATS</b></div>
-        <div class="stats">
-          <div><b>${has(a.years_on_track) ? e(a.years_on_track) : "—"}</b><span>YRS ON TRACK</span></div>
-          <div><b>${has(a.track_days) ? e(a.track_days) : "—"}</b><span>TRACK DAYS</span></div>
-          <div><b>${avg != null ? `${avg}<small>YR</small>` : "—"}</b><span>AVG YRS OWNED</span></div>
-          <div><b>${g.length || "—"}</b><span>IN GARAGE</span></div>
-          <div><b>${miles ? fmtK(miles) : "—"}</b><span>GARAGE MI/YR</span></div>
-          <div><b>${th.length || "—"}</b><span>TOYOTA/LEXUS</span></div>
-        </div>
         <div class="ph"><b>SOCIAL MEDIA</b></div>
         <div class="fit socials" data-fit="Social media">${socialHtml}</div>
+        <div class="ph ph2"><b>TRACK &amp; DRIVING CLUBS</b></div>
+        <div class="fit clubs" data-fit="Track and driving clubs">${bullets(linesOf(a.clubs))}</div>
       </div>
       <div class="ms">
         <h3>MOTORSPORTS EXPERIENCE</h3>
@@ -552,7 +552,6 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
     </div>
     <div class="buy2">
-      <div><h3>TRACK &amp; DRIVING CLUBS</h3><div class="fit" data-fit="Track and driving clubs">${bullets(linesOf(a.clubs))}</div></div>
       <div><h3>KEY MOTORSPORTS EVENTS</h3><div class="fit" data-fit="Key motorsports events">${bullets(linesOf(a.key_events))}</div></div>
       <div><h3>CROSS SHOPPING</h3><div class="fit" data-fit="Cross shopping">${cross.length ? `<table class="cross">${cross.slice(0, 6).map((c) => `<tr><td>${e(c.model)}</td><td>${e([c.status, c.note].filter(has).join(" · ")).toUpperCase()}</td></tr>`).join("")}</table>` : none()}</div></div>
     </div>
@@ -617,16 +616,18 @@ ul { margin: 0; padding: 0; list-style: none; }
 .ribbon { background: #eb0a1e; color: #fff; width: 112px; padding: 8px 12px 18px; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%); }
 .ribbon b { display: block; font: italic 800 22px/1 "Barlow Condensed"; }
 .ribbon span { font: 700 9.5px/1.3 "Barlow Condensed"; letter-spacing: .14em; }
-.idrow { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
-.thumb { position: relative; width: 96px; height: 116px; flex-shrink: 0; overflow: hidden; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%); background: linear-gradient(180deg, #17171a 0%, #2b1418 70%, #5a1520 100%); display: flex; align-items: center; justify-content: center; }
+.idrow { display: flex; align-items: center; gap: 18px; margin-top: 22px; }
+.tagline { display: inline-flex; align-items: center; gap: 6px; background: #eb0a1e; color: #fff; font: 700 9px "Barlow Condensed"; letter-spacing: .16em; padding: 3px 10px 3px 8px; margin-bottom: 8px; clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
+.tagline b { font: italic 800 13px/1 "Barlow Condensed"; letter-spacing: .02em; }
+.thumb { position: relative; width: 96px; height: 114px; flex-shrink: 0; overflow: hidden; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%); background: linear-gradient(180deg, #17171a 0%, #2b1418 70%, #5a1520 100%); display: flex; align-items: center; justify-content: center; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
 .ph-stripes { position: absolute; inset: 0; background: repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 8px, transparent 8px 18px); }
 .ph-initials { position: relative; z-index: 1; font: italic 800 40px/1 "Barlow Condensed"; color: #fff; }
 .ph-note { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font: 600 6.5px "Barlow Condensed"; letter-spacing: .16em; color: rgba(255,255,255,.55); z-index: 1; }
 .names { min-width: 0; }
-.fname { font: italic 800 48px/.9 "Barlow Condensed"; letter-spacing: -.01em; word-break: break-word; }
-.lname { font: 800 26px/1 "Barlow Condensed"; color: #5c5c64; margin-top: 3px; word-break: break-word; }
-.facts { margin-top: 16px; padding-top: 10px; border-top: 2px solid #111; display: grid; grid-template-columns: .7fr 1fr 1.5fr; gap: 12px; }
+.fname { font: italic 800 54px/.9 "Barlow Condensed"; letter-spacing: -.01em; word-break: break-word; }
+.lname { font: 800 28px/1 "Barlow Condensed"; color: #5c5c64; margin-top: 3px; word-break: break-word; }
+.facts { margin-top: 18px; padding-top: 10px; border-top: 2px solid #111; display: grid; grid-template-columns: .7fr 1fr 1.5fr; gap: 12px; }
 .facts .wide { grid-column: 1 / -1; }
 .facts label { display: block; font: 600 8.5px "Barlow Condensed"; letter-spacing: .16em; color: #8a8a92; }
 .facts b { font-size: 12.5px; font-weight: 700; }
@@ -668,11 +669,15 @@ ul { margin: 0; padding: 0; list-style: none; }
 .grid3 { display: grid; grid-template-columns: 268px 1fr 254px; gap: 18px; padding: 0 36px; flex-shrink: 0; position: relative; z-index: 1; }
 .panel-grey { background: #efeff1; padding: 12px 16px 12px; height: 272px; display: flex; flex-direction: column; }
 .ph { border-bottom: 2px solid #111; padding-bottom: 5px; margin-bottom: 8px; font: 700 12.5px "Barlow Condensed"; letter-spacing: .12em; }
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 8px; margin-bottom: 12px; }
-.stats b { display: block; font: italic 800 26px/1 "Barlow Condensed"; }
-.stats b small { font-size: 13px; margin-left: 1px; }
-.stats span { font: 600 8px "Barlow Condensed"; letter-spacing: .08em; color: #5c5c64; white-space: nowrap; }
-.socials { flex: 1; min-height: 0; }
+.hstats { display: grid; grid-template-columns: repeat(6, 1fr); margin-top: 14px; border-top: 1px solid #d6d6db; padding-top: 8px; }
+.hstats div { padding-right: 4px; }
+.hstats div + div { border-left: 1px solid #e3e3e7; padding-left: 7px; }
+.hstats b { display: block; font: italic 800 24px/1 "Barlow Condensed"; }
+.hstats b small { font-size: 11px; margin-left: 1px; }
+.hstats span { display: block; margin-top: 3px; font: 600 7.5px/1.15 "Barlow Condensed"; letter-spacing: .08em; color: #5c5c64; white-space: nowrap; }
+.ph2 { margin-top: 12px; }
+.clubs { max-height: 92px; }
+.socials { max-height: 120px; }
 .soc { display: grid; grid-template-columns: 62px 1fr auto; gap: 6px; padding: 6px 0; border-bottom: 1px solid #d6d6db; align-items: baseline; }
 .soc-p { font: 700 9.5px/1.3 "Barlow Condensed"; letter-spacing: .1em; }
 .soc-h b { display: block; font-size: 10.5px; line-height: 1.3; } .soc-h span { color: #6b6b73; font-size: 9.5px; }
@@ -760,7 +765,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .buy3 p { font-size: 10.5px; color: #3a3a40; max-height: 48px; }
 .tq { font: italic 800 38px/1 "Barlow Condensed"; color: #eb0a1e; } .tq.sm { font-size: 22px; }
 .tflex { font: 700 11px "Barlow Condensed"; letter-spacing: .1em; margin: 2px 0 6px; }
-.buy2 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 22px; padding: 0 36px; height: 120px; flex-shrink: 0; }
+.buy2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; padding: 0 36px; height: 120px; flex-shrink: 0; }
 .specs { display: flex; flex-wrap: wrap; gap: 5px; align-content: flex-start; max-height: 92px; }
 .specs span { border: 1px solid #111; font: 700 9px "Barlow Condensed"; letter-spacing: .08em; padding: 4px 8px; }
 .specs span b { color: #eb0a1e; margin-right: 2px; }
