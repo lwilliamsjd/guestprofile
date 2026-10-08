@@ -425,7 +425,6 @@ export function buildPersonaHtml(a, opts = {}) {
           <div><label>LOCATION</label><b>${e(loc) || "—"}</b></div>
           <div class="wide"><label>PREFERRED DEALER</label><b>${e(a.preferred_dealer) || "—"}</b></div>
         </div>
-        <div class="own"><span class="own-num">${avg != null ? `${avg}<small>YR</small>` : "—"}</span><span class="own-cap">AVERAGE<br>OWNERSHIP<br>PER CAR</span></div>
       </div>
       <div class="h-photo">
         <div class="ph-frame">${photo}</div>
@@ -444,10 +443,12 @@ export function buildPersonaHtml(a, opts = {}) {
       <div class="panel-grey">
         <div class="ph"><b>QUICK STATS</b></div>
         <div class="stats">
-          <div><b>${has(a.years_on_track) ? e(a.years_on_track) : "—"}</b><span>YEARS ON TRACK</span></div>
+          <div><b>${has(a.years_on_track) ? e(a.years_on_track) : "—"}</b><span>YRS ON TRACK</span></div>
           <div><b>${has(a.track_days) ? e(a.track_days) : "—"}</b><span>TRACK DAYS</span></div>
-          <div><b>${g.length || "—"}</b><span>CARS IN GARAGE</span></div>
-          <div><b>${miles ? fmtK(miles) : "—"}</b><span>GARAGE MI / YR</span></div>
+          <div><b>${avg != null ? `${avg}<small>YR</small>` : "—"}</b><span>AVG YRS OWNED</span></div>
+          <div><b>${g.length || "—"}</b><span>IN GARAGE</span></div>
+          <div><b>${miles ? fmtK(miles) : "—"}</b><span>GARAGE MI/YR</span></div>
+          <div><b>${th.length || "—"}</b><span>TOYOTA/LEXUS</span></div>
         </div>
         <div class="ph"><b>SOCIAL MEDIA</b></div>
         <div class="fit socials" data-fit="Social media">${socialHtml}</div>
@@ -615,7 +616,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .ribbon span { font: 700 9.5px/1.3 "Barlow Condensed"; letter-spacing: .14em; }
 .fname { font: italic 800 50px/.9 "Barlow Condensed"; margin-top: 10px; letter-spacing: -.01em; word-break: break-word; }
 .lname { font: 800 26px/1 "Barlow Condensed"; color: #5c5c64; margin-top: 2px; }
-.facts { margin-top: 10px; display: grid; grid-template-columns: 1fr 1.3fr; gap: 6px 12px; }
+.facts { margin-top: 16px; padding-top: 12px; border-top: 2px solid #111; display: grid; grid-template-columns: 1fr 1.3fr; gap: 10px 12px; }
 .facts .wide { grid-column: 1 / -1; }
 .facts label { display: block; font: 600 8.5px "Barlow Condensed"; letter-spacing: .16em; color: #8a8a92; }
 .facts b { font-size: 12.5px; font-weight: 700; }
@@ -624,12 +625,12 @@ ul { margin: 0; padding: 0; list-style: none; }
 .own-num small { font-size: 22px; }
 .own-cap { font: 700 10.5px/1.15 "Barlow Condensed"; letter-spacing: .12em; }
 .h-photo { position: relative; padding-top: 22px; }
-.ph-frame { position: relative; height: 254px; overflow: hidden; clip-path: polygon(14% 0, 100% 0, 86% 100%, 0 100%); background: linear-gradient(180deg, #17171a 0%, #2b1418 70%, #5a1520 100%); display: flex; align-items: center; justify-content: center; }
+.ph-frame { position: relative; height: 254px; overflow: hidden; clip-path: polygon(26% 0, 100% 0, 74% 100%, 0 100%); background: linear-gradient(180deg, #17171a 0%, #2b1418 70%, #5a1520 100%); display: flex; align-items: center; justify-content: center; }
 .ph-frame img { width: 100%; height: 100%; object-fit: cover; }
 .ph-stripes { position: absolute; inset: 0; background: repeating-linear-gradient(115deg, rgba(255,255,255,.04) 0 14px, transparent 14px 30px); }
-.ph-initials { position: relative; z-index: 1; font: italic 800 80px/1 "Barlow Condensed"; color: #fff; }
-.ph-slashes { position: absolute; left: -2px; bottom: 22px; display: flex; gap: 4px; transform: skewX(-14deg); }
-.ph-slashes i { width: 14px; height: 42px; background: #eb0a1e; } .ph-slashes i:nth-child(2) { background: #111; height: 40px; margin-top: 10px; } .ph-slashes i:nth-child(3) { background: #fff; border: 1.5px solid #111; height: 32px; margin-top: 18px; }
+.ph-initials { position: relative; z-index: 1; font: italic 800 68px/1 "Barlow Condensed"; color: #fff; margin-left: 10px; }
+.ph-slashes { position: absolute; left: -6px; top: calc(22px + 254px - 44px); display: flex; align-items: flex-end; gap: 5px; }
+.ph-slashes i { width: 12px; height: 44px; background: #eb0a1e; transform: skewX(-10deg); transform-origin: bottom left; } .ph-slashes i:nth-child(2) { background: #111; } .ph-slashes i:nth-child(3) { background: #fff; box-shadow: inset 0 0 0 1.5px #111; }
 .ph-note { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font: 600 8.5px "Barlow Condensed"; letter-spacing: .16em; color: #9a9aa2; }
 .h-right { padding-top: 18px; padding-bottom: 12px; display: flex; flex-direction: column; min-height: 0; }
 .quote { background: #eb0a1e; color: #fff; padding: 10px 16px 12px; margin-bottom: 12px; flex-shrink: 0; }
@@ -669,9 +670,10 @@ ul { margin: 0; padding: 0; list-style: none; }
 .grid3 { display: grid; grid-template-columns: 268px 1fr 254px; gap: 18px; padding: 0 36px; flex-shrink: 0; position: relative; z-index: 1; }
 .panel-grey { background: #efeff1; padding: 12px 16px 12px; height: 272px; display: flex; flex-direction: column; }
 .ph { border-bottom: 2px solid #111; padding-bottom: 5px; margin-bottom: 8px; font: 700 12.5px "Barlow Condensed"; letter-spacing: .12em; }
-.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-bottom: 12px; }
-.stats b { display: block; font: italic 800 30px/1 "Barlow Condensed"; }
-.stats span { font: 600 8.5px "Barlow Condensed"; letter-spacing: .14em; color: #5c5c64; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 8px; margin-bottom: 12px; }
+.stats b { display: block; font: italic 800 26px/1 "Barlow Condensed"; }
+.stats b small { font-size: 13px; margin-left: 1px; }
+.stats span { font: 600 8px "Barlow Condensed"; letter-spacing: .08em; color: #5c5c64; white-space: nowrap; }
 .socials { flex: 1; min-height: 0; }
 .soc { display: grid; grid-template-columns: 62px 1fr auto; gap: 6px; padding: 6px 0; border-bottom: 1px solid #d6d6db; align-items: start; }
 .soc-p { font: 700 9.5px "Barlow Condensed"; letter-spacing: .1em; padding-top: 1px; }
