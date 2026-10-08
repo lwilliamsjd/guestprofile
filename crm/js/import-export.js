@@ -1,6 +1,6 @@
 // Reads the old CRM's Excel export in the browser and sends it to the
 // import_crm_export database function (sql/crm_import.sql).
-import { importCrmExport } from "./api.js?v=202610081649";
+import { importCrmExport } from "./api.js?v=202610081655";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const iso = (v) => (v instanceof Date && !isNaN(v) ? v.toISOString() : v ? String(v) : "");

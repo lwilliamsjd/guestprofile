@@ -312,6 +312,21 @@ export function bannerPhrases(a) {
 }
 // two or three sentences for the top of page 1; falls back to the start of the full bio
 export const SHORT_BIO_FITS = 400;
+// color chips on the PDF: options that name a color are filled with it
+const SWATCH_GROUPS = ["Color", "Wheels", "Interior Color", "Brakes"];
+const SWATCHES = [
+  ["dark gray", "#4a4c52"], ["light gray", "#b4b7bd"], ["gloss gray", "#7d8087"], ["white", "#ffffff"], ["red", "#eb0a1e"],
+  ["silver", "#a3a7ae"], ["blue", "#1f5fbf"], ["green", "#2e7d4f"], ["yellow", "#d9ae00"], ["black", "#111111"],
+  ["gold", "#b8912f"], ["hazel", "#7b5232"], ["gray", "#8a8d93"],
+];
+function swatchStyle(group, item) {
+  if (!SWATCH_GROUPS.includes(group)) return "";
+  const t = clean(item).toLowerCase().replace(/grey/g, "gray");
+  const hit = SWATCHES.find(([k]) => t.endsWith(k));
+  if (!hit) return "";
+  if (hit[0] === "white") return "background:#fff;color:#8a8a92;border-color:#a9a9b0";
+  return `background:${hit[1]};color:#fff;border-color:${hit[1]}`;
+}
 const GLANCE_SPEC = { "Interior Color": "Interior", "Interior Material": "Material", "Seat Type": "Seats", Accessories: "Extras" };
 export function shortBio(a) {
   if (has(a.bio_short)) return clean(a.bio_short);
@@ -401,7 +416,7 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
       <div class="gl">
         <label>CAR SPEC PREFERENCES</label>
-        <div class="fit" data-fit="Car spec preferences">${specs.length ? `<div class="specp sm">${specs.map((s) => `<div class="sp-row"><b>${e(s.group || "Other").toUpperCase()}</b><span>${s.items.map((x) => `<i class="${s.priority ? "pri" : ""}">${e(x)}</i>`).join("")}</span></div>`).join("")}</div>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
+        <div class="fit" data-fit="Car spec preferences">${specs.length ? `<div class="specp sm">${specs.map((s) => `<div class="sp-row"><b>${e(s.group || "Other").toUpperCase()}</b><span>${s.items.map((x) => `<i class="${s.priority ? "pri" : ""}" style="${swatchStyle(s.group, x)}">${e(x)}</i>`).join("")}</span></div>`).join("")}</div>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
       </div>
     </div>`;
 
