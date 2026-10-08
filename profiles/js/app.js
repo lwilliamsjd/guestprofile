@@ -4,14 +4,14 @@ import {
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
-} from "./api.js";
+} from "./api.js?v=202610081622";
 import {
   USAGE_OPTIONS, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js";
-import { SUPABASE_URL } from "./config.js";
+} from "./outputs.js?v=202610081622";
+import { SUPABASE_URL } from "./config.js?v=202610081622";
 
 const app = document.getElementById("app");
 
@@ -1514,7 +1514,9 @@ async function renderOutputs(route, seq) {
     const doc = frame.contentDocument;
     const over = [...doc.querySelectorAll(".fit")].filter((el) => el.scrollHeight > el.clientHeight + 2).map((el) => el.dataset.fit);
     const box = main.querySelector("#fit-warn");
-    box.innerHTML = over.length ? `<div class="banner"><span><b>Some text is cut off on the PDF:</b> ${over.map(escapeHtml).join(", ")}. Shorten ${over.length === 1 ? "it" : "them"} on the interview form to fit the two pages.</span></div>` : "";
+    const noBanner = !a.code_phrase && !["persona_left", "persona_center", "persona_right"].some((k) => String(a[k] || "").trim());
+    box.innerHTML = (over.length ? `<div class="banner"><span><b>Some text is cut off on the PDF:</b> ${over.map(escapeHtml).join(", ")}. Shorten ${over.length === 1 ? "it" : "them"} on the interview form to fit the two pages.</span></div>` : "")
+      + (noBanner ? `<div class="banner"><span><b>The black banner on page 1 is empty.</b> Add the three banner phrases in the Concierge Assessment section of the form.</span></div>` : "");
   }
   function drawPdf() {
     frame.onload = () => {

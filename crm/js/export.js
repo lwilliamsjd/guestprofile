@@ -1,4 +1,4 @@
-import { fetchAllForExport, listMeisterRollups, markExported } from "./api.js";
+import { fetchAllForExport, listMeisterRollups, markExported } from "./api.js?v=202610081622";
 
 // Dates are written as real Excel date cells (not text) so they sort and
 // filter properly in Excel.

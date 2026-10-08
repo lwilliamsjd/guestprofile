@@ -340,10 +340,12 @@ export function buildPersonaHtml(a, opts = {}) {
   const none = (t = "Not recorded") => `<div class="none">${t}</div>`;
   const bullets = (items) => (items.length ? `<ul class="bul">${items.map((x) => `<li>${e(x)}</li>`).join("")}</ul>` : none());
 
-  const topbar = `
+  const rec = has(a.concierge_rec) ? a.concierge_rec : "";
+  const recBadge = (cls) => (rec ? `<span class="rec ${cls}" style="background:${DECISION_COLORS[rec] || "#555"}">${cls === "rec-sm" || cls === "rec-tb" ? "CONCIERGE REC.&nbsp; " : ""}<b>${e(rec).toUpperCase()}</b></span>` : "");
+  const topbar = (withRec) => `
     <div class="topbar">
       <div class="tb-left"><span class="mark"><i></i><i></i></span><b>GAZOO RACING</b><span>GR GT CONCIERGE BUYER PROGRAM</span></div>
-      <div class="tb-right">${id ? `<span class="tb-id">${e(id)}</span>` : ""}${a.vip ? `<span class="badge b-vip">VIP</span>` : ""}<span class="badge b-conf">CONFIDENTIAL</span></div>
+      <div class="tb-right">${id ? `<span class="tb-id">${e(id)}</span>` : ""}${withRec ? recBadge("rec-tb") : ""}${a.vip ? `<span class="badge b-vip">VIP</span>` : ""}<span class="badge b-conf">CONFIDENTIAL</span></div>
     </div>`;
   const footer = (n) => `
     <div class="footer"><span>${prepared}</span><b>INTERNAL · LEADERSHIP REVIEW ONLY</b><span>PAGE ${n} / 2</span></div>`;
@@ -383,7 +385,7 @@ export function buildPersonaHtml(a, opts = {}) {
   const phrases = bannerPhrases(a);
   const band = phrases.some(Boolean)
     ? `<div class="band band-words">${phrases.map((p, i) => `${i ? `<i class="sl">/</i>` : ""}<span>${e(p).toUpperCase()}</span>`).join("")}</div>`
-    : `<div class="band"></div>`;
+    : `<div class="band band-words"></div>`;
   const topUse = u ? USAGE_SPLIT.filter(([k]) => u[k]).sort((x, y) => u[y[0]] - u[x[0]])[0] : null;
   const glance = `
     <div class="glance">
@@ -398,19 +400,14 @@ export function buildPersonaHtml(a, opts = {}) {
         ${topUse ? `<div class="gl-sub">MOSTLY ${e(topUse[1]).toUpperCase()} · ${u[topUse[0]]}%</div>` : ""}
       </div>
       <div class="gl">
-        <label>DRIVER &amp; BRAND</label>
-        <dl class="gl-dl">
-          <dt>HPDE</dt><dd>${e(a.hpde_level) || "—"}</dd>
-          <dt>RACING</dt><dd>${e(a.race_level) || "—"}</dd>
-          <dt>TOYOTA/LEXUS</dt><dd>${th.length ? `${th.length} owned` : "—"}</dd>
-          <dt>LFA</dt><dd>${e(lfa) || "—"}</dd>
-        </dl>
+        <label>CAR SPEC PREFERENCES</label>
+        <div class="fit" data-fit="Car spec preferences">${specs.length ? `<ul class="gl-specs">${specs.map((s) => `<li><b>${e(GLANCE_SPEC[s.group] || s.group || "Other").toUpperCase()}</b><span>${e(s.items.join(" / "))}</span></li>`).join("")}</ul>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
       </div>
     </div>`;
 
   const page1 = `
   <section class="page">
-    ${topbar}
+    ${topbar(true)}
     <div class="hero">
       <div class="h-left">
         <div class="idrow">
@@ -460,7 +457,14 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
     </div>
     <div class="biorow">
-      <div><h3>CAR SPEC PREFERENCES</h3><div class="fit" data-fit="Car spec preferences">${specs.length ? `<div class="specp">${specs.map((s) => `<div class="sp-row"><b>${e(GLANCE_SPEC[s.group] && s.group !== "Accessories" ? s.group : s.group || "Other").toUpperCase()}</b><span>${s.items.map((x) => `<i class="${s.priority ? "pri" : ""}">${e(x)}</i>`).join("")}</span></div>`).join("")}</div>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div></div>
+      <div><h3>DRIVER &amp; BRAND</h3>
+        <div class="dbrand">
+          <div><label>HPDE</label><b>${e(a.hpde_level) || "—"}</b></div>
+          <div><label>RACING</label><b>${e(a.race_level) || "—"}</b></div>
+          <div><label>TOYOTA / LEXUS OWNED</label><b>${th.length || "—"}</b></div>
+          <div><label>LFA</label><b>${e(lfa) || "—"}</b></div>
+        </div>
+      </div>
       <div>${has(a.what_drives_you) ? `<div class="quote"><label>WHAT DRIVES YOU</label><div class="fit" data-fit="What Drives You quote">“${e(a.what_drives_you)}”</div></div>` : ""}<h3>TMC / TMNA RELATIONSHIPS</h3><div class="fit" data-fit="TMNA relationships">${bullets(linesOf(a.tmna_relationship))}</div></div>
     </div>
     <div class="watermark">GR GT</div>
@@ -509,12 +513,10 @@ export function buildPersonaHtml(a, opts = {}) {
     : (a.gt_usage || []).length ? `<div class="ulegend">${a.gt_usage.map((x) => `<span><i style="background:#eb0a1e"></i>${e(x).toUpperCase()}</span>`).join("")}</div>` : none();
 
   const cross = rowsOf(a.cross_shop, "model");
-  const rec = has(a.concierge_rec) ? a.concierge_rec : "";
-  const recBadge = (cls) => (rec ? `<span class="rec ${cls}" style="background:${DECISION_COLORS[rec] || "#555"}">${cls === "rec-sm" ? "CONCIERGE REC.&nbsp; " : ""}<b>${e(rec).toUpperCase()}</b></span>` : "");
 
   const page2 = `
   <section class="page">
-    ${topbar}
+    ${topbar(false)}
     <div class="p2-head">
       <div><span class="p2-name">${e(a.name).toUpperCase()}</span><span class="p2-sub">${e([loc, a.preferred_dealer].filter(has).join(" · ")).toUpperCase()}</span></div>
       ${recBadge("rec-sm")}
@@ -630,7 +632,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .quote label { font: 700 8.5px "Barlow Condensed"; letter-spacing: .16em; opacity: .85; }
 .quote .fit { font: italic 700 15px/1.25 "Barlow Condensed"; margin-top: 4px; max-height: 76px; }
 .h-right h3 { flex-shrink: 0; }
-.glance { display: grid; grid-template-columns: 1.3fr 1fr 1fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 130px; grid-template-rows: 100%; flex-shrink: 0; }
+.glance { display: grid; grid-template-columns: 1.1fr .8fr 1.5fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 150px; grid-template-rows: 100%; flex-shrink: 0; }
 .gl { padding: 9px 12px 8px; border-right: 1px solid #dcdce0; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .gl:last-child { border-right: none; }
 .gl label { font: 700 9px "Barlow Condensed"; letter-spacing: .16em; color: #eb0a1e; margin-bottom: 5px; display: block; }
@@ -638,10 +640,10 @@ ul { margin: 0; padding: 0; list-style: none; }
 .gl-cars li { font-size: 10.5px; font-weight: 700; line-height: 1.3; padding: 2px 0; border-bottom: 1px solid #e2e2e6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gl-cars li:last-child { border-bottom: none; }
 .gl-more { font: 700 8px "Barlow Condensed"; letter-spacing: .12em; color: #6b6b73; margin-top: 2px; }
-.gl-specs { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; align-items: baseline; }
-.gl-specs li { display: contents; font-size: 10px; line-height: 1.3; }
+.gl-specs { display: grid; grid-template-columns: max-content 1fr; gap: 1px 10px; align-items: baseline; }
+.gl-specs li { display: contents; font-size: 10px; line-height: 1.2; }
 .gl-specs b { font: 700 8.5px "Barlow Condensed"; letter-spacing: .1em; color: #5c5c64; white-space: nowrap; }
-.gl-specs span { font-size: 10px; line-height: 1.3; }
+.gl-specs span { font-size: 10px; line-height: 1.2; }
 .gl-big { font: italic 800 30px/1 "Barlow Condensed"; color: #111; }
 .gl-mid { font: italic 800 16px/1.1 "Barlow Condensed"; }
 .gl-sub { font: 700 9px "Barlow Condensed"; letter-spacing: .1em; color: #3a3a40; margin-top: 4px; }
@@ -651,8 +653,12 @@ ul { margin: 0; padding: 0; list-style: none; }
 .biorow { display: grid; grid-template-columns: 1.25fr 1fr; gap: 24px; padding: 0 36px; margin-top: 14px; position: relative; z-index: 1; }
 .h-right .bio { flex: 1; min-height: 0; font-size: 10.5px; color: #3a3a40; line-height: 1.45; }
 .bio p { margin-bottom: 6px; }
-.biorow .fit { max-height: 172px; }
-.biorow .quote { margin-bottom: 12px; } .biorow .quote .fit { max-height: 58px; font-size: 14px; }
+.biorow .fit { max-height: 152px; }
+.dbrand { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+.dbrand div { border-left: 3px solid #eb0a1e; padding: 4px 0 4px 10px; background: #f6f6f8; }
+.dbrand label { display: block; font: 700 8.5px "Barlow Condensed"; letter-spacing: .14em; color: #5c5c64; }
+.dbrand b { display: block; font: italic 800 20px/1.15 "Barlow Condensed"; }
+.biorow .quote { margin-bottom: 12px; background: #0d0d0f; border-left: 5px solid #eb0a1e; } .biorow .quote label { color: #eb0a1e; opacity: 1; } .biorow .quote .fit { max-height: 58px; font-size: 14px; }
 .biorow .quote + h3 + .fit { max-height: 74px; }
 .specp { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
 .sp-row { display: flex; flex-direction: column; gap: 3px; padding-bottom: 6px; border-bottom: 1px solid #ececef; }
@@ -673,7 +679,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .hstats { display: grid; grid-template-columns: repeat(6, 1fr); margin-top: 14px; border-top: 1px solid #d6d6db; padding-top: 8px; }
 .hstats div { padding-right: 4px; }
 .hstats div + div { border-left: 1px solid #e3e3e7; padding-left: 7px; }
-.hstats b { display: block; font: italic 800 24px/1 "Barlow Condensed"; }
+.hstats b { display: block; font: italic 800 24px/1 "Barlow Condensed"; color: #eb0a1e; }
 .hstats b small { font-size: 11px; margin-left: 1px; }
 .hstats span { display: block; margin-top: 3px; font: 600 7.5px/1.15 "Barlow Condensed"; letter-spacing: .08em; color: #5c5c64; white-space: nowrap; }
 .ph2 { margin-top: 12px; }
@@ -716,6 +722,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .p2-sub { font: 600 11px "Barlow Condensed"; letter-spacing: .12em; color: #5c5c64; }
 .rec { color: #fff; font: 600 10px "Barlow Condensed"; letter-spacing: .12em; padding: 6px 18px; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); display: inline-block; }
 .rec b { font: italic 800 16px "Barlow Condensed"; letter-spacing: .06em; }
+.rec-tb { padding: 2px 14px; font-size: 9px; } .rec-tb b { font-size: 13px; }
 .rec-lg { margin-bottom: 6px; padding: 3px 18px; } .rec-lg b { font-size: 18px; }
 .sect { display: flex; align-items: center; justify-content: space-between; background: #ececef; height: 28px; margin: 2px 0 10px; padding-right: 36px; flex-shrink: 0; }
 .sect-tab { background: #eb0a1e; color: #fff; font: italic 800 16px "Barlow Condensed"; letter-spacing: .04em; padding: 0 20px 0 36px; height: 36px; display: flex; align-items: center; clip-path: polygon(0 0, 100% 0, 100% 80%, 92% 100%, 0 100%); margin-top: 6px; }
