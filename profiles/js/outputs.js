@@ -419,6 +419,10 @@ export function buildPersonaHtml(a, opts = {}) {
           <div><label>LOCATION</label><b>${e(loc) || "—"}</b></div>
           <div><label>PREFERRED DEALER</label><b>${e(a.preferred_dealer) || "—"}</b></div>
         </div>
+      </div>
+      <div class="h-right">
+        <h3>BIO</h3>
+        <div class="bio fit" data-fit="Bio">${has(a.summary) ? clean(a.summary).split(/\n\s*\n|\n/).filter((p) => p.trim()).map((p) => `<p>${e(p)}</p>`).join("") : none()}</div>
         <div class="stats hstats">
           <div><b>${has(a.years_on_track) ? e(a.years_on_track) : "—"}</b><span>YRS ON TRACK</span></div>
           <div><b>${has(a.track_days) ? e(a.track_days) : "—"}</b><span>TRACK DAYS</span></div>
@@ -427,10 +431,6 @@ export function buildPersonaHtml(a, opts = {}) {
           <div><b>${miles ? fmtK(miles) : "—"}</b><span>GARAGE MI/YR</span></div>
           <div><b>${th.length || "—"}</b><span>TOYOTA/LEXUS</span></div>
         </div>
-      </div>
-      <div class="h-right">
-        <h3>BIO</h3>
-        <div class="bio fit" data-fit="Bio">${has(a.summary) ? clean(a.summary).split(/\n\s*\n|\n/).filter((p) => p.trim()).map((p) => `<p>${e(p)}</p>`).join("") : none()}</div>
       </div>
     </div>
     ${glance}
@@ -612,10 +612,10 @@ ul { margin: 0; padding: 0; list-style: none; }
 .ribbon { background: #eb0a1e; color: #fff; width: 112px; padding: 8px 12px 18px; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%); }
 .ribbon b { display: block; font: italic 800 22px/1 "Barlow Condensed"; }
 .ribbon span { font: 700 9.5px/1.3 "Barlow Condensed"; letter-spacing: .14em; }
-.idrow { display: flex; align-items: center; gap: 18px; margin-top: 22px; }
+.idrow { display: flex; align-items: center; gap: 20px; margin: auto 0; padding-top: 10px; }
 .tagline { display: inline-flex; align-items: center; gap: 6px; background: #eb0a1e; color: #fff; font: 700 9px "Barlow Condensed"; letter-spacing: .16em; padding: 3px 10px 3px 8px; margin-bottom: 8px; clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
 .tagline b { font: italic 800 13px/1 "Barlow Condensed"; letter-spacing: .02em; }
-.thumb { position: relative; width: 96px; height: 114px; flex-shrink: 0; overflow: hidden; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%); background: linear-gradient(180deg, #17171a 0%, #2b1418 70%, #5a1520 100%); display: flex; align-items: center; justify-content: center; }
+.thumb { position: relative; width: 108px; height: 128px; flex-shrink: 0; overflow: hidden; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%); background: linear-gradient(180deg, #17171a 0%, #2b1418 70%, #5a1520 100%); display: flex; align-items: center; justify-content: center; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
 .ph-stripes { position: absolute; inset: 0; background: repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 8px, transparent 8px 18px); }
 .ph-initials { position: relative; z-index: 1; font: italic 800 40px/1 "Barlow Condensed"; color: #fff; }
@@ -623,7 +623,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .names { min-width: 0; }
 .fname { font: italic 800 54px/.9 "Barlow Condensed"; letter-spacing: -.01em; word-break: break-word; }
 .lname { font: 800 28px/1 "Barlow Condensed"; color: #5c5c64; margin-top: 3px; word-break: break-word; }
-.facts { margin-top: 18px; padding-top: 10px; border-top: 2px solid #111; display: grid; grid-template-columns: .7fr 1fr 1.5fr; gap: 12px; }
+.facts { margin-top: 0; margin-bottom: 16px; height: 62px; box-sizing: border-box; padding-top: 12px; border-top: 2px solid #111; display: grid; grid-template-columns: .7fr 1fr 1.5fr; gap: 12px; }
 .facts .wide { grid-column: 1 / -1; }
 .facts label { display: block; font: 600 8.5px "Barlow Condensed"; letter-spacing: .16em; color: #8a8a92; }
 .facts b { font-size: 12.5px; font-weight: 700; }
@@ -681,10 +681,10 @@ ul { margin: 0; padding: 0; list-style: none; }
 .grid3 { display: grid; grid-template-columns: 268px 1fr 254px; gap: 18px; padding: 0 36px; flex-shrink: 0; position: relative; z-index: 1; }
 .panel-grey { background: #efeff1; padding: 12px 16px 12px; height: 272px; display: flex; flex-direction: column; }
 .ph { border-bottom: 2px solid #111; padding-bottom: 5px; margin-bottom: 8px; font: 700 12.5px "Barlow Condensed"; letter-spacing: .12em; }
-.hstats { display: grid; grid-template-columns: repeat(6, 1fr); margin-top: 14px; border-top: 1px solid #d6d6db; padding-top: 8px; }
+.hstats { display: grid; grid-template-columns: repeat(6, 1fr); margin-top: 10px; border-top: 2px solid #111; padding-top: 12px; height: 62px; margin-bottom: 4px; box-sizing: border-box; flex-shrink: 0; }
 .hstats div { padding-right: 4px; }
 .hstats div + div { border-left: 1px solid #e3e3e7; padding-left: 7px; }
-.hstats b { display: block; font: italic 800 24px/1 "Barlow Condensed"; color: #eb0a1e; }
+.hstats b { display: block; font: italic 800 28px/1 "Barlow Condensed"; color: #eb0a1e; }
 .hstats b small { font-size: 11px; margin-left: 1px; }
 .hstats span { display: block; margin-top: 3px; font: 600 7.5px/1.15 "Barlow Condensed"; letter-spacing: .08em; color: #5c5c64; white-space: nowrap; }
 .ph2 { margin-top: 12px; }
