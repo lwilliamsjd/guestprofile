@@ -401,7 +401,7 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
       <div class="gl">
         <label>CAR SPEC PREFERENCES</label>
-        <div class="fit" data-fit="Car spec preferences">${specs.length ? `<ul class="gl-specs">${specs.map((s) => `<li><b>${e(GLANCE_SPEC[s.group] || s.group || "Other").toUpperCase()}</b><span>${e(s.items.join(" / "))}</span></li>`).join("")}</ul>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
+        <div class="fit" data-fit="Car spec preferences">${specs.length ? `<div class="specp sm">${specs.map((s) => `<div class="sp-row"><b>${e(s.group || "Other").toUpperCase()}</b><span>${s.items.map((x) => `<i class="${s.priority ? "pri" : ""}">${e(x)}</i>`).join("")}</span></div>`).join("")}</div>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
       </div>
     </div>`;
 
@@ -632,7 +632,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .quote label { font: 700 8.5px "Barlow Condensed"; letter-spacing: .16em; opacity: .85; }
 .quote .fit { font: italic 700 15px/1.25 "Barlow Condensed"; margin-top: 4px; max-height: 76px; }
 .h-right h3 { flex-shrink: 0; }
-.glance { display: grid; grid-template-columns: 1.1fr .8fr 1.5fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 150px; grid-template-rows: 100%; flex-shrink: 0; }
+.glance { display: grid; grid-template-columns: 1fr .72fr 1.75fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 180px; grid-template-rows: 100%; flex-shrink: 0; }
 .gl { padding: 9px 12px 8px; border-right: 1px solid #dcdce0; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .gl:last-child { border-right: none; }
 .gl label { font: 700 9px "Barlow Condensed"; letter-spacing: .16em; color: #eb0a1e; margin-bottom: 5px; display: block; }
@@ -653,18 +653,23 @@ ul { margin: 0; padding: 0; list-style: none; }
 .biorow { display: grid; grid-template-columns: 1.25fr 1fr; gap: 24px; padding: 0 36px; margin-top: 14px; position: relative; z-index: 1; }
 .h-right .bio { flex: 1; min-height: 0; font-size: 10.5px; color: #3a3a40; line-height: 1.45; }
 .bio p { margin-bottom: 6px; }
-.biorow .fit { max-height: 152px; }
+.biorow .fit { max-height: 122px; }
 .dbrand { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
 .dbrand div { border-left: 3px solid #eb0a1e; padding: 4px 0 4px 10px; background: #f6f6f8; }
 .dbrand label { display: block; font: 700 8.5px "Barlow Condensed"; letter-spacing: .14em; color: #5c5c64; }
 .dbrand b { display: block; font: italic 800 20px/1.15 "Barlow Condensed"; }
-.biorow .quote { margin-bottom: 12px; background: #0d0d0f; border-left: 5px solid #eb0a1e; } .biorow .quote label { color: #eb0a1e; opacity: 1; } .biorow .quote .fit { max-height: 58px; font-size: 14px; }
+.biorow .quote { margin-bottom: 12px; background: #0d0d0f; border-left: 5px solid #eb0a1e; } .biorow .quote label { color: #eb0a1e; opacity: 1; } .biorow .quote .fit { max-height: 54px; font-size: 13.5px; }
 .biorow .quote + h3 + .fit { max-height: 74px; }
 .specp { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
 .sp-row { display: flex; flex-direction: column; gap: 3px; padding-bottom: 6px; border-bottom: 1px solid #ececef; }
 .sp-row b { font: 700 9px "Barlow Condensed"; letter-spacing: .12em; color: #5c5c64; }
 .sp-row span { display: flex; flex-wrap: wrap; gap: 4px; }
 .sp-row i { font-style: normal; font: 700 10px "Barlow Condensed"; letter-spacing: .06em; text-transform: uppercase; border: 1px solid #111; padding: 2px 7px; }
+.specp.sm { gap: 3px 14px; }
+.specp.sm .sp-row { gap: 2px; padding-bottom: 4px; border-bottom-color: #e2e2e6; }
+.specp.sm .sp-row b { font-size: 8px; }
+.specp.sm .sp-row span { gap: 3px; }
+.specp.sm .sp-row i { font-size: 8.5px; padding: 1px 5px; }
 .sp-row i.pri { background: #eb0a1e; border-color: #eb0a1e; color: #fff; }
 .band { height: 12px; background: #0d0d0f; margin: 0 0 14px; position: relative; flex-shrink: 0; }
 .band-words { height: 42px; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 10px; padding: 0 44px; overflow: hidden; }

@@ -55,9 +55,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610081622";
-import { exportToExcel } from "./export.js?v=202610081622";
-import { wireImport } from "./import-export.js?v=202610081622";
+} from "./api.js?v=202610081636";
+import { exportToExcel } from "./export.js?v=202610081636";
+import { wireImport } from "./import-export.js?v=202610081636";
 
 const app = document.getElementById("app");
 let currentProfile = null;
