@@ -392,10 +392,6 @@ export function buildPersonaHtml(a, opts = {}) {
         <div class="fit" data-fit="At a glance: current garage">${g.length ? `<ul class="gl-cars">${g.slice(0, 4).map((v) => `<li>${e(v.vehicle)}</li>`).join("")}</ul>${g.length > 4 ? `<div class="gl-more">+${g.length - 4} MORE ON PAGE 2</div>` : ""}` : none()}</div>
       </div>
       <div class="gl">
-        <label>SPEC CONSIDERATIONS</label>
-        <div class="fit" data-fit="At a glance: spec considerations">${specs.length ? `<ul class="gl-specs">${specs.map((s) => `<li>${s.group ? `<b>${e(GLANCE_SPEC[s.group] || s.group).toUpperCase()}</b><span>${e(s.items.join(" / "))}</span>` : `<b></b><span>${e(s.items[0])}</span>`}</li>`).join("")}</ul>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
-      </div>
-      <div class="gl">
         <label>TIMING &amp; USE</label>
         ${has(a.target_quarter) ? `<div class="gl-big">${e(a.target_quarter)}</div>` : has(a.timing) ? `<div class="gl-mid">${e(a.timing)}</div>` : none("Timing not set")}
         ${has(a.timing_flex) ? `<div class="gl-sub">${e(a.timing_flex).toUpperCase()}</div>` : ""}
@@ -411,7 +407,6 @@ export function buildPersonaHtml(a, opts = {}) {
         </dl>
       </div>
     </div>`;
-  const sb = shortBio(a);
 
   const page1 = `
   <section class="page">
@@ -437,9 +432,8 @@ export function buildPersonaHtml(a, opts = {}) {
         </div>
       </div>
       <div class="h-right">
-        ${has(a.what_drives_you) ? `<div class="quote"><label>WHAT DRIVES YOU</label><div class="fit" data-fit="What Drives You quote">“${e(a.what_drives_you)}”</div></div>` : ""}
-        <h3>AT A GLANCE</h3>
-        <div class="sbio fit" data-fit="Short bio">${sb ? `<p>${e(sb)}</p>` : none()}</div>
+        <h3>BIO</h3>
+        <div class="bio fit" data-fit="Bio">${has(a.summary) ? clean(a.summary).split(/\n\s*\n|\n/).filter((p) => p.trim()).map((p) => `<p>${e(p)}</p>`).join("") : none()}</div>
       </div>
     </div>
     ${glance}
@@ -466,8 +460,8 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
     </div>
     <div class="biorow">
-      <div><h3>BIO</h3><div class="bio fit" data-fit="Bio">${has(a.summary) ? clean(a.summary).split(/\n\s*\n|\n/).filter((p) => p.trim()).map((p) => `<p>${e(p)}</p>`).join("") : none()}</div></div>
-      <div><h3>TMC / TMNA RELATIONSHIPS</h3><div class="fit" data-fit="TMNA relationships">${bullets(linesOf(a.tmna_relationship))}</div></div>
+      <div><h3>CAR SPEC PREFERENCES</h3><div class="fit" data-fit="Car spec preferences">${specs.length ? `<div class="specp">${specs.map((s) => `<div class="sp-row"><b>${e(GLANCE_SPEC[s.group] && s.group !== "Accessories" ? s.group : s.group || "Other").toUpperCase()}</b><span>${s.items.map((x) => `<i class="${s.priority ? "pri" : ""}">${e(x)}</i>`).join("")}</span></div>`).join("")}</div>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div></div>
+      <div>${has(a.what_drives_you) ? `<div class="quote"><label>WHAT DRIVES YOU</label><div class="fit" data-fit="What Drives You quote">“${e(a.what_drives_you)}”</div></div>` : ""}<h3>TMC / TMNA RELATIONSHIPS</h3><div class="fit" data-fit="TMNA relationships">${bullets(linesOf(a.tmna_relationship))}</div></div>
     </div>
     <div class="watermark">GR GT</div>
     ${footer(1)}
@@ -631,13 +625,12 @@ ul { margin: 0; padding: 0; list-style: none; }
 .facts .wide { grid-column: 1 / -1; }
 .facts label { display: block; font: 600 8.5px "Barlow Condensed"; letter-spacing: .16em; color: #8a8a92; }
 .facts b { font-size: 12.5px; font-weight: 700; }
-.h-right { padding-top: 18px; padding-bottom: 12px; display: flex; flex-direction: column; min-height: 0; }
+.h-right { padding-top: 22px; padding-bottom: 12px; display: flex; flex-direction: column; min-height: 0; }
 .quote { background: #eb0a1e; color: #fff; padding: 10px 16px 12px; margin-bottom: 12px; flex-shrink: 0; }
 .quote label { font: 700 8.5px "Barlow Condensed"; letter-spacing: .16em; opacity: .85; }
 .quote .fit { font: italic 700 15px/1.25 "Barlow Condensed"; margin-top: 4px; max-height: 76px; }
 .h-right h3 { flex-shrink: 0; }
-.sbio { flex: 1; min-height: 0; font-size: 11.5px; line-height: 1.45; color: #18181b; font-weight: 500; }
-.glance { display: grid; grid-template-columns: 1.05fr 1.35fr .8fr .95fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 130px; grid-template-rows: 100%; flex-shrink: 0; }
+.glance { display: grid; grid-template-columns: 1.3fr 1fr 1fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 130px; grid-template-rows: 100%; flex-shrink: 0; }
 .gl { padding: 9px 12px 8px; border-right: 1px solid #dcdce0; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .gl:last-child { border-right: none; }
 .gl label { font: 700 9px "Barlow Condensed"; letter-spacing: .16em; color: #eb0a1e; margin-bottom: 5px; display: block; }
@@ -655,10 +648,18 @@ ul { margin: 0; padding: 0; list-style: none; }
 .gl-dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: baseline; }
 .gl-dl dt { font: 700 8.5px "Barlow Condensed"; letter-spacing: .12em; color: #5c5c64; }
 .gl-dl dd { margin: 0; font-size: 10.5px; font-weight: 700; line-height: 1.25; }
-.biorow { display: grid; grid-template-columns: 1.85fr 1fr; gap: 22px; padding: 0 36px; margin-top: 14px; position: relative; z-index: 1; }
-.bio { font-size: 10.5px; color: #3a3a40; line-height: 1.45; max-height: 172px; }
+.biorow { display: grid; grid-template-columns: 1.25fr 1fr; gap: 24px; padding: 0 36px; margin-top: 14px; position: relative; z-index: 1; }
+.h-right .bio { flex: 1; min-height: 0; font-size: 10.5px; color: #3a3a40; line-height: 1.45; }
 .bio p { margin-bottom: 6px; }
 .biorow .fit { max-height: 172px; }
+.biorow .quote { margin-bottom: 12px; } .biorow .quote .fit { max-height: 58px; font-size: 14px; }
+.biorow .quote + h3 + .fit { max-height: 74px; }
+.specp { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
+.sp-row { display: flex; flex-direction: column; gap: 3px; padding-bottom: 6px; border-bottom: 1px solid #ececef; }
+.sp-row b { font: 700 9px "Barlow Condensed"; letter-spacing: .12em; color: #5c5c64; }
+.sp-row span { display: flex; flex-wrap: wrap; gap: 4px; }
+.sp-row i { font-style: normal; font: 700 10px "Barlow Condensed"; letter-spacing: .06em; text-transform: uppercase; border: 1px solid #111; padding: 2px 7px; }
+.sp-row i.pri { background: #eb0a1e; border-color: #eb0a1e; color: #fff; }
 .band { height: 12px; background: #0d0d0f; margin: 0 0 14px; position: relative; flex-shrink: 0; }
 .band-words { height: 42px; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 10px; padding: 0 44px; overflow: hidden; }
 .band-words span { font: italic 800 20px/1 "Barlow Condensed"; letter-spacing: .03em; color: #fff; white-space: nowrap; text-align: center; overflow: hidden; }

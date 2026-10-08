@@ -81,7 +81,7 @@ const AGE_RANGES = ["Under 30", "30s", "40s", "50s", "60s", "70+"];
 const ALLOCATION_OPTIONS = ["Pending", ...DECISIONS];
 const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
 const RACE_SERIES = ["NASA Competition", "NASA Time Trial", "SCCA Regional", "SCCA National", "SCCA Time Trials", "SCCA Solo", "PCA Club Racing", "Porsche Carrera Cup", "GR Cup", "Lucky Dog", "ChampCar", "WRL", "IMSA", "SRO", "Ferrari Challenge", "Lamborghini Super Trofeo"];
-const BIO_FITS = 1100; // characters of the full Bio that fit its box near the bottom of page 1
+const BIO_FITS = 950; // characters of the full Bio that fit the top right of page 1
 const COMMON_MAKES = ["Acura","Alfa Romeo","Aston Martin","Audi","Bentley","BMW","Bugatti","Cadillac","Chevrolet","Dodge","Ferrari","Ford","Honda","Hyundai","Jaguar","Jeep","Koenigsegg","Lamborghini","Land Rover","Lexus","Lotus","Lucid","Maserati","Mazda","McLaren","Mercedes Benz","Nissan","Pagani","Porsche","Ram","Rimac","Rivian","Rolls Royce","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
 
 // garage vehicles: Year, Make and Model are entered separately; "vehicle" is the combined name used everywhere else
@@ -569,7 +569,7 @@ function appendApplicantSheets(wb, rows) {
     "Profile ID": profileId(r), Name: r.name, Status: r.status, "Age Range": r.age_range, City: r.city, State: r.state, "Preferred Dealer": r.preferred_dealer,
     VIP: r.vip ? "Yes" : "No", "LFA Experience": lfaStatusOf(r), "LFA Note": r.lfa_note,
     "Social Media": rowsOf(r.socials, "handle").map((x) => `${x.platform || ""} ${x.handle}${Number(x.followers) ? ` (${fmtK(x.followers)})` : ""}`.trim()).join("; ") || r.social_media,
-    "TMNA Relationships": linesOf(r.tmna_relationship).join("; "), "Clubs": linesOf(r.clubs).join("; "), Bio: r.summary, "Short Bio": r.bio_short, "What Drives Them": r.what_drives_you,
+    "TMNA Relationships": linesOf(r.tmna_relationship).join("; "), "Clubs": linesOf(r.clubs).join("; "), Bio: r.summary, "What Drives Them": r.what_drives_you,
     "HPDE Level": r.hpde_level, "HPDE Details": r.hpde_experience, "Race Level": r.race_level, "Racing Series": (r.race_series || []).join(", "), "Race Details": r.race_experience,
     "Years on Track": r.years_on_track ?? null, "Track Days": r.track_days ?? null, "Key Events": linesOf(r.key_events).join("; "),
     "Driver Style (0 numbers, 100 experience)": r.driver_style ?? null, "Driver Style Note": r.driver_style_note,
@@ -768,7 +768,6 @@ async function renderEditor(route, seq) {
       <div class="style-foot"><b id="style-label">${styleSet() ? driverStyleLabel(a.driver_style) : "Not set yet. Drag the slider to set it."}</b><button type="button" class="btn btn-ghost btn-sm" id="style-clear" ${styleSet() ? "" : "hidden"}>Clear</button></div>
     </div>`;
 
-  const sbioCount = () => { const n = (a.bio_short || "").length; return n ? `${n} / ~${SHORT_BIO_FITS} characters fit` : `Blank, so the PDF uses: “${escapeHtml(shortBio(a).slice(0, 90))}${shortBio(a).length > 90 ? "…" : ""}”`; };
   const bioCount = () => { const n = (a.summary || "").length; return `${n.toLocaleString()} / ~${BIO_FITS.toLocaleString()} characters fit on the PDF`; };
 
   main.innerHTML = `
@@ -814,7 +813,6 @@ async function renderEditor(route, seq) {
             ${field("preferred_dealer", "Preferred Dealer", { ph: "Start typing to pick an existing dealer", list: "dealer-list" })}
             <div class="form-field"><label>&nbsp;</label>${toggle("vip", "VIP", "Shows as a VIP badge on the PDF")}</div>
             ${field("summary", "Bio", { type: "textarea", rows: 9, span: true, ph: "Who they are, how they got into driving, their relationship with Toyota and Lexus. Leave a blank line between paragraphs.", after: `<div class="field-foot" id="bio-count">${bioCount()}</div>` })}
-            ${field("bio_short", "Short Bio", { type: "textarea", rows: 3, span: true, hint: "(two or three sentences for the At a Glance box at the top of the PDF; if left blank, the first sentences of the Bio are used)", ph: "Phoenix logistics founder and HPDE instructor; seven Toyota and Lexus vehicles owned, never sold one inside three years.", after: `<div class="field-foot" id="sbio-count">${sbioCount()}</div>` })}
             ${field("what_drives_you", "What Drives You", { type: "textarea", rows: 2, span: true, hint: "(in their words; quoted at the top of the PDF)" })}
           </div>
         </section>
@@ -1098,7 +1096,6 @@ async function renderEditor(route, seq) {
       e.target.classList.remove("invalid");
     }
     if (k === "summary") main.querySelector("#bio-count").textContent = bioCount();
-    if (k === "summary" || k === "bio_short") { const c = main.querySelector("#sbio-count"); c.textContent = sbioCount(); c.classList.toggle("over", (a.bio_short || "").length > SHORT_BIO_FITS); }
     if (k.startsWith("persona_")) paintPersona();
     if (k === "summary") main.querySelector("#bio-count").classList.toggle("over", (a.summary || "").length > BIO_FITS);
     markDirty();
