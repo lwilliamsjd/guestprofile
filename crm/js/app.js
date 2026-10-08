@@ -1256,8 +1256,6 @@ async function renderAnalyticsPage(route, seq) {
   const soldAll = allG.filter((g) => g.purchase_date);
   const deliveredAll = allG.filter((g) => g.delivery_date);
   const awaiting = soldAll.filter((g) => !g.delivery_date);
-  const leadDays = deliveredAll.filter((g) => g.purchase_date).map((g) => Math.round((new Date(g.delivery_date) - new Date(g.purchase_date)) / 86400000)).filter((n) => n >= 0);
-  const avgLead = leadDays.length ? Math.round(leadDays.reduce((a, b) => a + b, 0) / leadDays.length) : null;
   // chart starts at the first sale or delivery: at least 6 months, at most 12
   const firstG = [...soldAll.map((g) => g.purchase_date), ...deliveredAll.map((g) => g.delivery_date)].sort()[0];
   const nowD = new Date();
@@ -1382,13 +1380,12 @@ async function renderAnalyticsPage(route, seq) {
       <div class="card ana-span-7">
         <div class="card-head"><h3>${I.chart} Vehicles sold & delivered</h3><span class="muted">all time · guests</span></div>
         <div class="veh-kpis">
-          <button class="veh-kpi drill" data-drill="gall:sold"><b class="st-sold">${soldAll.length}</b><span>Sold / ordered</span></button>
+          <button class="veh-kpi drill" data-drill="gall:sold"><b class="st-sold">${soldAll.length}</b><span>Sold</span></button>
+          <button class="veh-kpi drill" data-drill="gall:awaiting"><b>${awaiting.length}</b><span>In production</span></button>
           <button class="veh-kpi drill" data-drill="gall:delivered"><b>${deliveredAll.length}</b><span>Delivered</span></button>
-          <button class="veh-kpi drill" data-drill="gall:awaiting"><b>${awaiting.length}</b><span>Awaiting delivery</span></button>
-          <div class="veh-kpi"><b>${avgLead != null ? avgLead : "—"}${avgLead != null ? "<small> days</small>" : ""}</b><span>Avg order to delivery</span></div>
         </div>
         ${lineChartSvg(salesSeries, { drillPrefix: "salesmonth", second: deliverySeries, secondPrefix: "delivmonth" })}
-        <div class="legend"><span class="legend-item"><span class="legend-dot" style="background:#e0263f"></span>Sold / ordered per month</span><span class="legend-item"><span class="legend-dot" style="background:#3ddc84"></span>Delivered per month</span></div>
+        <div class="legend"><span class="legend-item"><span class="legend-dot" style="background:#e0263f"></span>Sold per month</span><span class="legend-item"><span class="legend-dot" style="background:#3ddc84"></span>Delivered per month</span></div>
         ${recentSales.length ? `<div class="veh-recent"><div class="veh-recent-h">Latest orders</div>${recentSales.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.purchase_date)}${g.delivery_date ? " · delivered" : ""}</span></a>`).join("")}</div>` : ""}
       </div>
 
@@ -1539,7 +1536,7 @@ function drillContent(key, ctx) {
     }
     case "gall": {
       const rows = arg === "delivered" ? ctx.deliveredAll : arg === "awaiting" ? ctx.awaiting : ctx.soldAll;
-      const title = arg === "delivered" ? "Delivered (all time)" : arg === "awaiting" ? "Sold, awaiting delivery" : "Vehicles sold (all time)";
+      const title = arg === "delivered" ? "Delivered (all time)" : arg === "awaiting" ? "In production (sold, not yet delivered)" : "Vehicles sold (all time)";
       return {
         title, sub: `${rows.length} ${rows.length === 1 ? "guest" : "guests"}`,
         html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${g.purchase_date ? fmtDate(g.purchase_date) : ""}${g.delivery_date ? " → " + fmtDate(g.delivery_date) : ""}</span></a>`).join("")}</div>` : `<div class="empty-state">Nothing here.</div>`,

@@ -1265,7 +1265,7 @@ input.invalid, select.invalid, textarea.invalid { border-color: var(--red) !impo
 }
 
 /* analytics: vehicles card + going quiet */
-.veh-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 4px 0 12px; }
+.veh-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 12px; }
 .veh-kpi { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; text-align: left; color: var(--text); display: flex; flex-direction: column; gap: 2px; font: inherit; }
 button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--border-strong); }
 .veh-kpi b { font-size: 22px; font-weight: 800; line-height: 1.1; } .veh-kpi b small { font-size: 12px; font-weight: 600; color: var(--grey); }
@@ -1273,4 +1273,4 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 .veh-recent { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .veh-recent-h { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--grey); margin-bottom: 4px; }
 .quiet-note { margin: 10px 0 0; font-size: 12px; }
-@media (max-width: 640px) { .veh-kpis { grid-template-columns: repeat(2, 1fr); } }
+
