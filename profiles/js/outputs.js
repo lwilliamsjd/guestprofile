@@ -392,7 +392,7 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
       <div class="gl">
         <label>SPEC CONSIDERATIONS</label>
-        <div class="fit" data-fit="At a glance: spec considerations">${specs.length ? `<ul class="gl-specs">${specs.map((s) => `<li>${s.group ? `<b>${e(GLANCE_SPEC[s.group] || s.group).toUpperCase()}</b>${e(s.items.join(" / "))}` : e(s.items[0])}</li>`).join("")}</ul>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
+        <div class="fit" data-fit="At a glance: spec considerations">${specs.length ? `<ul class="gl-specs">${specs.map((s) => `<li>${s.group ? `<b>${e(GLANCE_SPEC[s.group] || s.group).toUpperCase()}</b><span>${e(s.items.join(" / "))}</span>` : `<b></b><span>${e(s.items[0])}</span>`}</li>`).join("")}</ul>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
       </div>
       <div class="gl">
         <label>TIMING &amp; USE</label>
@@ -645,8 +645,10 @@ ul { margin: 0; padding: 0; list-style: none; }
 .gl-cars li { font-size: 10.5px; font-weight: 700; line-height: 1.3; padding: 2px 0; border-bottom: 1px solid #e2e2e6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gl-cars li:last-child { border-bottom: none; }
 .gl-more { font: 700 8px "Barlow Condensed"; letter-spacing: .12em; color: #6b6b73; margin-top: 2px; }
-.gl-specs li { font-size: 10px; line-height: 1.3; padding: 1.5px 0; }
-.gl-specs b { font: 700 8.5px "Barlow Condensed"; letter-spacing: .1em; color: #5c5c64; display: inline-block; width: 64px; }
+.gl-specs { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; align-items: baseline; }
+.gl-specs li { display: contents; font-size: 10px; line-height: 1.3; }
+.gl-specs b { font: 700 8.5px "Barlow Condensed"; letter-spacing: .1em; color: #5c5c64; white-space: nowrap; }
+.gl-specs span { font-size: 10px; line-height: 1.3; }
 .gl-big { font: italic 800 30px/1 "Barlow Condensed"; color: #111; }
 .gl-mid { font: italic 800 16px/1.1 "Barlow Condensed"; }
 .gl-sub { font: 700 9px "Barlow Condensed"; letter-spacing: .1em; color: #3a3a40; margin-top: 4px; }
