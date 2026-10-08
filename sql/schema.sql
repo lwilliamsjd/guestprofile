@@ -255,3 +255,10 @@ create or replace function public.set_job_title(new_title text)
 returns void language sql security definer set search_path = public as $$
   update public.profiles set job_title = nullif(trim(new_title), '') where id = auth.uid();
 $$;
+
+-- PDF redesign: short bio for the At a Glance box, banner phrases, code phrase option
+alter table applicants add column if not exists bio_short text;
+alter table applicants add column if not exists persona_left text;
+alter table applicants add column if not exists persona_center text;
+alter table applicants add column if not exists persona_right text;
+alter table applicants add column if not exists code_phrase boolean not null default false;

@@ -301,6 +301,28 @@ const USE_TAG = {
 const SPLIT_COLORS = { track: "#eb0a1e", street: "#111", events: "#5c5c64", collection: "#c4c4ca" };
 const DECISION_COLORS = { Approve: "#1f8a4c", Waitlist: "#c9890a", Decline: "#b0101f" };
 
+// Banner phrases across page 1. The center slot carries the code phrase when the concierge ticks it.
+export const CODE_PHRASE = "Brand Loyalist";
+export const PERSONA_SUGGESTIONS = ["Track-Proven", "Driver, Not a Flipper", "Long-Term Owner", "Serious Collector", "Toyota Insider", "Lexus Loyal", "Club Leader", "Weekend Racer", "Grand Tourer", "Engineer at Heart", "Community Builder", "Quiet Enthusiast"];
+export const isCodePhrase = (v) => clean(v).toLowerCase().replace(/[^a-z]/g, "") === CODE_PHRASE.toLowerCase().replace(/[^a-z]/g, "");
+export function bannerPhrases(a) {
+  const safe = (v) => (isCodePhrase(v) ? "" : clean(v));
+  return [safe(a.persona_left), a.code_phrase ? CODE_PHRASE : safe(a.persona_center), safe(a.persona_right)];
+}
+// two or three sentences for the top of page 1; falls back to the start of the full bio
+export const SHORT_BIO_FITS = 300;
+const GLANCE_SPEC = { "Interior Color": "Interior", "Interior Material": "Material", "Seat Type": "Seats", Accessories: "Extras" };
+export function shortBio(a) {
+  if (has(a.bio_short)) return clean(a.bio_short);
+  const s = clean(a.summary).replace(/\s+/g, " ");
+  if (!s) return "";
+  const sents = s.match(/[^.!?]+[.!?]+["”’)]*(\s|$)/g) || [s];
+  let out = "";
+  for (const x of sents) { if (out && (out + x).length > SHORT_BIO_FITS) break; out += x; }
+  out = out.trim() || s;
+  return out.length > SHORT_BIO_FITS + 40 ? out.slice(0, SHORT_BIO_FITS).replace(/\s+\S*$/, "") + "…" : out;
+}
+
 export function buildPersonaHtml(a, opts = {}) {
   const e = escapeHtml;
   const id = profileId(a);
@@ -353,6 +375,43 @@ export function buildPersonaHtml(a, opts = {}) {
     ? `<img src="${opts.photo}" alt="">`
     : `<div class="ph-initials">${e(initials(a.name))}</div><div class="ph-stripes"></div>`;
 
+  const th = rowsOf(a.toyota_history, "model");
+  const lfa = lfaStatusOf(a);
+  const u = usageSplitOf(a);
+  const specs = specGroups(a);
+  const phrases = bannerPhrases(a);
+  const band = phrases.some(Boolean)
+    ? `<div class="band band-words">${phrases.map((p, i) => `${i ? `<i class="sl">/</i>` : ""}<span>${e(p).toUpperCase()}</span>`).join("")}</div>`
+    : `<div class="band"></div>`;
+  const topUse = u ? USAGE_SPLIT.filter(([k]) => u[k]).sort((x, y) => u[y[0]] - u[x[0]])[0] : null;
+  const glance = `
+    <div class="glance">
+      <div class="gl">
+        <label>CURRENT GARAGE${g.length ? ` · ${g.length}` : ""}</label>
+        <div class="fit" data-fit="At a glance: current garage">${g.length ? `<ul class="gl-cars">${g.slice(0, 4).map((v) => `<li>${e(v.vehicle)}</li>`).join("")}</ul>${g.length > 4 ? `<div class="gl-more">+${g.length - 4} MORE ON PAGE 2</div>` : ""}` : none()}</div>
+      </div>
+      <div class="gl">
+        <label>SPEC CONSIDERATIONS</label>
+        <div class="fit" data-fit="At a glance: spec considerations">${specs.length ? `<ul class="gl-specs">${specs.map((s) => `<li>${s.group ? `<b>${e(GLANCE_SPEC[s.group] || s.group).toUpperCase()}</b>${e(s.items.join(" / "))}` : e(s.items[0])}</li>`).join("")}</ul>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
+      </div>
+      <div class="gl">
+        <label>TIMING &amp; USE</label>
+        ${has(a.target_quarter) ? `<div class="gl-big">${e(a.target_quarter)}</div>` : has(a.timing) ? `<div class="gl-mid">${e(a.timing)}</div>` : none("Timing not set")}
+        ${has(a.timing_flex) ? `<div class="gl-sub">${e(a.timing_flex).toUpperCase()}</div>` : ""}
+        ${topUse ? `<div class="gl-sub">MOSTLY ${e(topUse[1]).toUpperCase()} · ${u[topUse[0]]}%</div>` : ""}
+      </div>
+      <div class="gl">
+        <label>DRIVER &amp; BRAND</label>
+        <dl class="gl-dl">
+          <dt>HPDE</dt><dd>${e(a.hpde_level) || "—"}</dd>
+          <dt>RACING</dt><dd>${e(a.race_level) || "—"}</dd>
+          <dt>TOYOTA/LEXUS</dt><dd>${th.length ? `${th.length} owned` : "—"}</dd>
+          <dt>LFA</dt><dd>${e(lfa) || "—"}</dd>
+        </dl>
+      </div>
+    </div>`;
+  const sb = shortBio(a);
+
   const page1 = `
   <section class="page">
     ${topbar}
@@ -364,7 +423,7 @@ export function buildPersonaHtml(a, opts = {}) {
         <div class="facts">
           <div><label>AGE RANGE</label><b>${e(a.age_range) || "—"}</b></div>
           <div><label>LOCATION</label><b>${e(loc) || "—"}</b></div>
-          <div><label>PREFERRED DEALER</label><b>${e(a.preferred_dealer) || "—"}</b></div>
+          <div class="wide"><label>PREFERRED DEALER</label><b>${e(a.preferred_dealer) || "—"}</b></div>
         </div>
         <div class="own"><span class="own-num">${avg != null ? `${avg}<small>YR</small>` : "—"}</span><span class="own-cap">AVERAGE<br>OWNERSHIP<br>PER CAR</span></div>
       </div>
@@ -375,11 +434,12 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
       <div class="h-right">
         ${has(a.what_drives_you) ? `<div class="quote"><label>WHAT DRIVES YOU</label><div class="fit" data-fit="What Drives You quote">“${e(a.what_drives_you)}”</div></div>` : ""}
-        <h3>BIO</h3>
-        <div class="bio fit" data-fit="Bio">${has(a.summary) ? clean(a.summary).split(/\n\s*\n|\n/).filter((p) => p.trim()).map((p) => `<p>${e(p)}</p>`).join("") : none()}</div>
+        <h3>AT A GLANCE</h3>
+        <div class="sbio fit" data-fit="Short bio">${sb ? `<p>${e(sb)}</p>` : none()}</div>
       </div>
     </div>
-    <div class="band"></div>
+    ${glance}
+    ${band}
     <div class="grid3">
       <div class="panel-grey">
         <div class="ph"><b>QUICK STATS</b></div>
@@ -406,9 +466,8 @@ export function buildPersonaHtml(a, opts = {}) {
         ${has(a.driver_style_note) ? `<p class="fit" data-fit="Driver style note">${e(a.driver_style_note)}</p>` : ""}
       </div>
     </div>
-    <div class="grid3 lists">
-      <div><h3>TRACK &amp; DRIVING CLUBS</h3><div class="fit" data-fit="Track and driving clubs">${bullets(linesOf(a.clubs))}</div></div>
-      <div><h3>KEY MOTORSPORTS EVENTS</h3><div class="fit" data-fit="Key motorsports events">${bullets(linesOf(a.key_events))}</div></div>
+    <div class="biorow">
+      <div><h3>BIO</h3><div class="bio fit" data-fit="Bio">${has(a.summary) ? clean(a.summary).split(/\n\s*\n|\n/).filter((p) => p.trim()).map((p) => `<p>${e(p)}</p>`).join("") : none()}</div></div>
       <div><h3>TMC / TMNA RELATIONSHIPS</h3><div class="fit" data-fit="TMNA relationships">${bullets(linesOf(a.tmna_relationship))}</div></div>
     </div>
     <div class="watermark">GR GT</div>
@@ -437,8 +496,6 @@ export function buildPersonaHtml(a, opts = {}) {
         <span class="hi-y">${Number(r.held) ? `${r.held}y` : ""}</span>
       </div>`).join("");
   };
-  const th = rowsOf(a.toyota_history, "model");
-  const lfa = lfaStatusOf(a);
 
   // pipeline: Intake > Interview > Leadership > Allocation > Delivery
   const decided = ["Approve", "Waitlist", "Decline"].includes(a.allocation);
@@ -453,13 +510,11 @@ export function buildPersonaHtml(a, opts = {}) {
   ];
   const stepper = `<div class="stepper">${steps.map(([t, s], i) => `<div class="step ${i < stage ? "done" : i === stage ? "cur" : i === 4 ? "target" : ""}"><b>${t}</b><span>${s}</span></div>`).join("")}</div>`;
 
-  const u = usageSplitOf(a);
   const usageHtml = u ? `
       <div class="ubar">${USAGE_SPLIT.filter(([k]) => u[k]).map(([k]) => `<span style="flex:${u[k]};background:${SPLIT_COLORS[k]}">${u[k] >= 10 ? `${u[k]}%` : ""}</span>`).join("")}</div>
       <div class="ulegend">${USAGE_SPLIT.map(([k, l]) => `<span><i style="background:${SPLIT_COLORS[k]}"></i>${l.toUpperCase()} ${u[k]}%</span>`).join("")}</div>`
     : (a.gt_usage || []).length ? `<div class="ulegend">${a.gt_usage.map((x) => `<span><i style="background:#eb0a1e"></i>${e(x).toUpperCase()}</span>`).join("")}</div>` : none();
 
-  const specs = specGroups(a);
   const cross = rowsOf(a.cross_shop, "model");
   const rec = has(a.concierge_rec) ? a.concierge_rec : "";
   const recBadge = (cls) => (rec ? `<span class="rec ${cls}" style="background:${DECISION_COLORS[rec] || "#555"}">${cls === "rec-sm" ? "CONCIERGE REC.&nbsp; " : ""}<b>${e(rec).toUpperCase()}</b></span>` : "");
@@ -498,7 +553,8 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
     </div>
     <div class="buy2">
-      <div><h3>SPEC CONSIDERATIONS</h3><div class="specs fit" data-fit="Spec considerations">${specs.length ? specs.map((g) => `<span class="${g.priority ? "pri" : ""}">${g.group ? `<b>${e(g.group).toUpperCase()}</b> ${e(g.items.join(" / ")).toUpperCase()}` : e(g.items[0]).toUpperCase()}</span>`).join("") : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div></div>
+      <div><h3>TRACK &amp; DRIVING CLUBS</h3><div class="fit" data-fit="Track and driving clubs">${bullets(linesOf(a.clubs))}</div></div>
+      <div><h3>KEY MOTORSPORTS EVENTS</h3><div class="fit" data-fit="Key motorsports events">${bullets(linesOf(a.key_events))}</div></div>
       <div><h3>CROSS SHOPPING</h3><div class="fit" data-fit="Cross shopping">${cross.length ? `<table class="cross">${cross.slice(0, 6).map((c) => `<tr><td>${e(c.model)}</td><td>${e([c.status, c.note].filter(has).join(" · ")).toUpperCase()}</td></tr>`).join("")}</table>` : none()}</div></div>
     </div>
     <div class="bottom">
@@ -552,41 +608,64 @@ ul { margin: 0; padding: 0; list-style: none; }
 .b-vip { background: #ffd400; color: #111; }
 .b-conf { background: #eb0a1e; color: #fff; }
 
-.hero { display: grid; grid-template-columns: 232px 196px 1fr; gap: 0 20px; padding: 0 30px 0 36px; height: 446px; flex-shrink: 0; }
+.hero { display: grid; grid-template-columns: 236px 170px 1fr; gap: 0 20px; padding: 0 30px 0 36px; height: 308px; flex-shrink: 0; }
 .h-left { display: flex; flex-direction: column; }
 .ribbon { background: #eb0a1e; color: #fff; width: 112px; padding: 8px 12px 18px; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%); }
 .ribbon b { display: block; font: italic 800 22px/1 "Barlow Condensed"; }
 .ribbon span { font: 700 9.5px/1.3 "Barlow Condensed"; letter-spacing: .14em; }
-.fname { font: italic 800 56px/.9 "Barlow Condensed"; margin-top: 14px; letter-spacing: -.01em; word-break: break-word; }
-.lname { font: 800 30px/1 "Barlow Condensed"; color: #5c5c64; margin-top: 2px; }
-.facts { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; }
+.fname { font: italic 800 50px/.9 "Barlow Condensed"; margin-top: 10px; letter-spacing: -.01em; word-break: break-word; }
+.lname { font: 800 26px/1 "Barlow Condensed"; color: #5c5c64; margin-top: 2px; }
+.facts { margin-top: 10px; display: grid; grid-template-columns: 1fr 1.3fr; gap: 6px 12px; }
+.facts .wide { grid-column: 1 / -1; }
 .facts label { display: block; font: 600 8.5px "Barlow Condensed"; letter-spacing: .16em; color: #8a8a92; }
-.facts b { font-size: 13px; font-weight: 700; }
-.own { margin-top: auto; margin-bottom: 30px; border-top: 2px solid #111; padding-top: 12px; display: flex; align-items: center; gap: 10px; }
-.own-num { font: italic 800 50px/1 "Barlow Condensed"; color: #eb0a1e; }
+.facts b { font-size: 12.5px; font-weight: 700; }
+.own { margin-top: auto; margin-bottom: 14px; border-top: 2px solid #111; padding-top: 8px; display: flex; align-items: center; gap: 10px; }
+.own-num { font: italic 800 42px/1 "Barlow Condensed"; color: #eb0a1e; }
 .own-num small { font-size: 22px; }
 .own-cap { font: 700 10.5px/1.15 "Barlow Condensed"; letter-spacing: .12em; }
-.h-photo { position: relative; padding-top: 30px; }
-.ph-frame { position: relative; height: 344px; overflow: hidden; clip-path: polygon(14% 0, 100% 0, 86% 100%, 0 100%); background: linear-gradient(180deg, #17171a 0%, #2b1418 70%, #5a1520 100%); display: flex; align-items: center; justify-content: center; }
+.h-photo { position: relative; padding-top: 22px; }
+.ph-frame { position: relative; height: 254px; overflow: hidden; clip-path: polygon(14% 0, 100% 0, 86% 100%, 0 100%); background: linear-gradient(180deg, #17171a 0%, #2b1418 70%, #5a1520 100%); display: flex; align-items: center; justify-content: center; }
 .ph-frame img { width: 100%; height: 100%; object-fit: cover; }
 .ph-stripes { position: absolute; inset: 0; background: repeating-linear-gradient(115deg, rgba(255,255,255,.04) 0 14px, transparent 14px 30px); }
-.ph-initials { position: relative; z-index: 1; font: italic 800 96px/1 "Barlow Condensed"; color: #fff; }
-.ph-slashes { position: absolute; left: -2px; bottom: 30px; display: flex; gap: 4px; transform: skewX(-14deg); }
-.ph-slashes i { width: 16px; height: 50px; background: #eb0a1e; } .ph-slashes i:nth-child(2) { background: #111; height: 40px; margin-top: 10px; } .ph-slashes i:nth-child(3) { background: #fff; border: 1.5px solid #111; height: 32px; margin-top: 18px; }
-.ph-note { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; font: 600 8.5px "Barlow Condensed"; letter-spacing: .16em; color: #9a9aa2; }
-.h-right { padding-top: 20px; display: flex; flex-direction: column; min-height: 0; }
-.quote { background: #eb0a1e; color: #fff; padding: 12px 18px 14px; margin-bottom: 14px; flex-shrink: 0; }
+.ph-initials { position: relative; z-index: 1; font: italic 800 80px/1 "Barlow Condensed"; color: #fff; }
+.ph-slashes { position: absolute; left: -2px; bottom: 22px; display: flex; gap: 4px; transform: skewX(-14deg); }
+.ph-slashes i { width: 14px; height: 42px; background: #eb0a1e; } .ph-slashes i:nth-child(2) { background: #111; height: 40px; margin-top: 10px; } .ph-slashes i:nth-child(3) { background: #fff; border: 1.5px solid #111; height: 32px; margin-top: 18px; }
+.ph-note { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font: 600 8.5px "Barlow Condensed"; letter-spacing: .16em; color: #9a9aa2; }
+.h-right { padding-top: 18px; padding-bottom: 12px; display: flex; flex-direction: column; min-height: 0; }
+.quote { background: #eb0a1e; color: #fff; padding: 10px 16px 12px; margin-bottom: 12px; flex-shrink: 0; }
 .quote label { font: 700 8.5px "Barlow Condensed"; letter-spacing: .16em; opacity: .85; }
-.quote .fit { font: italic 700 16px/1.25 "Barlow Condensed"; margin-top: 4px; max-height: 100px; }
+.quote .fit { font: italic 700 15px/1.25 "Barlow Condensed"; margin-top: 4px; max-height: 76px; }
 .h-right h3 { flex-shrink: 0; }
-.bio { flex: 1; min-height: 0; font-size: 10.5px; color: #3a3a40; line-height: 1.45; }
-.bio p { margin-bottom: 8px; }
-.band { height: 12px; background: #0d0d0f; margin: 0 0 16px; position: relative; flex-shrink: 0; }
+.sbio { flex: 1; min-height: 0; font-size: 11.5px; line-height: 1.45; color: #18181b; font-weight: 500; }
+.glance { display: grid; grid-template-columns: 1.05fr 1.35fr .8fr .95fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 130px; grid-template-rows: 100%; flex-shrink: 0; }
+.gl { padding: 9px 12px 8px; border-right: 1px solid #dcdce0; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.gl:last-child { border-right: none; }
+.gl label { font: 700 9px "Barlow Condensed"; letter-spacing: .16em; color: #eb0a1e; margin-bottom: 5px; display: block; }
+.gl .fit { flex: 1; min-height: 0; }
+.gl-cars li { font-size: 10.5px; font-weight: 700; line-height: 1.3; padding: 2px 0; border-bottom: 1px solid #e2e2e6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gl-cars li:last-child { border-bottom: none; }
+.gl-more { font: 700 8px "Barlow Condensed"; letter-spacing: .12em; color: #6b6b73; margin-top: 2px; }
+.gl-specs li { font-size: 10px; line-height: 1.3; padding: 1.5px 0; }
+.gl-specs b { font: 700 8.5px "Barlow Condensed"; letter-spacing: .1em; color: #5c5c64; display: inline-block; width: 64px; }
+.gl-big { font: italic 800 30px/1 "Barlow Condensed"; color: #111; }
+.gl-mid { font: italic 800 16px/1.1 "Barlow Condensed"; }
+.gl-sub { font: 700 9px "Barlow Condensed"; letter-spacing: .1em; color: #3a3a40; margin-top: 4px; }
+.gl-dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: baseline; }
+.gl-dl dt { font: 700 8.5px "Barlow Condensed"; letter-spacing: .12em; color: #5c5c64; }
+.gl-dl dd { margin: 0; font-size: 10.5px; font-weight: 700; line-height: 1.25; }
+.biorow { display: grid; grid-template-columns: 1.85fr 1fr; gap: 22px; padding: 0 36px; margin-top: 14px; position: relative; z-index: 1; }
+.bio { font-size: 10.5px; color: #3a3a40; line-height: 1.45; max-height: 172px; }
+.bio p { margin-bottom: 6px; }
+.biorow .fit { max-height: 172px; }
+.band { height: 12px; background: #0d0d0f; margin: 0 0 14px; position: relative; flex-shrink: 0; }
+.band-words { height: 42px; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 10px; padding: 0 40px; overflow: hidden; }
+.band-words span { font: italic 800 19px/1 "Barlow Condensed"; letter-spacing: .03em; color: #fff; white-space: nowrap; text-align: center; overflow: hidden; }
+.band-words .sl { font: italic 800 22px/1 "Barlow Condensed"; color: #eb0a1e; font-style: normal; transform: skewX(-12deg); }
 .band::before, .band::after { content: ""; position: absolute; top: 0; bottom: 0; width: 22px; background: #eb0a1e; transform: skewX(-20deg); }
 .band::before { left: -8px; } .band::after { right: -8px; }
 
 .grid3 { display: grid; grid-template-columns: 268px 1fr 254px; gap: 18px; padding: 0 36px; flex-shrink: 0; position: relative; z-index: 1; }
-.panel-grey { background: #efeff1; padding: 12px 16px 12px; height: 344px; display: flex; flex-direction: column; }
+.panel-grey { background: #efeff1; padding: 12px 16px 12px; height: 272px; display: flex; flex-direction: column; }
 .ph { border-bottom: 2px solid #111; padding-bottom: 5px; margin-bottom: 8px; font: 700 12.5px "Barlow Condensed"; letter-spacing: .12em; }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-bottom: 12px; }
 .stats b { display: block; font: italic 800 30px/1 "Barlow Condensed"; }
@@ -598,7 +677,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .soc-f { font: italic 800 14px "Barlow Condensed"; color: #eb0a1e; }
 .soc-asof { font-size: 8.5px; color: #8a8a92; margin-top: 4px; }
 .soc-old { font-size: 10.5px; }
-.ms { height: 344px; display: flex; flex-direction: column; overflow: hidden; }
+.ms { height: 272px; display: flex; flex-direction: column; overflow: hidden; }
 .scale { margin-bottom: 10px; }
 .sc-head { display: flex; justify-content: space-between; font: 700 12px "Barlow Condensed"; letter-spacing: .06em; }
 .sc-head span { color: #eb0a1e; font-size: 10.5px; letter-spacing: .08em; }
@@ -607,15 +686,15 @@ ul { margin: 0; padding: 0; list-style: none; }
 .sc-ends { display: flex; justify-content: space-between; font: 600 7.5px "Barlow Condensed"; letter-spacing: .14em; color: #9a9aa2; margin-bottom: 5px; }
 .sc-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
 .sc-tags span { background: #111; color: #fff; font: 700 8.5px "Barlow Condensed"; letter-spacing: .08em; padding: 3px 7px; }
-.scale p { font-size: 10.5px; color: #3a3a40; max-height: 62px; }
-.panel-red { background: #eb0a1e; color: #fff; padding: 14px 16px; height: 344px; overflow: hidden; }
+.scale p { font-size: 10.5px; color: #3a3a40; max-height: 46px; }
+.panel-red { background: #eb0a1e; color: #fff; padding: 14px 16px; height: 272px; overflow: hidden; }
 .panel-red h3 { border-color: #fff; }
 .slider { position: relative; margin: 18px 0 6px; }
 .sl-track { height: 5px; background: rgba(255,255,255,.4); } .sl-track span { display: block; height: 100%; background: #fff; }
 .slider i { position: absolute; top: -6px; width: 16px; height: 16px; border-radius: 50%; background: #111; border: 3px solid #fff; transform: translateX(-50%); }
 .sl-ends { display: flex; justify-content: space-between; font: 700 8.5px "Barlow Condensed"; letter-spacing: .12em; }
 .sl-label { font: italic 800 21px "Barlow Condensed"; margin: 10px 0 8px; }
-.panel-red p { font-size: 10.5px; line-height: 1.5; max-height: 150px; }
+.panel-red p { font-size: 10.5px; line-height: 1.5; max-height: 110px; }
 .lists { margin-top: 16px; }
 .lists .fit { max-height: 128px; }
 .bul li { position: relative; padding-left: 15px; margin-bottom: 4px; font-size: 10.5px; }
@@ -679,7 +758,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .buy3 p { font-size: 10.5px; color: #3a3a40; max-height: 48px; }
 .tq { font: italic 800 38px/1 "Barlow Condensed"; color: #eb0a1e; } .tq.sm { font-size: 22px; }
 .tflex { font: 700 11px "Barlow Condensed"; letter-spacing: .1em; margin: 2px 0 6px; }
-.buy2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; padding: 0 36px; height: 120px; flex-shrink: 0; }
+.buy2 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 22px; padding: 0 36px; height: 120px; flex-shrink: 0; }
 .specs { display: flex; flex-wrap: wrap; gap: 5px; align-content: flex-start; max-height: 92px; }
 .specs span { border: 1px solid #111; font: 700 9px "Barlow Condensed"; letter-spacing: .08em; padding: 4px 8px; }
 .specs span b { color: #eb0a1e; margin-right: 2px; }
@@ -687,18 +766,20 @@ ul { margin: 0; padding: 0; list-style: none; }
 .cross { width: 100%; border-collapse: collapse; } .cross td { padding: 3px 0; border-bottom: 1px solid #e3e3e7; font-size: 10.5px; font-weight: 700; }
 .cross td + td { text-align: right; font: 600 8.5px "Barlow Condensed"; letter-spacing: .1em; color: #3a3a40; }
 .buy2 .fit { max-height: 92px; }
-.bottom { margin-top: auto; background: #0d0d0f; color: #fff; display: grid; grid-template-columns: 1.15fr 1fr; gap: 30px; padding: 14px 36px 8px; height: 200px; border-top: 6px solid #eb0a1e; flex-shrink: 0; }
-.bottom h3 { border-color: #555; color: #fff; }
+.bottom { margin-top: auto; background: #fff; color: #18181b; display: grid; grid-template-columns: 1.15fr 1fr; gap: 30px; padding: 14px 36px 8px; height: 200px; border-top: 6px solid #eb0a1e; flex-shrink: 0; }
+.bottom h3 { border-color: #111; color: #111; }
+.bottom .none.light { color: #9a9aa2; }
+.pm li { color: #18181b; } .pm i { color: #fff; }
+.decision { border-left: 1px solid #d6d6db; padding-left: 24px; }
 .asmt .fit { max-height: 104px; font-size: 10.5px; line-height: 1.45; }
 .pm li { display: flex; gap: 8px; align-items: flex-start; margin-top: 4px; font-size: 10px; }
 .pm i { width: 13px; height: 13px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; font: 800 10px Barlow; font-style: normal; }
 .pm .plus { background: #1f8a4c; } .pm .flag { background: #c9890a; }
 .boxes { display: flex; gap: 18px; margin: 4px 0 18px; }
 .boxes span { display: flex; align-items: center; gap: 7px; font: 700 13px "Barlow Condensed"; letter-spacing: .1em; }
-.boxes i { width: 16px; height: 16px; border: 1.5px solid #fff; display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 12px; }
-.boxes i.x { background: #fff; color: #111; }
+.boxes i { width: 17px; height: 17px; border: 1.5px solid #111; display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 12px; }
+.boxes i.x { background: #111; color: #fff; }
 .sign { display: grid; grid-template-columns: 1.4fr 1fr; gap: 22px 22px; }
-.sign span { border-bottom: 1px solid #777; padding-top: 14px; font: 600 8px "Barlow Condensed"; letter-spacing: .14em; color: #aaa; }
-.bottom + .footer { background: #0d0d0f; border-top: 1px solid #222; color: #8a8a92; }
-.bottom + .footer b { color: #fff; }
+.sign span { border-bottom: 1px solid #111; padding-top: 22px; font: 600 8px "Barlow Condensed"; letter-spacing: .14em; color: #5c5c64; }
+
 `;

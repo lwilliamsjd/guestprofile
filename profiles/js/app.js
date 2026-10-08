@@ -9,7 +9,7 @@ import {
   USAGE_OPTIONS, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
-  buildSummaryText, buildPersonaHtml, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
+  buildSummaryText, buildPersonaHtml, CODE_PHRASE, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
 } from "./outputs.js";
 import { SUPABASE_URL } from "./config.js";
 
@@ -81,7 +81,7 @@ const AGE_RANGES = ["Under 30", "30s", "40s", "50s", "60s", "70+"];
 const ALLOCATION_OPTIONS = ["Pending", ...DECISIONS];
 const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
 const RACE_SERIES = ["NASA Competition", "NASA Time Trial", "SCCA Regional", "SCCA National", "SCCA Time Trials", "SCCA Solo", "PCA Club Racing", "Porsche Carrera Cup", "GR Cup", "Lucky Dog", "ChampCar", "WRL", "IMSA", "SRO", "Ferrari Challenge", "Lamborghini Super Trofeo"];
-const BIO_FITS = 1100; // characters of Bio that fit page 1 of the PDF alongside a short quote
+const BIO_FITS = 1100; // characters of the full Bio that fit its box near the bottom of page 1
 const COMMON_MAKES = ["Acura","Alfa Romeo","Aston Martin","Audi","Bentley","BMW","Bugatti","Cadillac","Chevrolet","Dodge","Ferrari","Ford","Honda","Hyundai","Jaguar","Jeep","Koenigsegg","Lamborghini","Land Rover","Lexus","Lotus","Lucid","Maserati","Mazda","McLaren","Mercedes Benz","Nissan","Pagani","Porsche","Ram","Rimac","Rivian","Rolls Royce","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
 
 // garage vehicles: Year, Make and Model are entered separately; "vehicle" is the combined name used everywhere else
@@ -122,7 +122,8 @@ function missingForComplete(a) {
 // labels used in change history
 const FIELD_LABELS = {
   name: "Name", age_range: "Age Range", city: "City", state: "State", preferred_dealer: "Preferred Dealer", social_media: "Social Media (older notes)", socials: "Social Media", tmna_relationship: "TMNA Relationships",
-  clubs: "Track and Driving Clubs", vip: "VIP", summary: "Bio",
+  clubs: "Track and Driving Clubs", vip: "VIP", summary: "Bio", bio_short: "Short Bio",
+  persona_left: "Banner Phrase (left)", persona_center: "Banner Phrase (center)", persona_right: "Banner Phrase (right)", code_phrase: "Banner Center Option",
   years_on_track: "Years on Track", track_days: "Track Days", race_series: "Racing Series", driver_style: "Raw Numbers vs Experience", driver_style_note: "Driver Style Note",
   lfa_status: "LFA Experience", lfa_note: "LFA Note", toyota_history: "Toyota / Lexus History", past_cars: "Significant Past Cars",
   usage_split: "Intended Usage", usage_note: "Intended Usage Note", target_quarter: "Target Quarter", timing_flex: "Timing Flexibility", timing_note: "Timing Note",
@@ -133,7 +134,7 @@ const FIELD_LABELS = {
   interviewed_by: "Interviewed By", interview_date: "Interview Date", status: "Status", allocation: "Leadership Decision",
   call_notes: "Call Notes", needs_followup: "Needs Follow Up", followup_note: "Follow Up Note",
 };
-const LONG_FIELDS = ["call_notes", "followup_note", "summary", "hpde_experience", "race_experience", "key_events", "what_drives_you", "previous_toyota_lexus", "recent_flips", "spec_consideration", "intended_use", "social_media", "tmna_relationship",
+const LONG_FIELDS = ["call_notes", "followup_note", "summary", "bio_short", "hpde_experience", "race_experience", "key_events", "what_drives_you", "previous_toyota_lexus", "recent_flips", "spec_consideration", "intended_use", "social_media", "tmna_relationship",
   "clubs", "driver_style_note", "lfa_note", "usage_note", "timing_note", "assessment", "strengths", "concerns"];
 const JSON_FIELDS = ["socials", "race_series", "toyota_history", "past_cars", "usage_split", "spec_tags", "cross_shop"];
 function fmtVal(k, v) {
@@ -179,10 +180,10 @@ const TEXT_FIELDS = [
   "lfa_status", "lfa_note", "previous_toyota_lexus", "recent_flips", "timing", "spec_consideration", "intended_use",
   "usage_note", "target_quarter", "timing_flex", "timing_note", "concierge_rec", "assessment", "strengths", "concerns",
   "interviewed_by", "interview_date", "status", "hpde_level", "race_level", "allocation",
-  "call_notes", "followup_note",
+  "call_notes", "followup_note", "bio_short", "persona_left", "persona_center", "persona_right",
 ];
 const NUM_FIELDS = ["years_on_track", "track_days", "driver_style"];
-const BOOL_FIELDS = ["vip", "needs_followup"];
+const BOOL_FIELDS = ["vip", "needs_followup", "code_phrase"];
 
 const blankCar = () => ({ year: "", make: "", model: "", vehicle: "", usage: [], miles: "", acquired: "", use_note: "" });
 function blankApplicant() {
@@ -201,6 +202,7 @@ function blankApplicant() {
     concierge_rec: "", assessment: "", strengths: "", concerns: "",
     hpde_level: "", race_level: "", has_flips: null, allocation: "Pending",
     call_notes: "", needs_followup: false, followup_note: "",
+    bio_short: "", persona_left: "", persona_center: "", persona_right: "", code_phrase: false,
   };
 }
 
@@ -567,7 +569,7 @@ function appendApplicantSheets(wb, rows) {
     "Profile ID": profileId(r), Name: r.name, Status: r.status, "Age Range": r.age_range, City: r.city, State: r.state, "Preferred Dealer": r.preferred_dealer,
     VIP: r.vip ? "Yes" : "No", "LFA Experience": lfaStatusOf(r), "LFA Note": r.lfa_note,
     "Social Media": rowsOf(r.socials, "handle").map((x) => `${x.platform || ""} ${x.handle}${Number(x.followers) ? ` (${fmtK(x.followers)})` : ""}`.trim()).join("; ") || r.social_media,
-    "TMNA Relationships": linesOf(r.tmna_relationship).join("; "), "Clubs": linesOf(r.clubs).join("; "), Bio: r.summary, "What Drives Them": r.what_drives_you,
+    "TMNA Relationships": linesOf(r.tmna_relationship).join("; "), "Clubs": linesOf(r.clubs).join("; "), Bio: r.summary, "Short Bio": r.bio_short, "What Drives Them": r.what_drives_you,
     "HPDE Level": r.hpde_level, "HPDE Details": r.hpde_experience, "Race Level": r.race_level, "Racing Series": (r.race_series || []).join(", "), "Race Details": r.race_experience,
     "Years on Track": r.years_on_track ?? null, "Track Days": r.track_days ?? null, "Key Events": linesOf(r.key_events).join("; "),
     "Driver Style (0 numbers, 100 experience)": r.driver_style ?? null, "Driver Style Note": r.driver_style_note,
@@ -639,7 +641,7 @@ async function renderEditor(route, seq) {
       const optsList = v && !opts.options.includes(v) ? [...opts.options, v] : opts.options;
       input = `<select data-f="${key}">${opts.noBlank ? "" : `<option value=""></option>`}${optsList.map((o) => `<option ${o === v ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
     }
-    else input = `<input type="${opts.type || "text"}" data-f="${key}" value="${escapeHtml(v)}" placeholder="${opts.ph || ""}" ${opts.list ? `list="${opts.list}"` : ""} ${opts.min != null ? `min="${opts.min}"` : ""} ${opts.step ? `step="${opts.step}"` : ""} autocomplete="off">`;
+    else input = `<input type="${opts.type || "text"}" data-f="${key}" value="${escapeHtml(v)}" placeholder="${opts.ph || ""}" ${opts.list ? `list="${opts.list}"` : ""} ${opts.min != null ? `min="${opts.min}"` : ""} ${opts.step ? `step="${opts.step}"` : ""} ${opts.max ? `maxlength="${opts.max}"` : ""} autocomplete="off">`;
     return `<div class="form-field ${opts.span ? "span-2" : ""}"><label>${label}${hint}</label>${input}${opts.after || ""}</div>`;
   };
   const toggle = (key, label, sub) => `
@@ -766,6 +768,7 @@ async function renderEditor(route, seq) {
       <div class="style-foot"><b id="style-label">${styleSet() ? driverStyleLabel(a.driver_style) : "Not set yet. Drag the slider to set it."}</b><button type="button" class="btn btn-ghost btn-sm" id="style-clear" ${styleSet() ? "" : "hidden"}>Clear</button></div>
     </div>`;
 
+  const sbioCount = () => { const n = (a.bio_short || "").length; return n ? `${n} / ~${SHORT_BIO_FITS} characters fit` : `Blank, so the PDF uses: “${escapeHtml(shortBio(a).slice(0, 90))}${shortBio(a).length > 90 ? "…" : ""}”`; };
   const bioCount = () => { const n = (a.summary || "").length; return `${n.toLocaleString()} / ~${BIO_FITS.toLocaleString()} characters fit on the PDF`; };
 
   main.innerHTML = `
@@ -811,6 +814,7 @@ async function renderEditor(route, seq) {
             ${field("preferred_dealer", "Preferred Dealer", { ph: "Start typing to pick an existing dealer", list: "dealer-list" })}
             <div class="form-field"><label>&nbsp;</label>${toggle("vip", "VIP", "Shows as a VIP badge on the PDF")}</div>
             ${field("summary", "Bio", { type: "textarea", rows: 9, span: true, ph: "Who they are, how they got into driving, their relationship with Toyota and Lexus. Leave a blank line between paragraphs.", after: `<div class="field-foot" id="bio-count">${bioCount()}</div>` })}
+            ${field("bio_short", "Short Bio", { type: "textarea", rows: 3, span: true, hint: "(two or three sentences for the At a Glance box at the top of the PDF; if left blank, the first sentences of the Bio are used)", ph: "Phoenix logistics founder and HPDE instructor; seven Toyota and Lexus vehicles owned, never sold one inside three years.", after: `<div class="field-foot" id="sbio-count">${sbioCount()}</div>` })}
             ${field("what_drives_you", "What Drives You", { type: "textarea", rows: 2, span: true, hint: "(in their words; quoted at the top of the PDF)" })}
           </div>
         </section>
@@ -886,6 +890,17 @@ async function renderEditor(route, seq) {
             ${field("assessment", "Assessment", { type: "textarea", rows: 3, span: true, ph: "Two or three sentences for leadership on why they're a fit (or not)." })}
             ${field("strengths", "Strengths", { type: "textarea", rows: 3, hint: "(one per line, shown with +)", ph: "Average hold of 4.9 yrs; no sale inside 3 yrs" })}
             ${field("concerns", "Flags", { type: "textarea", rows: 3, hint: "(one per line, shown with !)", ph: "Confirm preferred dealer is GR GT certified" })}
+            <div class="span-2 banner-ed">
+              <label class="banner-ed-title">PDF Banner Phrases <span class="hint">(three short phrases about them as a buyer, shown in the black banner on page 1)</span></label>
+              <div class="banner-ed-grid">
+                ${field("persona_left", "Left", { list: "persona-list", max: 24, ph: "e.g. Track-Proven" })}
+                ${field("persona_center", "Center", { list: "persona-list", max: 24, ph: "e.g. Long-Term Owner" })}
+                ${field("persona_right", "Right", { list: "persona-list", max: 24, ph: "e.g. Driver, Not a Flipper" })}
+              </div>
+              <div id="persona-warn" class="field-foot over" hidden>“${CODE_PHRASE}” is reserved for the checkbox below and won't print as a typed phrase.</div>
+              ${toggle("code_phrase", "Suggested approval", `Prints “${CODE_PHRASE}” in the center of the banner instead of the center phrase`)}
+              <datalist id="persona-list">${PERSONA_SUGGESTIONS.map((x) => `<option value="${escapeHtml(x)}">`).join("")}</datalist>
+            </div>
           </div>
         </section>
 
@@ -1083,6 +1098,8 @@ async function renderEditor(route, seq) {
       e.target.classList.remove("invalid");
     }
     if (k === "summary") main.querySelector("#bio-count").textContent = bioCount();
+    if (k === "summary" || k === "bio_short") { const c = main.querySelector("#sbio-count"); c.textContent = sbioCount(); c.classList.toggle("over", (a.bio_short || "").length > SHORT_BIO_FITS); }
+    if (k.startsWith("persona_")) paintPersona();
     if (k === "summary") main.querySelector("#bio-count").classList.toggle("over", (a.summary || "").length > BIO_FITS);
     markDirty();
   });
@@ -1095,10 +1112,22 @@ async function renderEditor(route, seq) {
       a[k] = e.target.checked;
       e.target.closest(".toggle-card").classList.toggle("on", a[k]);
       if (k === "needs_followup") main.querySelector("#followup-note-wrap").hidden = !a[k];
+      if (k === "code_phrase") paintPersona();
     } else a[k] = e.target.value;
     markDirty();
   });
   main.querySelector("#bio-count").classList.toggle("over", (a.summary || "").length > BIO_FITS);
+  // banner phrases: the center box shows the code phrase while the checkbox is on
+  function paintPersona() {
+    const center = main.querySelector('[data-f="persona_center"]');
+    center.disabled = !!a.code_phrase;
+    center.value = a.code_phrase ? CODE_PHRASE : a.persona_center || "";
+    center.closest(".form-field").classList.toggle("coded", !!a.code_phrase);
+    const bad = ["persona_left", "persona_center", "persona_right"].filter((k) => !(k === "persona_center" && a.code_phrase) && isCodePhrase(a[k]));
+    ["persona_left", "persona_center", "persona_right"].forEach((k) => main.querySelector(`[data-f="${k}"]`).classList.toggle("invalid", bad.includes(k)));
+    main.querySelector("#persona-warn").hidden = !bad.length;
+  }
+  paintPersona();
 
   // ----- section nav: progress + scroll spy -----
   function updateProgress() {

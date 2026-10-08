@@ -561,3 +561,11 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
   .spec-card.tall { grid-row: auto; }
   .form-field .spec-opt { font-size: 13.5px; padding: 7px 13px 7px 9px; }
 }
+
+/* PDF banner phrases (assessment section) */
+.banner-ed { border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.form-field .banner-ed-title, .banner-ed-title { font-size: 12px; font-weight: 700; color: var(--text); margin: 0; }
+.banner-ed-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.banner-ed-grid .form-field { margin: 0; }
+.banner-ed .form-field.coded input { color: var(--text); font-weight: 700; border-color: var(--red); background: rgba(224,38,63,.12); opacity: 1; }
+@media (max-width: 640px) { .banner-ed-grid { grid-template-columns: 1fr; } }
