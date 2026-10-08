@@ -327,6 +327,18 @@ function swatchStyle(group, item) {
   if (hit[0] === "white") return "background:#fff;color:#8a8a92;border-color:#a9a9b0";
   return `background:${hit[1]};color:#fff;border-color:${hit[1]}`;
 }
+// chips for one category; brand or type groups (BBS, Rays Racing, Steel, Carbon Ceramic) get a small label
+// so the chips only need the color, which keeps the block short enough to fit every option
+function specChips(g, e) {
+  const subs = (SPEC_OPTIONS.find(([c]) => c === g.group) || [null, [["", []]]])[1].map(([sub]) => sub).filter(Boolean);
+  const chip = (x, full) => `<i class="${g.priority ? "pri" : ""}" style="${swatchStyle(g.group, full)}">${e(x)}</i>`;
+  if (!subs.length) return g.items.map((x) => chip(x, x)).join("");
+  const rest = g.items.filter((x) => !subs.some((sb) => x.startsWith(sb + " ")));
+  return subs.map((sb) => {
+    const mine = g.items.filter((x) => x.startsWith(sb + " "));
+    return mine.length ? `<em>${e(sb === "Carbon Ceramic" ? "Carbon" : sb === "Rays Racing" ? "Rays" : sb)}</em>${mine.map((x) => chip(x.slice(sb.length + 1), x)).join("")}` : "";
+  }).join("") + rest.map((x) => chip(x, x)).join("");
+}
 const GLANCE_SPEC = { "Interior Color": "Interior", "Interior Material": "Material", "Seat Type": "Seats", Accessories: "Extras" };
 export function shortBio(a) {
   if (has(a.bio_short)) return clean(a.bio_short);
@@ -416,7 +428,7 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
       <div class="gl">
         <label>CAR SPEC PREFERENCES</label>
-        <div class="fit" data-fit="Car spec preferences">${specs.length ? `<div class="specp sm">${specs.map((s) => `<div class="sp-row"><b>${e(s.group || "Other").toUpperCase()}</b><span>${s.items.map((x) => `<i class="${s.priority ? "pri" : ""}" style="${swatchStyle(s.group, x)}">${e(x)}</i>`).join("")}</span></div>`).join("")}</div>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
+        <div class="fit" data-fit="Car spec preferences">${specs.length ? `<div class="specp sm">${specs.map((s) => `<div class="sp-row"><b>${e(s.group || "Other").toUpperCase()}</b><span>${specChips(s, e)}</span></div>`).join("")}</div>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
       </div>
     </div>`;
 
@@ -592,7 +604,10 @@ export function buildPersonaHtml(a, opts = {}) {
 <script>
   // safety net: shrink any banner phrase that is still too wide for its third of the banner
   function fitBand() { document.querySelectorAll(".band-words span").forEach(function (el) { var f = 20; el.style.fontSize = f + "px"; while (el.scrollWidth > el.clientWidth + 1 && f > 12) { f -= 0.5; el.style.fontSize = f + "px"; } }); }
-  fitBand(); if (document.fonts) document.fonts.ready.then(fitBand);
+  // and shrink the car spec block until every selected option fits its box
+  function fitSpecs() { document.querySelectorAll(".specp.sm").forEach(function (el) { var box = el.parentElement, z = 1; el.style.zoom = 1; while (box.scrollHeight > box.clientHeight + 1 && z > 0.6) { z -= 0.03; el.style.zoom = z; } }); }
+  function fitAll() { fitBand(); fitSpecs(); }
+  fitAll(); if (document.fonts) document.fonts.ready.then(fitAll);
 </script></body></html>`;
 }
 
@@ -647,7 +662,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .quote label { font: 700 8.5px "Barlow Condensed"; letter-spacing: .16em; opacity: .85; }
 .quote .fit { font: italic 700 15px/1.25 "Barlow Condensed"; margin-top: 4px; max-height: 76px; }
 .h-right h3 { flex-shrink: 0; }
-.glance { display: grid; grid-template-columns: 1fr .72fr 1.75fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 180px; grid-template-rows: 100%; flex-shrink: 0; }
+.glance { display: grid; grid-template-columns: .95fr .62fr 1.95fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 180px; grid-template-rows: 100%; flex-shrink: 0; }
 .gl { padding: 9px 12px 8px; border-right: 1px solid #dcdce0; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .gl:last-child { border-right: none; }
 .gl label { font: 700 9px "Barlow Condensed"; letter-spacing: .16em; color: #eb0a1e; margin-bottom: 5px; display: block; }
@@ -683,7 +698,9 @@ ul { margin: 0; padding: 0; list-style: none; }
 .specp.sm { gap: 3px 14px; }
 .specp.sm .sp-row { gap: 2px; padding-bottom: 4px; border-bottom-color: #e2e2e6; }
 .specp.sm .sp-row b { font-size: 8px; }
-.specp.sm .sp-row span { gap: 3px; }
+.specp.sm .sp-row span { gap: 3px; align-items: center; }
+.sp-row em { font: 700 7.5px "Barlow Condensed"; font-style: normal; letter-spacing: .1em; text-transform: uppercase; color: #8a8a92; margin: 0 1px 0 4px; }
+.sp-row em:first-child { margin-left: 0; }
 .specp.sm .sp-row i { font-size: 8.5px; padding: 1px 5px; }
 .sp-row i.pri { background: #eb0a1e; border-color: #eb0a1e; color: #fff; }
 .band { height: 12px; background: #0d0d0f; margin: 0 0 14px; position: relative; flex-shrink: 0; }
