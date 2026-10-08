@@ -303,6 +303,7 @@ const DECISION_COLORS = { Approve: "#1f8a4c", Waitlist: "#c9890a", Decline: "#b0
 
 // Banner phrases across page 1. The center slot carries the code phrase when the concierge ticks it.
 export const CODE_PHRASE = "Brand Loyalist";
+export const PHRASE_MAX = 22; // characters that fit one third of the banner
 export const PERSONA_SUGGESTIONS = ["Track-Proven", "Driver, Not a Flipper", "Long-Term Owner", "Serious Collector", "Toyota Insider", "Lexus Loyal", "Club Leader", "Weekend Racer", "Grand Tourer", "Engineer at Heart", "Community Builder", "Quiet Enthusiast"];
 export const isCodePhrase = (v) => clean(v).toLowerCase().replace(/[^a-z]/g, "") === CODE_PHRASE.toLowerCase().replace(/[^a-z]/g, "");
 export function bannerPhrases(a) {
@@ -373,7 +374,7 @@ export function buildPersonaHtml(a, opts = {}) {
 
   const photo = opts.photo
     ? `<img src="${opts.photo}" alt="">`
-    : `<div class="ph-initials">${e(initials(a.name))}</div><div class="ph-stripes"></div>`;
+    : `<div class="ph-initials">${e(initials(a.name))}</div><div class="ph-stripes"></div><div class="ph-note">PHOTO PENDING</div>`;
 
   const th = rowsOf(a.toyota_history, "model");
   const lfa = lfaStatusOf(a);
@@ -418,18 +419,15 @@ export function buildPersonaHtml(a, opts = {}) {
     <div class="hero">
       <div class="h-left">
         <div class="ribbon"><b>GR GT</b><span>BUYER<br>PROFILE</span></div>
-        <div class="fname">${e(first).toUpperCase()}</div>
-        <div class="lname">${e(last).toUpperCase()}</div>
+        <div class="idrow">
+          <div class="thumb">${photo}</div>
+          <div class="names"><div class="fname">${e(first).toUpperCase()}</div><div class="lname">${e(last).toUpperCase()}</div></div>
+        </div>
         <div class="facts">
           <div><label>AGE RANGE</label><b>${e(a.age_range) || "—"}</b></div>
           <div><label>LOCATION</label><b>${e(loc) || "—"}</b></div>
-          <div class="wide"><label>PREFERRED DEALER</label><b>${e(a.preferred_dealer) || "—"}</b></div>
+          <div><label>PREFERRED DEALER</label><b>${e(a.preferred_dealer) || "—"}</b></div>
         </div>
-      </div>
-      <div class="h-photo">
-        <div class="ph-frame">${photo}</div>
-        <div class="ph-slashes"><i></i><i></i><i></i></div>
-        ${opts.photo ? "" : `<div class="ph-note">PHOTO PENDING</div>`}
       </div>
       <div class="h-right">
         ${has(a.what_drives_you) ? `<div class="quote"><label>WHAT DRIVES YOU</label><div class="fit" data-fit="What Drives You quote">“${e(a.what_drives_you)}”</div></div>` : ""}
@@ -580,7 +578,12 @@ export function buildPersonaHtml(a, opts = {}) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${e(title)} Buyer Profile</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>${PERSONA_CSS}</style></head><body>${page1}${page2}</body></html>`;
+<style>${PERSONA_CSS}</style></head><body>${page1}${page2}
+<script>
+  // safety net: shrink any banner phrase that is still too wide for its third of the banner
+  function fitBand() { document.querySelectorAll(".band-words span").forEach(function (el) { var f = 20; el.style.fontSize = f + "px"; while (el.scrollWidth > el.clientWidth + 1 && f > 12) { f -= 0.5; el.style.fontSize = f + "px"; } }); }
+  fitBand(); if (document.fonts) document.fonts.ready.then(fitBand);
+</script></body></html>`;
 }
 
 const PERSONA_CSS = `
@@ -609,29 +612,24 @@ ul { margin: 0; padding: 0; list-style: none; }
 .b-vip { background: #ffd400; color: #111; }
 .b-conf { background: #eb0a1e; color: #fff; }
 
-.hero { display: grid; grid-template-columns: 236px 170px 1fr; gap: 0 20px; padding: 0 30px 0 36px; height: 308px; flex-shrink: 0; }
+.hero { display: grid; grid-template-columns: 1fr 1.12fr; gap: 0 28px; padding: 0 30px 0 36px; height: 300px; flex-shrink: 0; }
 .h-left { display: flex; flex-direction: column; }
 .ribbon { background: #eb0a1e; color: #fff; width: 112px; padding: 8px 12px 18px; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%); }
 .ribbon b { display: block; font: italic 800 22px/1 "Barlow Condensed"; }
 .ribbon span { font: 700 9.5px/1.3 "Barlow Condensed"; letter-spacing: .14em; }
-.fname { font: italic 800 50px/.9 "Barlow Condensed"; margin-top: 10px; letter-spacing: -.01em; word-break: break-word; }
-.lname { font: 800 26px/1 "Barlow Condensed"; color: #5c5c64; margin-top: 2px; }
-.facts { margin-top: 16px; padding-top: 12px; border-top: 2px solid #111; display: grid; grid-template-columns: 1fr 1.3fr; gap: 10px 12px; }
+.idrow { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+.thumb { position: relative; width: 96px; height: 116px; flex-shrink: 0; overflow: hidden; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%); background: linear-gradient(180deg, #17171a 0%, #2b1418 70%, #5a1520 100%); display: flex; align-items: center; justify-content: center; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ph-stripes { position: absolute; inset: 0; background: repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 8px, transparent 8px 18px); }
+.ph-initials { position: relative; z-index: 1; font: italic 800 40px/1 "Barlow Condensed"; color: #fff; }
+.ph-note { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font: 600 6.5px "Barlow Condensed"; letter-spacing: .16em; color: rgba(255,255,255,.55); z-index: 1; }
+.names { min-width: 0; }
+.fname { font: italic 800 48px/.9 "Barlow Condensed"; letter-spacing: -.01em; word-break: break-word; }
+.lname { font: 800 26px/1 "Barlow Condensed"; color: #5c5c64; margin-top: 3px; word-break: break-word; }
+.facts { margin-top: 16px; padding-top: 10px; border-top: 2px solid #111; display: grid; grid-template-columns: .7fr 1fr 1.5fr; gap: 12px; }
 .facts .wide { grid-column: 1 / -1; }
 .facts label { display: block; font: 600 8.5px "Barlow Condensed"; letter-spacing: .16em; color: #8a8a92; }
 .facts b { font-size: 12.5px; font-weight: 700; }
-.own { margin-top: auto; margin-bottom: 14px; border-top: 2px solid #111; padding-top: 8px; display: flex; align-items: center; gap: 10px; }
-.own-num { font: italic 800 42px/1 "Barlow Condensed"; color: #eb0a1e; }
-.own-num small { font-size: 22px; }
-.own-cap { font: 700 10.5px/1.15 "Barlow Condensed"; letter-spacing: .12em; }
-.h-photo { position: relative; padding-top: 22px; }
-.ph-frame { position: relative; height: 254px; overflow: hidden; clip-path: polygon(26% 0, 100% 0, 74% 100%, 0 100%); background: linear-gradient(180deg, #17171a 0%, #2b1418 70%, #5a1520 100%); display: flex; align-items: center; justify-content: center; }
-.ph-frame img { width: 100%; height: 100%; object-fit: cover; }
-.ph-stripes { position: absolute; inset: 0; background: repeating-linear-gradient(115deg, rgba(255,255,255,.04) 0 14px, transparent 14px 30px); }
-.ph-initials { position: relative; z-index: 1; font: italic 800 68px/1 "Barlow Condensed"; color: #fff; margin-left: 10px; }
-.ph-slashes { position: absolute; left: -6px; top: calc(22px + 254px - 44px); display: flex; align-items: flex-end; gap: 5px; }
-.ph-slashes i { width: 12px; height: 44px; background: #eb0a1e; transform: skewX(-10deg); transform-origin: bottom left; } .ph-slashes i:nth-child(2) { background: #111; } .ph-slashes i:nth-child(3) { background: #fff; box-shadow: inset 0 0 0 1.5px #111; }
-.ph-note { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font: 600 8.5px "Barlow Condensed"; letter-spacing: .16em; color: #9a9aa2; }
 .h-right { padding-top: 18px; padding-bottom: 12px; display: flex; flex-direction: column; min-height: 0; }
 .quote { background: #eb0a1e; color: #fff; padding: 10px 16px 12px; margin-bottom: 12px; flex-shrink: 0; }
 .quote label { font: 700 8.5px "Barlow Condensed"; letter-spacing: .16em; opacity: .85; }
@@ -661,8 +659,8 @@ ul { margin: 0; padding: 0; list-style: none; }
 .bio p { margin-bottom: 6px; }
 .biorow .fit { max-height: 172px; }
 .band { height: 12px; background: #0d0d0f; margin: 0 0 14px; position: relative; flex-shrink: 0; }
-.band-words { height: 42px; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 10px; padding: 0 40px; overflow: hidden; }
-.band-words span { font: italic 800 19px/1 "Barlow Condensed"; letter-spacing: .03em; color: #fff; white-space: nowrap; text-align: center; overflow: hidden; }
+.band-words { height: 42px; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 10px; padding: 0 44px; overflow: hidden; }
+.band-words span { font: italic 800 20px/1 "Barlow Condensed"; letter-spacing: .03em; color: #fff; white-space: nowrap; text-align: center; overflow: hidden; }
 .band-words .sl { font: italic 800 22px/1 "Barlow Condensed"; color: #eb0a1e; font-style: normal; transform: skewX(-12deg); }
 .band::before, .band::after { content: ""; position: absolute; top: 0; bottom: 0; width: 22px; background: #eb0a1e; transform: skewX(-20deg); }
 .band::before { left: -8px; } .band::after { right: -8px; }
@@ -675,9 +673,9 @@ ul { margin: 0; padding: 0; list-style: none; }
 .stats b small { font-size: 13px; margin-left: 1px; }
 .stats span { font: 600 8px "Barlow Condensed"; letter-spacing: .08em; color: #5c5c64; white-space: nowrap; }
 .socials { flex: 1; min-height: 0; }
-.soc { display: grid; grid-template-columns: 62px 1fr auto; gap: 6px; padding: 6px 0; border-bottom: 1px solid #d6d6db; align-items: start; }
-.soc-p { font: 700 9.5px "Barlow Condensed"; letter-spacing: .1em; padding-top: 1px; }
-.soc-h b { display: block; font-size: 10.5px; } .soc-h span { color: #6b6b73; font-size: 9.5px; }
+.soc { display: grid; grid-template-columns: 62px 1fr auto; gap: 6px; padding: 6px 0; border-bottom: 1px solid #d6d6db; align-items: baseline; }
+.soc-p { font: 700 9.5px/1.3 "Barlow Condensed"; letter-spacing: .1em; }
+.soc-h b { display: block; font-size: 10.5px; line-height: 1.3; } .soc-h span { color: #6b6b73; font-size: 9.5px; }
 .soc-f { font: italic 800 14px "Barlow Condensed"; color: #eb0a1e; }
 .soc-asof { font-size: 8.5px; color: #8a8a92; margin-top: 4px; }
 .soc-old { font-size: 10.5px; }

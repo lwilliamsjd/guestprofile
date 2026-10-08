@@ -9,7 +9,7 @@ import {
   USAGE_OPTIONS, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
-  buildSummaryText, buildPersonaHtml, CODE_PHRASE, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
+  buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
 } from "./outputs.js";
 import { SUPABASE_URL } from "./config.js";
 
@@ -893,9 +893,9 @@ async function renderEditor(route, seq) {
             <div class="span-2 banner-ed">
               <label class="banner-ed-title">PDF Banner Phrases <span class="hint">(three short phrases about them as a buyer, shown in the black banner on page 1)</span></label>
               <div class="banner-ed-grid">
-                ${field("persona_left", "Left", { list: "persona-list", max: 24, ph: "e.g. Track-Proven" })}
-                ${field("persona_center", "Center", { list: "persona-list", max: 24, ph: "e.g. Long-Term Owner" })}
-                ${field("persona_right", "Right", { list: "persona-list", max: 24, ph: "e.g. Driver, Not a Flipper" })}
+                ${field("persona_left", "Left", { list: "persona-list", max: PHRASE_MAX, ph: "e.g. Track-Proven" , after: `<div class="field-foot" data-count="persona_left"></div>`})}
+                ${field("persona_center", "Center", { list: "persona-list", max: PHRASE_MAX, ph: "e.g. Long-Term Owner" , after: `<div class="field-foot" data-count="persona_center"></div>`})}
+                ${field("persona_right", "Right", { list: "persona-list", max: PHRASE_MAX, ph: "e.g. Driver, Not a Flipper" , after: `<div class="field-foot" data-count="persona_right"></div>`})}
               </div>
               <div id="persona-warn" class="field-foot over" hidden>“${CODE_PHRASE}” is reserved for the checkbox below and won't print as a typed phrase.</div>
               ${toggle("code_phrase", "Suggested approval", `Prints “${CODE_PHRASE}” in the center of the banner instead of the center phrase`)}
@@ -1126,6 +1126,12 @@ async function renderEditor(route, seq) {
     const bad = ["persona_left", "persona_center", "persona_right"].filter((k) => !(k === "persona_center" && a.code_phrase) && isCodePhrase(a[k]));
     ["persona_left", "persona_center", "persona_right"].forEach((k) => main.querySelector(`[data-f="${k}"]`).classList.toggle("invalid", bad.includes(k)));
     main.querySelector("#persona-warn").hidden = !bad.length;
+    ["persona_left", "persona_center", "persona_right"].forEach((k) => {
+      const n = k === "persona_center" && a.code_phrase ? CODE_PHRASE.length : (a[k] || "").length;
+      const el = main.querySelector(`[data-count="${k}"]`);
+      el.textContent = `${n} / ${PHRASE_MAX}`;
+      el.classList.toggle("over", n >= PHRASE_MAX);
+    });
   }
   paintPersona();
 
