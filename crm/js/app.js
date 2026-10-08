@@ -447,8 +447,8 @@ function renderLogin() {
   app.innerHTML = `
     <div class="login-wrap">
       <form id="login-form" class="login-card">
-        <div class="brand brand-lg"><span class="brand-dot"></span><span>GR GT Concierge CRM</span></div>
-        <p class="login-sub">Sign in with the account your team lead set up for you.</p>
+        <div class="brand brand-lg"><span class="brand-dot"></span><span>Portal</span></div>
+        <p class="login-sub">Sign in to continue.</p>
         <label>Email</label>
         <input type="email" id="login-email" required autocomplete="username" />
         <label>Password</label>

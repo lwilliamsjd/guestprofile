@@ -388,7 +388,7 @@ function shell(active, inner) {
 
 function renderNotConfigured() {
   app.innerHTML = `<div class="login-wrap"><div class="login-card" style="max-width:420px">
-    <div class="brand brand-lg"><span class="brand-dot"></span><span>GR GT Applicant Profiles</span></div>
+    <div class="brand brand-lg"><span class="brand-dot"></span><span>Portal</span></div>
     <p class="login-sub">Not connected to a database yet. Add the Supabase URL and anon key to <b>js/config.js</b> (see README, step 3).</p>
   </div></div>`;
 }
@@ -400,8 +400,8 @@ function renderLogin() {
   app.innerHTML = `
     <div class="login-wrap">
       <form id="login-form" class="login-card">
-        <div class="brand brand-lg"><span class="brand-dot"></span><span>GR GT Applicant Profiles</span></div>
-        <p class="login-sub">Sign in with the account your team lead set up for you.</p>
+        <div class="brand brand-lg"><span class="brand-dot"></span><span>Portal</span></div>
+        <p class="login-sub">Sign in to continue.</p>
         <label>Email</label>
         <input type="email" id="login-email" required autocomplete="username" />
         <label>Password</label>
