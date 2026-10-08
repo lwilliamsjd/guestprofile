@@ -662,7 +662,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .quote label { font: 700 8.5px "Barlow Condensed"; letter-spacing: .16em; opacity: .85; }
 .quote .fit { font: italic 700 15px/1.25 "Barlow Condensed"; margin-top: 4px; max-height: 76px; }
 .h-right h3 { flex-shrink: 0; }
-.glance { display: grid; grid-template-columns: .95fr .62fr 1.95fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 180px; grid-template-rows: 100%; flex-shrink: 0; }
+.glance { display: grid; grid-template-columns: .95fr .62fr 1.95fr; margin: 0 36px 12px; background: #f2f2f4; border-top: 3px solid #111; height: 200px; grid-template-rows: 100%; flex-shrink: 0; }
 .gl { padding: 9px 12px 8px; border-right: 1px solid #dcdce0; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .gl:last-child { border-right: none; }
 .gl label { font: 700 9px "Barlow Condensed"; letter-spacing: .16em; color: #eb0a1e; margin-bottom: 5px; display: block; }
@@ -697,11 +697,11 @@ ul { margin: 0; padding: 0; list-style: none; }
 .sp-row i { font-style: normal; font: 700 10px "Barlow Condensed"; letter-spacing: .06em; text-transform: uppercase; border: 1px solid #111; padding: 2px 7px; }
 .specp.sm { gap: 3px 14px; }
 .specp.sm .sp-row { gap: 2px; padding-bottom: 4px; border-bottom-color: #e2e2e6; }
-.specp.sm .sp-row b { font-size: 8px; }
+.specp.sm .sp-row b { font-size: 9px; }
 .specp.sm .sp-row span { gap: 3px; align-items: center; }
-.sp-row em { font: 700 7.5px "Barlow Condensed"; font-style: normal; letter-spacing: .1em; text-transform: uppercase; color: #8a8a92; margin: 0 1px 0 4px; }
+.sp-row em { font: 700 8.5px "Barlow Condensed"; font-style: normal; letter-spacing: .1em; text-transform: uppercase; color: #8a8a92; margin: 0 1px 0 4px; }
 .sp-row em:first-child { margin-left: 0; }
-.specp.sm .sp-row i { font-size: 8.5px; padding: 1px 5px; }
+.specp.sm .sp-row i { font-size: 10px; padding: 1px 6px; }
 .sp-row i.pri { background: #eb0a1e; border-color: #eb0a1e; color: #fff; }
 .band { height: 12px; background: #0d0d0f; margin: 0 0 14px; position: relative; flex-shrink: 0; }
 .band-words { height: 42px; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 10px; padding: 0 44px; overflow: hidden; }
@@ -711,7 +711,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .band::before { left: -8px; } .band::after { right: -8px; }
 
 .grid3 { display: grid; grid-template-columns: 268px 1fr 254px; gap: 18px; padding: 0 36px; flex-shrink: 0; position: relative; z-index: 1; }
-.panel-grey { background: #efeff1; padding: 12px 16px 12px; height: 272px; display: flex; flex-direction: column; }
+.panel-grey { background: #efeff1; padding: 12px 16px 12px; height: 252px; display: flex; flex-direction: column; }
 .ph { border-bottom: 2px solid #111; padding-bottom: 5px; margin-bottom: 8px; font: 700 12.5px "Barlow Condensed"; letter-spacing: .12em; }
 .hstats { display: grid; grid-template-columns: repeat(6, 1fr); margin-top: 10px; border-top: 2px solid #111; padding-top: 12px; height: 62px; margin-bottom: 4px; box-sizing: border-box; flex-shrink: 0; }
 .hstats div { padding-right: 4px; }
@@ -728,7 +728,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .soc-f { font: italic 800 14px "Barlow Condensed"; color: #eb0a1e; }
 .soc-asof { font-size: 8.5px; color: #8a8a92; margin-top: 4px; }
 .soc-old { font-size: 10.5px; }
-.ms { height: 272px; display: flex; flex-direction: column; overflow: hidden; }
+.ms { height: 252px; display: flex; flex-direction: column; overflow: hidden; }
 .scale { margin-bottom: 10px; }
 .sc-head { display: flex; justify-content: space-between; font: 700 12px "Barlow Condensed"; letter-spacing: .06em; }
 .sc-head span { color: #eb0a1e; font-size: 10.5px; letter-spacing: .08em; }
@@ -738,7 +738,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .sc-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
 .sc-tags span { background: #111; color: #fff; font: 700 8.5px "Barlow Condensed"; letter-spacing: .08em; padding: 3px 7px; }
 .scale p { font-size: 10.5px; color: #3a3a40; max-height: 46px; }
-.panel-red { background: #eb0a1e; color: #fff; padding: 14px 16px; height: 272px; overflow: hidden; }
+.panel-red { background: #eb0a1e; color: #fff; padding: 14px 16px; height: 252px; overflow: hidden; }
 .panel-red h3 { border-color: #fff; }
 .slider { position: relative; margin: 18px 0 6px; }
 .sl-track { height: 5px; background: rgba(255,255,255,.4); } .sl-track span { display: block; height: 100%; background: #fff; }

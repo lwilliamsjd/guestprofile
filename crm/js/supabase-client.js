@@ -1,4 +1,4 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=202610081657";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=202610081659";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
