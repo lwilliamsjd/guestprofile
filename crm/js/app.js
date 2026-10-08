@@ -1238,9 +1238,34 @@ async function renderAnalyticsPage(route, seq) {
   }).filter((x) => x.value || CONCIERGES.includes(x.key));
   const byCat = categories.map((c) => ({ key: c.id, label: c.name, value: ints.filter((i) => i.category_id === c.id).length, active: c.active })).filter((x) => x.value || x.active).sort((a, b) => b.value - a.value);
   const untyped = ints.filter((i) => !i.category_id || !catById(i.category_id)).length;
-  const byStatus = ALL_STATUSES.filter((s) => STATUSES.includes(s) || meisters.some((m) => m.status === s)).map((s) => ({ key: s, label: s, value: meisters.filter((m) => m.status === s).length, color: STATUS_COLOR[s] }));
-  const salesSeries = monthlySeries(d.guests.filter((g) => g.purchase_date && conciergeOk(concOf(g.meisters))).map((g) => g.purchase_date + "T12:00:00"), 12);
-  const deliverySeries = monthlySeries(d.guests.filter((g) => g.delivery_date && conciergeOk(concOf(g.meisters))).map((g) => g.delivery_date + "T12:00:00"), 12);
+  // ---- going quiet: days since each Meister's last conversation (all time, not just the range) ----
+  const lastTalk = {};
+  for (const i of d.interactions) if (!lastTalk[i.meister_id] || i.occurred_at > lastTalk[i.meister_id]) lastTalk[i.meister_id] = i.occurred_at;
+  const daysSince = (m) => (lastTalk[m.id] ? Math.floor((Date.now() - new Date(lastTalk[m.id])) / 86400000) : null);
+  const quiet = [
+    { key: "q14", label: "14 to 29 days", color: "#f5a623", test: (n) => n != null && n >= 14 && n < 30 },
+    { key: "q30", label: "30 to 59 days", color: "#f5764a", test: (n) => n != null && n >= 30 && n < 60 },
+    { key: "q60", label: "60+ days", color: "#e0263f", test: (n) => n != null && n >= 60 },
+    { key: "never", label: "Never contacted", color: "#6b6b73", test: (n) => n == null },
+  ].map((b) => ({ ...b, items: meisters.filter((m) => b.test(daysSince(m))).map((m) => ({ ...m, days: daysSince(m), last: lastTalk[m.id] })).sort((x, y) => (y.days ?? 1e9) - (x.days ?? 1e9)) }))
+   .filter((b) => b.key !== "never" || b.items.length);
+  const recentlyTalked = meisters.filter((m) => { const n = daysSince(m); return n != null && n < 14; }).length;
+
+  // ---- vehicles: all guests for these Meisters (not limited to the range) ----
+  const allG = d.guests.filter((g) => conciergeOk(concOf(g.meisters)));
+  const soldAll = allG.filter((g) => g.purchase_date);
+  const deliveredAll = allG.filter((g) => g.delivery_date);
+  const awaiting = soldAll.filter((g) => !g.delivery_date);
+  const leadDays = deliveredAll.filter((g) => g.purchase_date).map((g) => Math.round((new Date(g.delivery_date) - new Date(g.purchase_date)) / 86400000)).filter((n) => n >= 0);
+  const avgLead = leadDays.length ? Math.round(leadDays.reduce((a, b) => a + b, 0) / leadDays.length) : null;
+  // chart starts at the first sale or delivery: at least 6 months, at most 12
+  const firstG = [...soldAll.map((g) => g.purchase_date), ...deliveredAll.map((g) => g.delivery_date)].sort()[0];
+  const nowD = new Date();
+  const monthsBack = firstG ? (nowD.getFullYear() - Number(firstG.slice(0, 4))) * 12 + nowD.getMonth() - (Number(firstG.slice(5, 7)) - 1) + 1 : 6;
+  const nMonths = Math.max(6, Math.min(12, monthsBack));
+  const salesSeries = monthlySeries(soldAll.map((g) => g.purchase_date + "T12:00:00"), nMonths);
+  const deliverySeries = monthlySeries(deliveredAll.map((g) => g.delivery_date + "T12:00:00"), nMonths);
+  const recentSales = soldAll.slice().sort((a, b) => (b.purchase_date || "").localeCompare(a.purchase_date || "")).slice(0, 3);
   const engaged = groupBy(ints, (i) => i.meister_id)
     .map(([id, items]) => ({ id, name: items[0].meisters?.name || "Unknown", dealership: items[0].meisters?.dealership, status: items[0].meisters?.status, n: items.length, last: items[0].occurred_at }))
     .sort((a, b) => b.n - a.n)
@@ -1342,21 +1367,29 @@ async function renderAnalyticsPage(route, seq) {
       </div>
 
       <div class="card ana-span-4">
-        <div class="card-head"><h3>Meisters by status</h3><span class="muted">${meisters.length} total</span></div>
+        <div class="card-head"><h3>${I.clock} Going quiet</h3><span class="muted">time since last conversation</span></div>
         <div class="bar-chart">
-          ${byStatus.map((s) => `
-            <button class="bar-row drill" data-drill="status:${escapeAttr(s.key)}">
-              <span class="bar-label">${escapeHtml(s.label)}</span>
-              <span class="bar-track"><span class="bar-fill" style="width:${(s.value / Math.max(1, ...byStatus.map((x) => x.value))) * 100}%;background:${s.color}"></span></span>
-              <span class="bar-val">${s.value}</span>
+          ${quiet.map((b) => `
+            <button class="bar-row drill" data-drill="quiet:${b.key}">
+              <span class="bar-label">${escapeHtml(b.label)}</span>
+              <span class="bar-track"><span class="bar-fill" style="width:${(b.items.length / Math.max(1, ...quiet.map((x) => x.items.length))) * 100}%;background:${b.color}"></span></span>
+              <span class="bar-val">${b.items.length}</span>
             </button>`).join("")}
         </div>
+        <p class="muted quiet-note">${recentlyTalked} of ${meisters.length} Meisters talked to in the last 2 weeks.</p>
       </div>
 
       <div class="card ana-span-7">
-        <div class="card-head"><h3>${I.chart} Vehicles sold & delivered per month</h3><span class="muted">last 12 months · guests</span></div>
+        <div class="card-head"><h3>${I.chart} Vehicles sold & delivered</h3><span class="muted">all time · guests</span></div>
+        <div class="veh-kpis">
+          <button class="veh-kpi drill" data-drill="gall:sold"><b class="st-sold">${soldAll.length}</b><span>Sold / ordered</span></button>
+          <button class="veh-kpi drill" data-drill="gall:delivered"><b>${deliveredAll.length}</b><span>Delivered</span></button>
+          <button class="veh-kpi drill" data-drill="gall:awaiting"><b>${awaiting.length}</b><span>Awaiting delivery</span></button>
+          <div class="veh-kpi"><b>${avgLead != null ? avgLead : "—"}${avgLead != null ? "<small> days</small>" : ""}</b><span>Avg order to delivery</span></div>
+        </div>
         ${lineChartSvg(salesSeries, { drillPrefix: "salesmonth", second: deliverySeries, secondPrefix: "delivmonth" })}
-        <div class="legend"><span class="legend-item"><span class="legend-dot" style="background:#e0263f"></span>Sold / ordered (${salesSeries.reduce((a, p) => a + p.value, 0)})</span><span class="legend-item"><span class="legend-dot" style="background:#3ddc84"></span>Delivered (${deliverySeries.reduce((a, p) => a + p.value, 0)})</span></div>
+        <div class="legend"><span class="legend-item"><span class="legend-dot" style="background:#e0263f"></span>Sold / ordered per month</span><span class="legend-item"><span class="legend-dot" style="background:#3ddc84"></span>Delivered per month</span></div>
+        ${recentSales.length ? `<div class="veh-recent"><div class="veh-recent-h">Latest orders</div>${recentSales.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.purchase_date)}${g.delivery_date ? " · delivered" : ""}</span></a>`).join("")}</div>` : ""}
       </div>
 
       <div class="card ana-span-5">
@@ -1406,7 +1439,7 @@ async function renderAnalyticsPage(route, seq) {
 
   // ---- drawer (drill-down) ----
   const allGuests = d.guests.filter((g) => conciergeOk(concOf(g.meisters)));
-  const ctx = { ints, meisters, guests, allGuests, delivered, fus, series, salesSeries, deliverySeries, buckets, loggerName, byCat, history, heat };
+  const ctx = { quiet, soldAll, deliveredAll, awaiting, ints, meisters, guests, allGuests, delivered, fus, series, salesSeries, deliverySeries, buckets, loggerName, byCat, history, heat };
   function renderDrawer() {
     let root = document.getElementById("drawer-root");
     if (!root) { root = document.createElement("div"); root.id = "drawer-root"; document.body.appendChild(root); }
@@ -1493,6 +1526,24 @@ function drillContent(key, ctx) {
         title: `Delivered — ${pt ? pt.label : ""}`, sub: `${rows.length} deliveries`,
         html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.delivery_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No deliveries that month.</div>`,
         csv: { name: "delivered-month.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Vehicle: g.vehicle_purchased || "", "Delivery Date": g.delivery_date, Meister: g.meisters?.name || "" })) },
+      };
+    }
+    case "quiet": {
+      const b = ctx.quiet.find((x) => x.key === arg);
+      const rows = b ? b.items : [];
+      return {
+        title: `Going quiet — ${b ? b.label : ""}`, sub: `${rows.length} ${rows.length === 1 ? "Meister" : "Meisters"}`,
+        html: rows.length ? `<div class="mini-list">${rows.map((m) => `<a href="#/meister/${m.id}" class="mini-row"><span>${escapeHtml(m.name)}<span class="muted"> · ${escapeHtml(m.dealership || "")}${m.concierge ? " · " + escapeHtml(m.concierge) : ""}</span></span><span class="muted">${m.last ? `last ${fmtDate(m.last)} (${m.days} days)` : "never"}</span></a>`).join("")}</div>` : `<div class="empty-state">Nobody here.</div>`,
+        csv: { name: "going-quiet.csv", rows: rows.map((m) => ({ Name: m.name, Dealership: m.dealership || "", Concierge: m.concierge || "", "Last Conversation": m.last ? fmtDate(m.last) : "Never", "Days Since": m.days ?? "" })) },
+      };
+    }
+    case "gall": {
+      const rows = arg === "delivered" ? ctx.deliveredAll : arg === "awaiting" ? ctx.awaiting : ctx.soldAll;
+      const title = arg === "delivered" ? "Delivered (all time)" : arg === "awaiting" ? "Sold, awaiting delivery" : "Vehicles sold (all time)";
+      return {
+        title, sub: `${rows.length} ${rows.length === 1 ? "guest" : "guests"}`,
+        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${g.purchase_date ? fmtDate(g.purchase_date) : ""}${g.delivery_date ? " → " + fmtDate(g.delivery_date) : ""}</span></a>`).join("")}</div>` : `<div class="empty-state">Nothing here.</div>`,
+        csv: { name: slug(title) + ".csv", rows: rows.map((g) => ({ Guest: g.guest_name, Vehicle: g.vehicle_purchased || "", "Purchase Date": g.purchase_date || "", "Delivery Date": g.delivery_date || "", Meister: g.meisters?.name || "" })) },
       };
     }
     case "logger": return intsList(ctx.ints.filter((i) => ctx.loggerName(i) === arg), `Logged by ${arg}`);
