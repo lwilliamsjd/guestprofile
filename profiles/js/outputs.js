@@ -25,14 +25,24 @@ export const SPEC_OPTIONS = [
 export const specLabel = (cat, sub, opt) => `${cat}: ${sub ? sub + " " : ""}${opt}`;
 export const SPEC_LABELS = SPEC_OPTIONS.flatMap(([c, subs]) => subs.flatMap(([sub, opts]) => opts.map((o) => specLabel(c, sub, o))));
 // checked options grouped by category (in checklist order), then any older typed entries
+const OLD_SPEC_HINTS = [
+  ["Brakes", /brake|ceramic|caliper|rotor/], ["Wheels", /wheel|rim|bbs|rays|forged/], ["Seat Type", /seat|bucket|recaro/],
+  ["Interior Material", /suede|alcantara|leather|carbon trim|material/], ["Interior Color", /interior/], ["Exhaust", /exhaust|muffler|titanium pipe/],
+  ["Accessories", /lift|charger|accessor|cover|ppf|wrap|tint/], ["Color", /color|colour|paint|white|red|gr[ae]y|black|silver|blue|green|yellow/],
+];
 export function specGroups(a) {
   const tags = rowsOf(a.spec_tags, "label");
   const out = [];
+  // entries typed in before the checklist existed are filed under the closest category by keyword
+  const old = tags.filter((t) => !SPEC_LABELS.includes(t.label));
+  const guess = (l) => { const t = clean(l).toLowerCase(); const hit = OLD_SPEC_HINTS.find(([, re]) => re.test(t)); return hit ? hit[0] : ""; };
   SPEC_OPTIONS.forEach(([c]) => {
     const items = tags.filter((t) => SPEC_LABELS.includes(t.label) && t.label.startsWith(c + ": ")).map((t) => t.label.slice(c.length + 2));
+    old.filter((t) => guess(t.label) === c).forEach((t) => items.push(clean(t.label)));
     if (items.length) out.push({ group: c, items });
   });
-  tags.filter((t) => !SPEC_LABELS.includes(t.label)).forEach((t) => out.push({ group: "", items: [clean(t.label)], priority: !!t.priority }));
+  const loose = old.filter((t) => !guess(t.label)).map((t) => clean(t.label));
+  if (loose.length) out.push({ group: "Also Noted", items: loose });
   return out;
 }
 export const specText = (a) => specGroups(a).map((g) => (g.group ? `${g.group}: ${g.items.join(", ")}` : `${g.items[0]}${g.priority ? " (priority)" : ""}`)).join("; ");
