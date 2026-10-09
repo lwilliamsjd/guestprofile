@@ -1,4 +1,4 @@
-import { GRGT_LOGO } from "./logo.js?v=202610091411";
+import { GRGT_LOGO } from "./logo.js?v=202610091420";
 // Outputs for an applicant:
 //  1) a plain text summary to paste into the other internal tool
 //  2) the two page Buyer Profile PDF (built as HTML, printed to PDF)
@@ -510,7 +510,7 @@ export function buildPersonaHtml(a, opts = {}) {
 
   // ----- page 2 -----
   const maxMiles = Math.max(12000, ...g.map((v) => Number(v.miles) || 0));
-  const garageRows = g.length ? g.slice(0, 8).map((v, i) => `
+  const garageRows = g.length ? g.slice(0, 10).map((v, i) => `
       <tr>
         <td class="gn">${i + 1}</td>
         <td class="gv">${e(v.vehicle)}</td>
@@ -523,7 +523,7 @@ export function buildPersonaHtml(a, opts = {}) {
   const histList = (rows) => {
     if (!rows.length) return none();
     const max = Math.max(8, ...rows.map((r) => Number(r.held) || 0));
-    return rows.slice(0, 5).map((r) => `
+    return rows.slice(0, 8).map((r) => `
       <div class="hist">
         <div class="hi-name"><b>${e([clean(r.year), clean(r.model)].filter(Boolean).join(" "))}</b>${has(r.note) ? `<span>${e(r.note)}</span>` : ""}</div>
         <span class="hbar"><i style="width:${((Number(r.held) || 0) / max) * 100}%"></i></span>
@@ -562,7 +562,7 @@ export function buildPersonaHtml(a, opts = {}) {
     <table class="garage">
       <thead><tr><th colspan="2">CURRENT GARAGE</th><th>USE</th><th colspan="2">MILES / YR</th><th>HOW IT'S USED</th></tr></thead>
       <tbody>${garageRows}</tbody>
-      <tfoot><tr><td colspan="3">${g.length} VEHICLE${g.length === 1 ? "" : "S"}</td><td colspan="3">${fmtMiles(miles)} MI / YR TOTAL</td></tr></tfoot>
+      <tfoot><tr><td colspan="3">${g.length} VEHICLE${g.length === 1 ? "" : "S"}${g.length > 10 ? ` · FIRST 10 SHOWN` : ""}</td><td colspan="3">${fmtMiles(miles)} MI / YR TOTAL</td></tr></tfoot>
     </table>
     <div class="hist-row">
       <div class="lfa-box">
@@ -574,7 +574,6 @@ export function buildPersonaHtml(a, opts = {}) {
       <div><div class="hh"><h3>SIGNIFICANT PAST CARS</h3><span>YEARS HELD</span></div><div class="fit" data-fit="Significant past cars">${histList(rowsOf(a.past_cars, "model"))}</div></div>
     </div>
     <div class="sect"><span class="sect-tab">BUYER PROFILE</span><span class="sect-r">PURCHASE INTENT &amp; FIT</span></div>
-    ${stepper}
     <div class="buy3">
       <div><h3>WHY THE GR GT</h3><div class="why fit" data-fit="Why the GR GT">${has(a.intended_use) ? e(a.intended_use) : none()}</div></div>
       <div><h3>INTENDED USAGE</h3>${usageHtml}${has(a.usage_note) ? `<p class="fit" data-fit="Intended usage note">${e(a.usage_note)}</p>` : ""}</div>
@@ -617,7 +616,11 @@ export function buildPersonaHtml(a, opts = {}) {
   // and shrink the car spec block until every selected option fits its box
   function fitSpecs() { document.querySelectorAll(".specp.sm").forEach(function (el) { var box = el.parentElement, z = 1; el.style.zoom = 1; while (box.scrollHeight > box.clientHeight + 1 && z > 0.6) { z -= 0.03; el.style.zoom = z; } }); }
   function fitNotes() { document.querySelectorAll(".scale p").forEach(function (el) { var f = 10.5; el.style.fontSize = f + "px"; while (el.scrollHeight > el.clientHeight + 1 && f > 8.5) { f -= 0.25; el.style.fontSize = f + "px"; } }); }
-  function fitAll() { fitBand(); fitSpecs(); fitNotes(); }
+  function fitHist() {
+    document.querySelectorAll(".hist-row .fit:not(p)").forEach(function (box) { var kids = Array.prototype.slice.call(box.children), z = 1; kids.forEach(function (k) { k.style.zoom = 1; }); while (box.scrollHeight > box.clientHeight + 1 && z > 0.7) { z -= 0.03; kids.forEach(function (k) { k.style.zoom = z; }); } });
+    document.querySelectorAll(".lfa-box p").forEach(function (el) { var f = 10.5; el.style.fontSize = f + "px"; while (el.scrollHeight > el.clientHeight + 1 && f > 8) { f -= 0.25; el.style.fontSize = f + "px"; } });
+  }
+  function fitAll() { fitBand(); fitSpecs(); fitNotes(); fitHist(); }
   fitAll(); if (document.fonts) document.fonts.ready.then(fitAll);
 </script></body></html>`;
 }
@@ -779,7 +782,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .sect-r { font: 600 9px "Barlow Condensed"; letter-spacing: .14em; color: #5c5c64; }
 .garage { width: calc(100% - 72px); margin: 0 36px; border-collapse: collapse; flex-shrink: 0; }
 .garage th { text-align: left; font: 700 9px "Barlow Condensed"; letter-spacing: .14em; color: #5c5c64; padding: 4px 6px 5px 0; border-bottom: 2px solid #111; }
-.garage td { padding: 4px 6px 4px 0; border-bottom: 1px solid #e3e3e7; font-size: 10.5px; vertical-align: middle; }
+.garage td { padding: 3px 6px 3px 0; border-bottom: 1px solid #e3e3e7; font-size: 10.5px; vertical-align: middle; }
 .garage .gn { color: #eb0a1e; font: italic 800 12px "Barlow Condensed"; width: 14px; }
 .garage .gv { font-weight: 700; width: 210px; }
 .garage .gu { width: 150px; }
@@ -791,18 +794,20 @@ ul { margin: 0; padding: 0; list-style: none; }
 .t-red { background: #eb0a1e; color: #fff; } .t-black { background: #111; color: #fff; } .t-grey { background: #5c5c64; color: #fff; }
 .t-outline { border: 1px solid #111; padding: 1px 5px; } .t-outline-grey { border: 1px solid #8a8a92; color: #5c5c64; padding: 1px 5px; }
 .mbar { display: block; height: 9px; background: #ececef; } .mbar i { display: block; height: 100%; background: #111; }
-.hist-row { display: grid; grid-template-columns: 260px 1fr 1fr; gap: 20px; padding: 10px 36px 0; height: 166px; flex-shrink: 0; }
-.lfa-box { background: #0d0d0f; color: #fff; padding: 14px 16px; position: relative; overflow: hidden; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+.hist-row { display: grid; grid-template-columns: 260px 1fr 1fr; gap: 20px; padding: 10px 36px 12px; flex: 1 1 auto; min-height: 104px; }
+.hist-row > div { display: flex; flex-direction: column; min-height: 0; }
+.lfa-box { background: #0d0d0f; color: #fff; padding: 10px 14px; position: relative; overflow: hidden; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
 .lfa-box::after { content: ""; position: absolute; right: -30px; top: 0; bottom: 0; width: 60px; background: #eb0a1e; transform: skewX(-12deg); }
-.lfa-box h4 { font: 700 12.5px "Barlow Condensed"; letter-spacing: .12em; border-bottom: 1px solid #555; padding-bottom: 6px; margin-bottom: 8px; position: relative; z-index: 1; }
-.lfa-line { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; position: relative; z-index: 1; }
-.lfa-logo { font: italic 800 30px/1 "Barlow Condensed"; color: transparent; -webkit-text-stroke: 1px #fff; }
+.lfa-box h4 { font: 700 12.5px "Barlow Condensed"; letter-spacing: .12em; border-bottom: 1px solid #555; padding-bottom: 5px; margin-bottom: 6px; position: relative; z-index: 1; }
+.lfa-line { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; position: relative; z-index: 1; }
+.lfa-logo { font: italic 800 24px/1 "Barlow Condensed"; color: transparent; -webkit-text-stroke: 1px #fff; }
 .lfa-st { background: #fff; color: #111; font: 700 11px "Barlow Condensed"; letter-spacing: .12em; padding: 3px 10px; }
-.lfa-box p { font-size: 10.5px; line-height: 1.45; max-height: 92px; position: relative; z-index: 1; padding-right: 26px; }
+.lfa-box { display: flex; flex-direction: column; }
+.lfa-box p { flex: 1 1 auto; min-height: 0; overflow: hidden; font-size: 10.5px; line-height: 1.45; position: relative; z-index: 1; padding-right: 26px; }
 .hh { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid #111; margin-bottom: 8px; }
 .hh h3 { border: none; margin: 0; padding-bottom: 6px; }
 .hh span { font: 600 8.5px "Barlow Condensed"; letter-spacing: .14em; color: #8a8a92; }
-.hist-row .fit { max-height: 126px; }
+.hist-row .fit { flex: 1 1 auto; min-height: 0; }
 .hist { display: grid; grid-template-columns: 1fr 76px 24px; gap: 8px; align-items: center; margin-bottom: 6px; }
 .hi-name b { display: block; font-size: 10.5px; } .hi-name span { font-size: 9px; color: #6b6b73; }
 .hbar { height: 8px; background: #ececef; } .hbar i { display: block; height: 100%; background: #eb0a1e; }
@@ -814,8 +819,8 @@ ul { margin: 0; padding: 0; list-style: none; }
 .step b { display: block; font: 700 12px "Barlow Condensed"; letter-spacing: .06em; }
 .step span { font: 600 8px "Barlow Condensed"; letter-spacing: .14em; }
 .step.done { background: #0d0d0f; color: #fff; } .step.cur { background: #eb0a1e; color: #fff; } .step.target { background: #fde3e6; color: #eb0a1e; }
-.buy3 { display: grid; grid-template-columns: 1.15fr 1fr .8fr; gap: 22px; padding: 0 36px; height: 140px; flex-shrink: 0; }
-.why { border-left: 3px solid #eb0a1e; padding-left: 10px; font-size: 10.5px; color: #3a3a40; max-height: 112px; }
+.buy3 { display: grid; grid-template-columns: 1.15fr 1fr .8fr; gap: 22px; padding: 0 36px; height: 124px; flex-shrink: 0; }
+.why { border-left: 3px solid #eb0a1e; padding-left: 10px; font-size: 10.5px; color: #3a3a40; max-height: 96px; }
 .ubar { display: flex; height: 22px; margin-bottom: 6px; gap: 2px; }
 .ubar span { color: #fff; font: 700 9.5px "Barlow Condensed"; display: flex; align-items: center; justify-content: center; }
 .ulegend { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; font: 700 8.5px "Barlow Condensed"; letter-spacing: .08em; margin-bottom: 6px; }
@@ -823,14 +828,14 @@ ul { margin: 0; padding: 0; list-style: none; }
 .buy3 p { font-size: 10.5px; color: #3a3a40; max-height: 48px; }
 .tq { font: italic 800 38px/1 "Barlow Condensed"; color: #eb0a1e; } .tq.sm { font-size: 22px; }
 .tflex { font: 700 11px "Barlow Condensed"; letter-spacing: .1em; margin: 2px 0 6px; }
-.buy2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; padding: 0 36px; height: 120px; flex-shrink: 0; }
+.buy2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; padding: 0 36px; height: 104px; flex-shrink: 0; }
 .specs { display: flex; flex-wrap: wrap; gap: 5px; align-content: flex-start; max-height: 92px; }
 .specs span { border: 1px solid #111; font: 700 9px "Barlow Condensed"; letter-spacing: .08em; padding: 4px 8px; }
 .specs span b { color: #eb0a1e; margin-right: 2px; }
 .specs span.pri { background: #eb0a1e; border-color: #eb0a1e; color: #fff; }
 .cross { width: 100%; border-collapse: collapse; } .cross td { padding: 3px 0; border-bottom: 1px solid #e3e3e7; font-size: 10.5px; font-weight: 700; }
 .cross td + td { text-align: right; font: 600 8.5px "Barlow Condensed"; letter-spacing: .1em; color: #3a3a40; }
-.buy2 .fit { max-height: 92px; }
+.buy2 .fit { max-height: 76px; }
 .bottom { margin-top: auto; background: #fff; color: #18181b; display: grid; grid-template-columns: 1.15fr 1fr; gap: 30px; padding: 14px 36px 8px; height: 200px; border-top: 6px solid #eb0a1e; flex-shrink: 0; }
 .bottom h3 { border-color: #111; color: #111; }
 .bottom .none.light { color: #9a9aa2; }
