@@ -1274,3 +1274,7 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 .veh-recent-h { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--grey); margin-bottom: 4px; }
 .quiet-note { margin: 10px 0 0; font-size: 12px; }
 
+
+.readonly-field { min-height: 38px; display: flex; align-items: center; gap: 4px; padding: 0 12px; border: 1px dashed var(--border); border-radius: 7px; background: transparent; font-size: 14px; }
+.field-note { font-size: 11px; margin-top: 4px; }
+.month-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

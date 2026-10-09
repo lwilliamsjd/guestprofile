@@ -55,9 +55,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610081704";
-import { exportToExcel } from "./export.js?v=202610081704";
-import { wireImport } from "./import-export.js?v=202610081704";
+} from "./api.js?v=202610090959";
+import { exportToExcel } from "./export.js?v=202610090959";
+import { wireImport } from "./import-export.js?v=202610090959";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1521,7 +1521,7 @@ function drillContent(key, ctx) {
       const rows = pt ? ctx.allGuests.filter((g) => g.delivery_date && (() => { const t = new Date(g.delivery_date + "T12:00:00"); return t >= pt.start && t < pt.end; })()) : [];
       return {
         title: `Delivered — ${pt ? pt.label : ""}`, sub: `${rows.length} deliveries`,
-        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.delivery_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No deliveries that month.</div>`,
+        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtMonth(g.delivery_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No deliveries that month.</div>`,
         csv: { name: "delivered-month.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Vehicle: g.vehicle_purchased || "", "Delivery Date": g.delivery_date, Meister: g.meisters?.name || "" })) },
       };
     }
@@ -1539,7 +1539,7 @@ function drillContent(key, ctx) {
       const title = arg === "delivered" ? "Delivered (all time)" : arg === "awaiting" ? "In production (sold, not yet delivered)" : "Vehicles sold (all time)";
       return {
         title, sub: `${rows.length} ${rows.length === 1 ? "guest" : "guests"}`,
-        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${g.purchase_date ? fmtDate(g.purchase_date) : ""}${g.delivery_date ? " → " + fmtDate(g.delivery_date) : ""}</span></a>`).join("")}</div>` : `<div class="empty-state">Nothing here.</div>`,
+        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${g.purchase_date ? fmtDate(g.purchase_date) : ""}${g.delivery_date ? " → " + fmtMonth(g.delivery_date) : ""}</span></a>`).join("")}</div>` : `<div class="empty-state">Nothing here.</div>`,
         csv: { name: slug(title) + ".csv", rows: rows.map((g) => ({ Guest: g.guest_name, Vehicle: g.vehicle_purchased || "", "Purchase Date": g.purchase_date || "", "Delivery Date": g.delivery_date || "", Meister: g.meisters?.name || "" })) },
       };
     }
@@ -2570,7 +2570,7 @@ async function renderMeister(route, seq) {
     </div>
 
     <div class="${isNew ? "" : "meister-layout"}">
-      ${!isNew ? renderProfileSidebar(meister, followUps) : ""}
+      ${!isNew ? renderProfileSidebar(meister, followUps, guests) : ""}
       <div>
         <div class="tabs" id="tabs">
           ${!isNew ? `<button class="tab-btn ${uiState.activeTab === "activity" ? "active" : ""}" data-tab="activity">Activity <span class="tab-count">${interactions.length}</span></button>` : ""}
@@ -2610,7 +2610,7 @@ async function renderMeister(route, seq) {
             <div class="form-grid form-grid-3">
               <div class="form-field"><label>Allocation count</label><input id="f-allocation" data-draft type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 2" value="${escapeAttr(dv("f-allocation", meister?.allocation_count ?? ""))}" /></div>
               <div class="form-field"><label>PMA</label><input id="f-pma" data-draft placeholder="Primary market area" value="${escapeAttr(dv("f-pma", meister?.pma))}" /></div>
-              <div class="form-field"><label>Delivery ETA</label><input id="f-delivery-eta" data-draft type="date" value="${escapeAttr(dv("f-delivery-eta", meister?.delivery_eta))}" /></div>
+              <div class="form-field"><label>Next Guest Delivery</label>${(() => { const nd = nextGuestDelivery(guests); return `<div class="readonly-field">${nd ? `<b>${escapeHtml(fmtMonth(nd.delivery_date))}</b> <span class="muted">· ${escapeHtml(nd.guest_name)}</span>` : `<span class="muted">None scheduled</span>`}</div><div class="muted field-note">From the Guests tab</div>`; })()}</div>
             </div>
             ${isNew ? "" : `<div class="form-meta muted">Created by ${escapeHtml(meister.created_by_name || "—")} on ${fmtDate(meister.created_at)} &middot; Last updated by ${escapeHtml(meister.updated_by_name || "—")} ${relativeTime(meister.updated_at)}</div>`}
             <div class="composer-actions" style="justify-content:flex-start">
@@ -2647,7 +2647,6 @@ async function renderMeister(route, seq) {
       profile_summary: g("f-summary"),
       allocation_count: g("f-allocation") === "" ? null : Number(g("f-allocation")),
       pma: g("f-pma"),
-      delivery_eta: g("f-delivery-eta") || null,
     };
     if (!showFieldErrors(validateMeisterFields(fields))) return;
     const btn = e.target.querySelector("button[type=submit]");
@@ -2707,7 +2706,8 @@ async function renderMeister(route, seq) {
 }
 
 // ---------- sidebar ----------
-function renderProfileSidebar(m, followUps) {
+function renderProfileSidebar(m, followUps, guests = []) {
+  const nextDel = nextGuestDelivery(guests);
   const cityLine = [m.city, [m.state, m.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const role = [m.job_title, m.dealership].filter(Boolean).join(" · ");
   const mine = followUps.filter((f) => f.user_id === currentProfile.id && !f.done_at).sort((a, b) => (a.due_at < b.due_at ? -1 : 1))[0];
@@ -2731,11 +2731,11 @@ function renderProfileSidebar(m, followUps) {
       ${m.email ? `<div class="field"><label>Email</label><div>${escapeHtml(m.email)}</div></div>` : ""}
       ${m.dealership_website ? `<div class="field"><label>Dealership Website</label><div><a href="${escapeAttr(withProtocol(m.dealership_website))}" target="_blank" rel="noopener">${escapeHtml(m.dealership_website.replace(/^https?:\/\//i, ""))} ${I.link}</a></div></div>` : ""}
       ${cityLine ? `<div class="field"><label>Location</label><div>${escapeHtml(cityLine)}</div></div>` : ""}
-      ${m.allocation_count !== null && m.allocation_count !== undefined || m.pma || m.delivery_eta ? `<div class="key-facts">
+      ${m.allocation_count !== null && m.allocation_count !== undefined || m.pma || nextDel ? `<div class="key-facts">
         <div class="key-facts-lbl">${I.zap} Key facts</div>
         ${m.allocation_count !== null && m.allocation_count !== undefined ? `<div class="kf"><span class="kf-k">Allocation</span><span class="kf-v">${m.allocation_count}</span></div>` : ""}
         ${m.pma ? `<div class="kf"><span class="kf-k">PMA</span><span class="kf-v">${escapeHtml(m.pma)}</span></div>` : ""}
-        ${m.delivery_eta ? `<div class="kf"><span class="kf-k">Delivery ETA</span><span class="kf-v">${fmtDate(m.delivery_eta)}</span></div>` : ""}
+        ${nextDel ? `<div class="kf"><span class="kf-k">Next guest delivery</span><span class="kf-v">${escapeHtml(fmtMonth(nextDel.delivery_date))} <span class="muted">· ${escapeHtml(nextDel.guest_name)}</span></span></div>` : ""}
       </div>` : ""}
       ${m.profile_summary ? `<div class="field"><label>Profile Summary</label><div class="summary-text">${escapeHtml(m.profile_summary)}</div></div>` : ""}
     </div>
@@ -3214,7 +3214,7 @@ function renderGuestsTab(guests) {
 
       <div class="table-wrap">
         <table class="crm-table">
-          <thead><tr><th>Guest</th><th>Vehicle</th><th>Status</th><th>Purchase Date</th><th>Delivered</th><th>Notes</th><th></th></tr></thead>
+          <thead><tr><th>Guest</th><th>Vehicle</th><th>Status</th><th>Purchase Date</th><th>Delivery</th><th>Notes</th><th></th></tr></thead>
           <tbody>
             ${
               guests.length
@@ -3227,7 +3227,7 @@ function renderGuestsTab(guests) {
                         <td>${escapeHtml(g.vehicle_purchased || "—")}</td>
                         <td><span class="guest-pill gs-${slug(g.guest_status || "Allocated")}">${escapeHtml(g.guest_status || "Allocated")}</span></td>
                         <td>${g.purchase_date ? fmtDate(g.purchase_date) : "—"}</td>
-                        <td>${g.delivery_date ? fmtDate(g.delivery_date) : "—"}</td>
+                        <td>${g.delivery_date ? fmtMonth(g.delivery_date) : "—"}</td>
                         <td>${escapeHtml(g.notes || "—")}</td>
                         <td class="td-actions">
                           <button class="icon-btn edit-guest-btn" data-id="${g.id}" title="Edit">${I.edit}</button>
@@ -3256,7 +3256,13 @@ function guestFormHtml(existing) {
           <select id="${p}status" data-draft>${GUEST_STATUSES.map((st) => `<option ${dv(`${p}status`, existing?.guest_status || "Allocated") === st ? "selected" : ""}>${st}</option>`).join("")}</select>
         </div>
         <div class="form-field"><label>Purchase / Order Date</label><input id="${p}date" data-draft type="date" value="${escapeAttr(dv(`${p}date`, existing?.purchase_date))}" /></div>
-        <div class="form-field"><label>Delivery Date</label><input id="${p}delivered" data-draft type="date" value="${escapeAttr(dv(`${p}delivered`, existing?.delivery_date))}" /></div>
+        <div class="form-field"><label>Delivery Month</label>${(() => {
+          const cur = String(existing?.delivery_date || "");
+          const mm = dv(`${p}dmonth`, cur.slice(5, 7)), yy = dv(`${p}dyear`, cur.slice(0, 4));
+          const y0 = new Date().getFullYear() - 1;
+          const years = [...new Set([...Array.from({ length: 5 }, (_, i) => String(y0 + i)), ...(yy ? [yy] : [])])].sort();
+          return `<div class="form-field-split month-pick"><select id="${p}dmonth" data-draft><option value="">Month</option>${["01","02","03","04","05","06","07","08","09","10","11","12"].map((v, i) => `<option value="${v}" ${mm === v ? "selected" : ""}>${new Date(2000, i, 1).toLocaleDateString("en-US", { month: "short" })}</option>`).join("")}</select><select id="${p}dyear" data-draft><option value="">Year</option>${years.map((v) => `<option ${yy === v ? "selected" : ""}>${v}</option>`).join("")}</select></div>`;
+        })()}</div>
         <div class="form-field"><label>Notes</label><input id="${p}notes" data-draft value="${escapeAttr(dv(`${p}notes`, existing?.notes))}" /></div>
       </div>
       <div class="composer-actions">
@@ -3286,7 +3292,7 @@ function wireGuestsTab(meister) {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const g = (s) => document.getElementById(`${prefix}${s}`).value.trim();
-      const fields = { guest_name: g("name"), vehicle_purchased: g("vehicle"), guest_status: g("status") || "Allocated", purchase_date: g("date") || null, delivery_date: g("delivered") || null, notes: g("notes") };
+      const fields = { guest_name: g("name"), vehicle_purchased: g("vehicle"), guest_status: g("status") || "Allocated", purchase_date: g("date") || null, delivery_date: g("dmonth") && g("dyear") ? `${g("dyear")}-${g("dmonth")}-01` : null, notes: g("notes") };
       if (fields.guest_status === "Delivered" && !fields.delivery_date) fields.delivery_date = fields.purchase_date || new Date().toISOString().slice(0, 10);
       if (!fields.guest_name) return;
       const btn = form.querySelector("button[type=submit]");
@@ -3462,6 +3468,20 @@ function fromLocalInput(v) {
 }
 function parseDateOnly(v) {
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(v + "T00:00:00") : new Date(v);
+}
+// guest delivery dates are only known to the month: show "Mar 2027"
+function fmtMonth(v) {
+  if (!v) return "";
+  const [y, m] = String(v).slice(0, 7).split("-").map(Number);
+  if (!y || !m) return "";
+  return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+// the soonest upcoming delivery among this Meister's guests (not yet delivered, this month or later)
+function nextGuestDelivery(guests) {
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  return (guests || [])
+    .filter((g) => g.delivery_date && g.guest_status !== "Delivered" && String(g.delivery_date).slice(0, 7) >= thisMonth)
+    .sort((a, b) => String(a.delivery_date).localeCompare(String(b.delivery_date)))[0] || null;
 }
 function fmtDate(v) {
   if (!v) return "";
