@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202610090959";
+import { supabase } from "./supabase-client.js?v=202610091207";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -430,6 +430,12 @@ export async function countCategoryUses(id) {
 
 export async function setInteractionCategory(interactionId, categoryId) {
   const { error } = await supabase.rpc("set_interaction_category", { p_id: interactionId, p_category_id: categoryId });
+  if (error) throw error;
+}
+
+// Logged entries stay locked; this fixes only the method, direction and date/time.
+export async function setInteractionDetails(interactionId, method, direction, occurredAt) {
+  const { error } = await supabase.rpc("set_interaction_details", { p_id: interactionId, p_method: method, p_direction: direction, p_occurred_at: occurredAt });
   if (error) throw error;
 }
 

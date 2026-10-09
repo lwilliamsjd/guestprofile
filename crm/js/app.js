@@ -29,6 +29,7 @@ import {
   deleteCategory,
   countCategoryUses,
   setInteractionCategory,
+  setInteractionDetails,
   fetchAnalyticsData,
   listGuests,
   addGuest,
@@ -55,9 +56,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610090959";
-import { exportToExcel } from "./export.js?v=202610090959";
-import { wireImport } from "./import-export.js?v=202610090959";
+} from "./api.js?v=202610091207";
+import { exportToExcel } from "./export.js?v=202610091207";
+import { wireImport } from "./import-export.js?v=202610091207";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -153,6 +154,7 @@ function freshUiState(tab) {
     editingFuId: null,
     replyingTo: null,
     editingCommentId: null,
+    editingIntId: null,
     focusId: null,
   };
 }
@@ -2881,11 +2883,21 @@ function noteCardHtml(i, fus, cmts) {
         <span class="method-badge method-${slug(i.method)}">${METHOD_ICON[i.method] || ""} ${escapeHtml(i.method)}</span>
         ${directionChip(i.direction)}
         ${categorySelectHtml(i)}
-        <span class="muted">${escapeHtml(i.created_by_name || "someone")} &middot; ${fmtDateTime(i.occurred_at)}</span>
+        <span class="muted">${escapeHtml(i.created_by_name || "someone")} &middot; ${fmtDateTime(i.occurred_at)}${i.edited_by_name ? ` &middot; <span title="${escapeAttr(`Details changed by ${i.edited_by_name}${i.edited_at ? " on " + fmtDateTime(i.edited_at) : ""}`)}">edited</span>` : ""}</span>
         <span class="note-actions">
+          <button class="icon-btn edit-int-btn" data-id="${i.id}" title="Fix method, direction or date">${I.edit}</button>
           ${isAdmin() ? `<button class="icon-btn danger delete-note-btn" data-id="${i.id}" title="Delete">${I.trash}</button>` : ""}
         </span>
       </div>
+      ${uiState.editingIntId === i.id ? `
+      <form class="int-fix" data-id="${i.id}">
+        <select name="method">${METHODS.map((m) => `<option ${i.method === m ? "selected" : ""}>${m}</option>`).join("")}</select>
+        <select name="direction"><option value="">Direction not set</option>${DIRECTIONS.map((d) => `<option value="${d}" ${i.direction === d ? "selected" : ""}>${d === "Inbound" ? "Inbound (they contacted us)" : "Outbound (we contacted them)"}</option>`).join("")}</select>
+        <input name="when" type="datetime-local" value="${escapeAttr(toLocalInput(i.occurred_at))}" required />
+        <button type="button" class="btn int-fix-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+        <span class="muted int-fix-note">The note itself can't be changed. Add a comment to clarify it.</span>
+      </form>` : ""}
       <div class="note-text">${escapeHtml(i.note)}</div>
       ${
         fus.length
@@ -3114,6 +3126,28 @@ function wireActivityTab(container, meister) {
   });
 
   wireCategorySelects(container);
+
+  document.querySelectorAll(".edit-int-btn").forEach((btn) =>
+    btn.addEventListener("click", () => { uiState.editingIntId = uiState.editingIntId === btn.dataset.id ? null : btn.dataset.id; render(); })
+  );
+  document.querySelectorAll(".int-fix").forEach((form) => {
+    form.querySelector(".int-fix-cancel").addEventListener("click", () => { uiState.editingIntId = null; render(); });
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = form.querySelector("button[type=submit]"); btn.disabled = true;
+      try {
+        const when = new Date(form.when.value);
+        if (isNaN(when)) throw new Error("Pick a valid date and time");
+        await setInteractionDetails(form.dataset.id, form.method.value, form.direction.value || null, when.toISOString());
+        uiState.editingIntId = null;
+        toast("Entry updated");
+        render();
+      } catch (err) {
+        toast("Could not save: " + err.message, "error");
+        btn.disabled = false;
+      }
+    });
+  });
 
   document.querySelectorAll(".delete-note-btn").forEach((btn) =>
     btn.addEventListener("click", async () => {

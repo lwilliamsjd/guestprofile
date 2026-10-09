@@ -258,6 +258,27 @@ as $$
   where id = p_id and auth.role() = 'authenticated';
 $$;
 
+-- Fix a logged entry's method, direction or date (the note text stays locked).
+create or replace function public.set_interaction_details(p_id uuid, p_method text, p_direction text, p_occurred_at timestamptz)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.role() <> 'authenticated' then raise exception 'Not signed in'; end if;
+  if p_method not in ('Phone','Text','Email','In Person','Other') then raise exception 'Unknown method'; end if;
+  if p_direction is not null and p_direction not in ('Inbound','Outbound') then raise exception 'Unknown direction'; end if;
+  if p_occurred_at is null or p_occurred_at > now() + interval '1 day' then raise exception 'Date cannot be in the future'; end if;
+  update public.interactions
+     set method = p_method, direction = p_direction, occurred_at = p_occurred_at,
+         edited_at = now(), edited_by_name = (select full_name from public.profiles where id = auth.uid())
+   where id = p_id;
+end;
+$$;
+revoke all on function public.set_interaction_details(uuid, text, text, timestamptz) from public, anon;
+grant execute on function public.set_interaction_details(uuid, text, text, timestamptz) to authenticated;
+
 -- ============================================================
 -- GUESTS  (people this Meister has referred/sold a vehicle to)
 -- ============================================================
