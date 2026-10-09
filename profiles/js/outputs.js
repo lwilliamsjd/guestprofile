@@ -1,4 +1,4 @@
-import { GRGT_LOGO } from "./logo.js?v=202610091232";
+import { GRGT_LOGO } from "./logo.js?v=202610091411";
 // Outputs for an applicant:
 //  1) a plain text summary to paste into the other internal tool
 //  2) the two page Buyer Profile PDF (built as HTML, printed to PDF)
@@ -402,10 +402,9 @@ export function buildPersonaHtml(a, opts = {}) {
     const lvl = levelScale(levels, value);
     const steps = levels.length - 1;
     return `
-      <div class="scale">
+      <div class="scale" style="flex-grow:${Math.max(1, (clean(detail).length + (tags || []).length * 30) / 90).toFixed(2)}">
         <div class="sc-head"><b>${title}</b><span>${value ? `${e(value).toUpperCase()}${lvl ? ` · ${lvl}/${steps}` : ""}` : "NOT SET"}</span></div>
         <div class="sc-bar">${Array.from({ length: steps }, (_, i) => `<i class="${lvl != null && i < lvl ? "on" : ""}"></i>`).join("")}</div>
-        <div class="sc-ends"><span>NONE</span><span>PRO</span></div>
         ${tags && tags.length ? `<div class="sc-tags">${tags.map((t) => `<span>${e(t).toUpperCase()}</span>`).join("")}</div>` : ""}
         ${has(detail) ? `<p class="fit" data-fit="${title} details">${e(detail)}</p>` : ""}
       </div>`;
@@ -617,7 +616,8 @@ export function buildPersonaHtml(a, opts = {}) {
   function fitBand() { document.querySelectorAll(".band-words span").forEach(function (el) { var f = 20; el.style.fontSize = f + "px"; while (el.scrollWidth > el.clientWidth + 1 && f > 12) { f -= 0.5; el.style.fontSize = f + "px"; } }); }
   // and shrink the car spec block until every selected option fits its box
   function fitSpecs() { document.querySelectorAll(".specp.sm").forEach(function (el) { var box = el.parentElement, z = 1; el.style.zoom = 1; while (box.scrollHeight > box.clientHeight + 1 && z > 0.6) { z -= 0.03; el.style.zoom = z; } }); }
-  function fitAll() { fitBand(); fitSpecs(); }
+  function fitNotes() { document.querySelectorAll(".scale p").forEach(function (el) { var f = 10.5; el.style.fontSize = f + "px"; while (el.scrollHeight > el.clientHeight + 1 && f > 8.5) { f -= 0.25; el.style.fontSize = f + "px"; } }); }
+  function fitAll() { fitBand(); fitSpecs(); fitNotes(); }
   fitAll(); if (document.fonts) document.fonts.ready.then(fitAll);
 </script></body></html>`;
 }
@@ -741,15 +741,17 @@ ul { margin: 0; padding: 0; list-style: none; }
 .soc-asof { font-size: 8.5px; color: #8a8a92; margin-top: 4px; }
 .soc-old { font-size: 10.5px; }
 .ms { height: 238px; display: flex; flex-direction: column; overflow: hidden; }
-.scale { margin-bottom: 10px; }
+.ms > h3 { flex-shrink: 0; margin-bottom: 6px; }
+.scale { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; margin-bottom: 4px; }
+.scale > *:not(p) { flex-shrink: 0; }
 .sc-head { display: flex; justify-content: space-between; font: 700 12px "Barlow Condensed"; letter-spacing: .06em; }
 .sc-head span { color: #eb0a1e; font-size: 10.5px; letter-spacing: .08em; }
-.sc-bar { display: flex; gap: 3px; margin: 5px 0 2px; }
+.sc-bar { display: flex; gap: 3px; margin: 5px 0 7px; }
 .sc-bar i { flex: 1; height: 9px; background: #d9d9de; transform: skewX(-20deg); } .sc-bar i.on { background: #eb0a1e; }
 .sc-ends { display: flex; justify-content: space-between; font: 600 7.5px "Barlow Condensed"; letter-spacing: .14em; color: #9a9aa2; margin-bottom: 5px; }
 .sc-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
 .sc-tags span { background: #111; color: #fff; font: 700 8.5px "Barlow Condensed"; letter-spacing: .08em; padding: 3px 7px; }
-.scale p { font-size: 10.5px; color: #3a3a40; max-height: 46px; }
+.scale p { font-size: 10.5px; line-height: 1.32; color: #3a3a40; flex: 1 1 auto; min-height: 0; margin: 0; }
 .panel-red { background: #eb0a1e; color: #fff; padding: 14px 16px; height: 238px; overflow: hidden; }
 .panel-red h3 { border-color: #fff; }
 .slider { position: relative; margin: 18px 0 6px; }

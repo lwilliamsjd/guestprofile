@@ -4,14 +4,14 @@ import {
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
-} from "./api.js?v=202610091232";
+} from "./api.js?v=202610091411";
 import {
   USAGE_OPTIONS, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202610091232";
-import { SUPABASE_URL } from "./config.js?v=202610091232";
+} from "./outputs.js?v=202610091411";
+import { SUPABASE_URL } from "./config.js?v=202610091411";
 
 const app = document.getElementById("app");
 
@@ -768,6 +768,8 @@ async function renderEditor(route, seq) {
       <div class="style-foot"><b id="style-label">${styleSet() ? driverStyleLabel(a.driver_style) : "Not set yet. Drag the slider to set it."}</b><button type="button" class="btn btn-ghost btn-sm" id="style-clear" ${styleSet() ? "" : "hidden"}>Clear</button></div>
     </div>`;
 
+  const MS_FITS = 380; // HPDE + Race details share the Motorsports box on the PDF
+  const msCount = () => `HPDE + Race details: ${((a.hpde_experience || "").length + (a.race_experience || "").length).toLocaleString()} / ~${MS_FITS} characters fit on the PDF`;
   const bioCount = () => { const n = (a.summary || "").length; return `${n.toLocaleString()} / ~${BIO_FITS.toLocaleString()} characters fit on the PDF`; };
 
   main.innerHTML = `
@@ -837,7 +839,7 @@ async function renderEditor(route, seq) {
             ${field("track_days", "Total Track Days", { type: "number", min: 0, step: "1", hint: "(best estimate)" })}
             ${field("hpde_experience", "HPDE Details", { type: "textarea", ph: "Tracks, how often, run group, instructor certifications" })}
             <div class="form-field"><label>Racing Series <span class="hint">(type and press Enter)</span></label>${tagBlock("race_series", "e.g. NASA Competition", "series-list")}</div>
-            ${field("race_experience", "Race Details", { type: "textarea", span: true, ph: "Series, license, results" })}
+            ${field("race_experience", "Race Details", { type: "textarea", span: true, ph: "Series, license, results", after: `<div class="field-foot" id="ms-count">${msCount()}</div>` })}
             ${field("key_events", "Key Motorsports Events Attended", { type: "textarea", span: true, hint: "(one per line)", ph: "Rolex 24 at Daytona\nMonterey Car Week" })}
             <div class="form-field span-2"><label>Raw Numbers vs. Overall Experience <span class="hint">(what matters more to them in a car)</span></label>${sliderBlock()}</div>
             ${field("driver_style_note", "Driver Style Note", { type: "textarea", rows: 2, span: true, ph: "Reads spec sheets but rarely quotes them. Values steering feel over peak horsepower." })}
@@ -1096,6 +1098,7 @@ async function renderEditor(route, seq) {
       e.target.classList.remove("invalid");
     }
     if (k === "summary") main.querySelector("#bio-count").textContent = bioCount();
+    if (k === "hpde_experience" || k === "race_experience") { const c = main.querySelector("#ms-count"); c.textContent = msCount(); c.classList.toggle("over", (a.hpde_experience || "").length + (a.race_experience || "").length > MS_FITS); }
     if (k.startsWith("persona_")) paintPersona();
     if (k === "summary") main.querySelector("#bio-count").classList.toggle("over", (a.summary || "").length > BIO_FITS);
     markDirty();
