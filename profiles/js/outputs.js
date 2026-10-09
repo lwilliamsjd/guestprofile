@@ -1,4 +1,4 @@
-import { GRGT_LOGO } from "./logo.js?v=202610091420";
+import { GRGT_LOGO } from "./logo.js?v=202610091423";
 // Outputs for an applicant:
 //  1) a plain text summary to paste into the other internal tool
 //  2) the two page Buyer Profile PDF (built as HTML, printed to PDF)
@@ -395,7 +395,7 @@ export function buildPersonaHtml(a, opts = {}) {
         <div class="soc-p">${e(clean(s.platform) || "Social").toUpperCase()}</div>
         <div class="soc-h"><b>${e(s.handle)}</b>${has(s.note) ? `<span>${e(s.note)}</span>` : ""}</div>
         <div class="soc-f">${e(fmtK(s.followers))}</div>
-      </div>`).join("") + (asOf && socials.some((s) => Number(s.followers)) ? `<div class="soc-asof">Followers as of ${e(asOf)}</div>` : "")
+      </div>`).join("")
     : has(a.social_media) ? `<div class="soc-old">${e(a.social_media).replace(/\n/g, "<br>")}</div>` : none();
 
   const scale = (title, levels, value, detail, tags) => {
@@ -585,7 +585,7 @@ export function buildPersonaHtml(a, opts = {}) {
     </div>
     <div class="buy2">
       <div><h3>KEY MOTORSPORTS EVENTS</h3><div class="fit" data-fit="Key motorsports events">${bullets(linesOf(a.key_events))}</div></div>
-      <div><h3>CROSS SHOPPING</h3><div class="fit" data-fit="Cross shopping">${cross.length ? `<table class="cross">${cross.slice(0, 6).map((c) => `<tr><td>${e(c.model)}</td><td>${e([c.status, c.note].filter(has).join(" · ")).toUpperCase()}</td></tr>`).join("")}</table>` : none()}</div></div>
+      <div><h3>CROSS SHOPPING</h3><div class="fit" data-fit="Cross shopping">${cross.length ? `<table class="cross">${cross.slice(0, 3).map((c) => `<tr><td>${e(c.model)}</td><td>${e([c.status, c.note].filter(has).join(" · ")).toUpperCase()}</td></tr>`).join("")}</table>` : none()}</div></div>
     </div>
     <div class="bottom">
       <div class="asmt">
@@ -620,7 +620,8 @@ export function buildPersonaHtml(a, opts = {}) {
     document.querySelectorAll(".hist-row .fit:not(p)").forEach(function (box) { var kids = Array.prototype.slice.call(box.children), z = 1; kids.forEach(function (k) { k.style.zoom = 1; }); while (box.scrollHeight > box.clientHeight + 1 && z > 0.7) { z -= 0.03; kids.forEach(function (k) { k.style.zoom = z; }); } });
     document.querySelectorAll(".lfa-box p").forEach(function (el) { var f = 10.5; el.style.fontSize = f + "px"; while (el.scrollHeight > el.clientHeight + 1 && f > 8) { f -= 0.25; el.style.fontSize = f + "px"; } });
   }
-  function fitAll() { fitBand(); fitSpecs(); fitNotes(); fitHist(); }
+  function fitBio() { document.querySelectorAll(".h-right .bio").forEach(function (el) { var f = 10.5; el.style.fontSize = f + "px"; while (el.scrollHeight > el.clientHeight + 1 && f > 9) { f -= 0.25; el.style.fontSize = f + "px"; } }); }
+  function fitAll() { fitBand(); fitSpecs(); fitNotes(); fitHist(); fitBio(); }
   fitAll(); if (document.fonts) document.fonts.ready.then(fitAll);
 </script></body></html>`;
 }

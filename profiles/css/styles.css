@@ -569,3 +569,4 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .banner-ed-grid .form-field { margin: 0; }
 .banner-ed .form-field.coded input { color: var(--text); font-weight: 700; border-color: var(--red); background: rgba(224,38,63,.12); opacity: 1; }
 @media (max-width: 640px) { .banner-ed-grid { grid-template-columns: 1fr; } }
+.row-max { font-size: 12px; margin-top: 6px; }

@@ -4,14 +4,14 @@ import {
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
-} from "./api.js?v=202610091420";
+} from "./api.js?v=202610091423";
 import {
   USAGE_OPTIONS, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202610091420";
-import { SUPABASE_URL } from "./config.js?v=202610091420";
+} from "./outputs.js?v=202610091423";
+import { SUPABASE_URL } from "./config.js?v=202610091423";
 
 const app = document.getElementById("app");
 
@@ -81,7 +81,7 @@ const AGE_RANGES = ["Under 30", "30s", "40s", "50s", "60s", "70+"];
 const ALLOCATION_OPTIONS = ["Pending", ...DECISIONS];
 const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
 const RACE_SERIES = ["NASA Competition", "NASA Time Trial", "SCCA Regional", "SCCA National", "SCCA Time Trials", "SCCA Solo", "PCA Club Racing", "Porsche Carrera Cup", "GR Cup", "Lucky Dog", "ChampCar", "WRL", "IMSA", "SRO", "Ferrari Challenge", "Lamborghini Super Trofeo"];
-const BIO_FITS = 850; // characters of the full Bio that fit the top right of page 1
+const BIO_FITS = 750; // characters of the full Bio that fit the top right of page 1
 const COMMON_MAKES = ["Acura","Alfa Romeo","Aston Martin","Audi","Bentley","BMW","Bugatti","Cadillac","Chevrolet","Dodge","Ferrari","Ford","Honda","Hyundai","Jaguar","Jeep","Koenigsegg","Lamborghini","Land Rover","Lexus","Lotus","Lucid","Maserati","Mazda","McLaren","Mercedes Benz","Nissan","Pagani","Porsche","Ram","Rimac","Rivian","Rolls Royce","Subaru","Tesla","Toyota","Volkswagen","Volvo"];
 
 // garage vehicles: Year, Make and Model are entered separately; "vehicle" is the combined name used everywhere else
@@ -673,7 +673,7 @@ async function renderEditor(route, seq) {
       { k: "held", type: "number", ph: "Years held", w: "100px" },
       { k: "note", ph: "Note", w: "1fr" },
     ] },
-    cross_shop: { blank: () => ({ model: "", status: "", note: "" }), add: "Add a car they're considering", cols: [
+    cross_shop: { max: 3, blank: () => ({ model: "", status: "", note: "" }), add: "Add a car they're considering", cols: [
       { k: "model", ph: "Model, e.g. Porsche 911 GT3", w: "1.3fr" },
       { k: "status", type: "select", options: CROSS_STATUSES, w: "140px" },
       { k: "note", ph: "Note, e.g. Keeping it", w: "1fr" },
@@ -685,6 +685,8 @@ async function renderEditor(route, seq) {
     const box = main.querySelector(`[data-rows="${key}"]`);
     if (!box) return;
     const tpl = `${def.cols.map((c) => c.w).join(" ")} 32px`;
+    const addBtn = main.querySelector(`[data-add-row="${key}"]`);
+    if (addBtn && def.max) { const full = a[key].length >= def.max; addBtn.hidden = full; let n = addBtn.nextElementSibling; if (!n || !n.classList.contains("row-max")) { n = document.createElement("div"); n.className = "muted row-max"; addBtn.after(n); } n.textContent = full ? `${def.max} maximum (that's what fits on the PDF)` : ""; }
     box.innerHTML = a[key].map((r, i) => `
       <div class="row-ed" data-i="${i}" style="grid-template-columns:${tpl}">
         ${def.cols.map((c) => c.type === "select"
@@ -1017,6 +1019,7 @@ async function renderEditor(route, seq) {
     const add = e.target.closest("[data-add-row]");
     if (add) {
       const key = add.dataset.addRow;
+      if (ROW_DEFS[key].max && a[key].length >= ROW_DEFS[key].max) return;
       a[key].push(ROW_DEFS[key].blank());
       drawRows(key);
       const rows = main.querySelectorAll(`[data-rows="${key}"] .row-ed`);
