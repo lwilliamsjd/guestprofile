@@ -1,3 +1,4 @@
+import { GRGT_LOGO } from "./logo.js?v=202610091232";
 // Outputs for an applicant:
 //  1) a plain text summary to paste into the other internal tool
 //  2) the two page Buyer Profile PDF (built as HTML, printed to PDF)
@@ -378,10 +379,10 @@ export function buildPersonaHtml(a, opts = {}) {
   const bullets = (items) => (items.length ? `<ul class="bul">${items.map((x) => `<li>${e(x)}</li>`).join("")}</ul>` : none());
 
   const rec = has(a.concierge_rec) ? a.concierge_rec : "";
-  const recBadge = (cls) => (rec ? `<span class="rec ${cls}" style="background:${DECISION_COLORS[rec] || "#555"}">${cls === "rec-sm" || cls === "rec-tb" ? "CONCIERGE REC.&nbsp; " : ""}<b>${e(rec).toUpperCase()}</b></span>` : "");
+  const recBadge = (cls) => (rec ? `<span class="rec ${cls}" style="background:${DECISION_COLORS[rec] || "#555"}"></span>` : "");
   const topbar = (withRec) => `
     <div class="topbar">
-      <div class="tb-left"><span class="mark"><i></i><i></i></span><b>GAZOO RACING</b><span>GR GT CONCIERGE BUYER PROGRAM</span></div>
+      <div class="tb-left"><img class="tb-logo" src="${GRGT_LOGO}" alt="GR GT"><b>GAZOO RACING</b><span>CONCIERGE BUYER PROGRAM</span></div>
       <div class="tb-right">${id ? `<span class="tb-id">${e(id)}</span>` : ""}${withRec ? recBadge("rec-tb") : ""}${a.vip ? `<span class="badge b-vip">VIP</span>` : ""}<span class="badge b-conf">CONFIDENTIAL</span></div>
     </div>`;
   const footer = (n) => `
@@ -636,7 +637,8 @@ ul { margin: 0; padding: 0; list-style: none; }
 .none.light { color: rgba(255,255,255,.7); }
 .fit { overflow: hidden; }
 
-.topbar { height: 32px; background: #0d0d0f; color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; flex-shrink: 0; }
+.topbar { height: 32px; margin-top: 14px; background: #0d0d0f; color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 28px 0 16px; flex-shrink: 0; }
+.tb-logo { height: 17px; display: block; }
 .tb-left { display: flex; align-items: center; gap: 12px; font: 600 10.5px "Barlow Condensed"; letter-spacing: .12em; }
 .tb-left b { font: italic 800 14px "Barlow Condensed"; letter-spacing: .04em; }
 .mark { display: inline-flex; gap: 2px; transform: skewX(-18deg); }
@@ -647,7 +649,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .b-vip { background: #ffd400; color: #111; }
 .b-conf { background: #eb0a1e; color: #fff; }
 
-.hero { display: grid; grid-template-columns: 1fr 1.12fr; gap: 0 28px; padding: 0 30px 0 36px; height: 300px; flex-shrink: 0; }
+.hero { display: grid; grid-template-columns: 1fr 1.12fr; gap: 0 28px; padding: 0 30px 0 36px; height: 292px; flex-shrink: 0; }
 .h-left { display: flex; flex-direction: column; }
 .ribbon { background: #eb0a1e; color: #fff; width: 112px; padding: 8px 12px 18px; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%); }
 .ribbon b { display: block; font: italic 800 22px/1 "Barlow Condensed"; }
@@ -690,7 +692,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .gl-dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: baseline; }
 .gl-dl dt { font: 700 8.5px "Barlow Condensed"; letter-spacing: .12em; color: #5c5c64; }
 .gl-dl dd { margin: 0; font-size: 10.5px; font-weight: 700; line-height: 1.25; }
-.biorow { display: grid; grid-template-columns: 1.25fr 1fr; gap: 24px; padding: 0 36px; margin-top: 14px; position: relative; z-index: 1; }
+.biorow { display: grid; grid-template-columns: 1.25fr 1fr; gap: 24px; padding: 0 36px; margin-top: 8px; position: relative; z-index: 1; }
 .h-right .bio { flex: 1; min-height: 0; font-size: 10.5px; color: #3a3a40; line-height: 1.45; }
 .bio p { margin-bottom: 6px; }
 .biorow .fit { max-height: 122px; }
@@ -709,7 +711,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .specp.sm .sp-row { gap: 2px; padding-bottom: 4px; border-bottom-color: #e2e2e6; }
 .specp.sm .sp-row b { font-size: 9px; }
 .specp.sm .sp-row span { gap: 3px; align-items: center; }
-.sp-row em { font: 700 8.5px "Barlow Condensed"; font-style: normal; letter-spacing: .1em; text-transform: uppercase; color: #8a8a92; margin: 0 1px 0 4px; }
+.sp-row em { font: 700 8.5px "Barlow Condensed"; font-style: normal; letter-spacing: .1em; text-transform: uppercase; color: #2a2a30; margin: 0 1px 0 4px; }
 .sp-row em:first-child { margin-left: 0; }
 .specp.sm .sp-row i { font-size: 10px; padding: 1px 6px; }
 .sp-row i.pri { background: #eb0a1e; border-color: #eb0a1e; color: #fff; }
@@ -721,7 +723,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .band::before { left: -8px; } .band::after { right: -8px; }
 
 .grid3 { display: grid; grid-template-columns: 268px 1fr 254px; gap: 18px; padding: 0 36px; flex-shrink: 0; position: relative; z-index: 1; }
-.panel-grey { background: #efeff1; padding: 12px 16px 12px; height: 252px; display: flex; flex-direction: column; }
+.panel-grey { background: #efeff1; padding: 12px 16px 12px; height: 238px; display: flex; flex-direction: column; }
 .ph { border-bottom: 2px solid #111; padding-bottom: 5px; margin-bottom: 8px; font: 700 12.5px "Barlow Condensed"; letter-spacing: .12em; }
 .hstats { display: grid; grid-template-columns: repeat(6, 1fr); margin-top: 10px; border-top: 2px solid #111; padding-top: 12px; height: 62px; margin-bottom: 4px; box-sizing: border-box; flex-shrink: 0; }
 .hstats div { padding-right: 4px; }
@@ -738,7 +740,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .soc-f { font: italic 800 14px "Barlow Condensed"; color: #eb0a1e; }
 .soc-asof { font-size: 8.5px; color: #8a8a92; margin-top: 4px; }
 .soc-old { font-size: 10.5px; }
-.ms { height: 252px; display: flex; flex-direction: column; overflow: hidden; }
+.ms { height: 238px; display: flex; flex-direction: column; overflow: hidden; }
 .scale { margin-bottom: 10px; }
 .sc-head { display: flex; justify-content: space-between; font: 700 12px "Barlow Condensed"; letter-spacing: .06em; }
 .sc-head span { color: #eb0a1e; font-size: 10.5px; letter-spacing: .08em; }
@@ -748,7 +750,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .sc-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
 .sc-tags span { background: #111; color: #fff; font: 700 8.5px "Barlow Condensed"; letter-spacing: .08em; padding: 3px 7px; }
 .scale p { font-size: 10.5px; color: #3a3a40; max-height: 46px; }
-.panel-red { background: #eb0a1e; color: #fff; padding: 14px 16px; height: 252px; overflow: hidden; }
+.panel-red { background: #eb0a1e; color: #fff; padding: 14px 16px; height: 238px; overflow: hidden; }
 .panel-red h3 { border-color: #fff; }
 .slider { position: relative; margin: 18px 0 6px; }
 .sl-track { height: 5px; background: rgba(255,255,255,.4); } .sl-track span { display: block; height: 100%; background: #fff; }
@@ -767,10 +769,9 @@ ul { margin: 0; padding: 0; list-style: none; }
 .p2-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 36px 8px; flex-shrink: 0; }
 .p2-name { font: italic 800 26px "Barlow Condensed"; margin-right: 10px; }
 .p2-sub { font: 600 11px "Barlow Condensed"; letter-spacing: .12em; color: #5c5c64; }
-.rec { color: #fff; font: 600 10px "Barlow Condensed"; letter-spacing: .12em; padding: 6px 18px; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); display: inline-block; }
-.rec b { font: italic 800 16px "Barlow Condensed"; letter-spacing: .06em; }
-.rec-tb { padding: 2px 14px; font-size: 9px; } .rec-tb b { font-size: 13px; }
-.rec-lg { margin-bottom: 6px; padding: 3px 18px; } .rec-lg b { font-size: 18px; }
+.rec { display: inline-block; width: 120px; height: 28px; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
+.rec-tb { width: 64px; height: 17px; }
+.rec-lg { margin-bottom: 8px; width: 110px; height: 22px; }
 .sect { display: flex; align-items: center; justify-content: space-between; background: #ececef; height: 28px; margin: 2px 0 10px; padding-right: 36px; flex-shrink: 0; }
 .sect-tab { background: #eb0a1e; color: #fff; font: italic 800 16px "Barlow Condensed"; letter-spacing: .04em; padding: 0 20px 0 36px; height: 36px; display: flex; align-items: center; clip-path: polygon(0 0, 100% 0, 100% 80%, 92% 100%, 0 100%); margin-top: 6px; }
 .sect-r { font: 600 9px "Barlow Condensed"; letter-spacing: .14em; color: #5c5c64; }
@@ -788,7 +789,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .t-red { background: #eb0a1e; color: #fff; } .t-black { background: #111; color: #fff; } .t-grey { background: #5c5c64; color: #fff; }
 .t-outline { border: 1px solid #111; padding: 1px 5px; } .t-outline-grey { border: 1px solid #8a8a92; color: #5c5c64; padding: 1px 5px; }
 .mbar { display: block; height: 9px; background: #ececef; } .mbar i { display: block; height: 100%; background: #111; }
-.hist-row { display: grid; grid-template-columns: 260px 1fr 1fr; gap: 20px; padding: 12px 36px 0; height: 178px; flex-shrink: 0; }
+.hist-row { display: grid; grid-template-columns: 260px 1fr 1fr; gap: 20px; padding: 10px 36px 0; height: 166px; flex-shrink: 0; }
 .lfa-box { background: #0d0d0f; color: #fff; padding: 14px 16px; position: relative; overflow: hidden; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
 .lfa-box::after { content: ""; position: absolute; right: -30px; top: 0; bottom: 0; width: 60px; background: #eb0a1e; transform: skewX(-12deg); }
 .lfa-box h4 { font: 700 12.5px "Barlow Condensed"; letter-spacing: .12em; border-bottom: 1px solid #555; padding-bottom: 6px; margin-bottom: 8px; position: relative; z-index: 1; }
@@ -799,13 +800,13 @@ ul { margin: 0; padding: 0; list-style: none; }
 .hh { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid #111; margin-bottom: 8px; }
 .hh h3 { border: none; margin: 0; padding-bottom: 6px; }
 .hh span { font: 600 8.5px "Barlow Condensed"; letter-spacing: .14em; color: #8a8a92; }
-.hist-row .fit { max-height: 136px; }
+.hist-row .fit { max-height: 126px; }
 .hist { display: grid; grid-template-columns: 1fr 76px 24px; gap: 8px; align-items: center; margin-bottom: 6px; }
 .hi-name b { display: block; font-size: 10.5px; } .hi-name span { font-size: 9px; color: #6b6b73; }
 .hbar { height: 8px; background: #ececef; } .hbar i { display: block; height: 100%; background: #eb0a1e; }
 .hi-y { text-align: right; font: italic 800 13px "Barlow Condensed"; }
 .old { font-size: 10.5px; white-space: pre-line; }
-.stepper { display: flex; margin: 0 36px 12px; height: 38px; flex-shrink: 0; }
+.stepper { display: flex; margin: 0 36px 10px; height: 36px; flex-shrink: 0; }
 .step { flex: 1; background: #ececef; color: #8a8a92; padding: 6px 10px 0 22px; clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 14px 50%); margin-right: -10px; }
 .step:first-child { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%); padding-left: 14px; }
 .step b { display: block; font: 700 12px "Barlow Condensed"; letter-spacing: .06em; }
