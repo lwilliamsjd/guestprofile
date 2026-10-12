@@ -56,9 +56,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610091423";
-import { exportToExcel } from "./export.js?v=202610091423";
-import { wireImport } from "./import-export.js?v=202610091423";
+} from "./api.js?v=202610121513";
+import { exportToExcel } from "./export.js?v=202610121513";
+import { wireImport } from "./import-export.js?v=202610121513";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1271,6 +1271,30 @@ async function renderAnalyticsPage(route, seq) {
     .sort((a, b) => b.n - a.n)
     .slice(0, 8);
 
+  // ---- Meister guest counts (a number on each profile, no names) ----
+  const REGION_OF = {};
+  [["Northeast", "CT ME MA NH RI VT NJ NY PA"], ["Midwest", "IL IN MI OH WI IA KS MN MO NE ND SD"],
+   ["South", "DE DC FL GA MD NC SC VA WV AL KY MS TN AR LA OK TX PR"], ["West", "AZ CO ID MT NV NM UT WY AK CA HI OR WA"]]
+    .forEach(([r, list]) => list.split(" ").forEach((st) => (REGION_OF[st] = r)));
+  const regionOf = (m) => REGION_OF[String(m.state || "").toUpperCase()] || "No state";
+  const withCount = meisters.filter((m) => m.guest_estimate != null);
+  const gTotal = withCount.reduce((t, m) => t + m.guest_estimate, 0);
+  const gAvg = withCount.length ? gTotal / withCount.length : null;
+  const sortedCounts = withCount.map((m) => m.guest_estimate).sort((x, y) => x - y);
+  const gMedian = sortedCounts.length ? (sortedCounts.length % 2 ? sortedCounts[(sortedCounts.length - 1) / 2] : (sortedCounts[sortedCounts.length / 2 - 1] + sortedCounts[sortedCounts.length / 2]) / 2) : null;
+  const allocOf = (list) => list.reduce((t, m) => t + (Number(m.allocation_count) || 0), 0);
+  const gRegions = ["South", "Northeast", "West", "Midwest", "No state"].map((r) => {
+    const all = meisters.filter((m) => regionOf(m) === r), rep = all.filter((m) => m.guest_estimate != null);
+    const total = rep.reduce((t, m) => t + m.guest_estimate, 0), alloc = allocOf(rep.filter((m) => Number(m.allocation_count)));
+    return { key: r, meisters: all.length, reporting: rep.length, total, avg: rep.length ? total / rep.length : null, alloc, items: rep.sort((x, y) => y.guest_estimate - x.guest_estimate) };
+  }).filter((r) => r.key !== "No state" || r.meisters);
+  const gBuckets = [["0", 0, 0], ["1 to 5", 1, 5], ["6 to 10", 6, 10], ["11 to 20", 11, 20], ["21+", 21, Infinity]]
+    .map(([label, lo, hi], i) => ({ key: "b" + i, label, items: withCount.filter((m) => m.guest_estimate >= lo && m.guest_estimate <= hi).sort((x, y) => y.guest_estimate - x.guest_estimate) }));
+  const gTop = withCount.slice().sort((x, y) => y.guest_estimate - x.guest_estimate).slice(0, 5);
+  const withAlloc = withCount.filter((m) => Number(m.allocation_count));
+  const demandRatio = withAlloc.length ? withAlloc.reduce((t, m) => t + m.guest_estimate, 0) / allocOf(withAlloc) : null;
+  const fmt1 = (n) => (n == null ? "—" : (Math.round(n * 10) / 10).toLocaleString());
+
   // ---- follow-up counters ----
   const now = new Date();
   const buckets = [
@@ -1405,6 +1429,44 @@ async function renderAnalyticsPage(route, seq) {
       </div>
 
       <div class="card ana-span-12">
+        <div class="card-head"><h3>${I.users || ""} Meister guest counts</h3><span class="muted">from the Guest count on each Meister profile · ${withCount.length} of ${meisters.length} Meisters entered</span></div>
+        ${withCount.length ? `
+        <div class="gc-kpis">
+          <div class="veh-kpi"><b>${gTotal.toLocaleString()}</b><span>Total guests</span></div>
+          <div class="veh-kpi"><b>${fmt1(gAvg)}</b><span>Average per Meister</span></div>
+          <div class="veh-kpi"><b>${fmt1(gMedian)}</b><span>Median (typical Meister)</span></div>
+          <div class="veh-kpi"><b>${demandRatio == null ? "—" : fmt1(demandRatio) + "<small> : 1</small>"}</b><span>Guests per allocation</span></div>
+          <button class="veh-kpi drill" data-drill="gmissing:1"><b>${meisters.length - withCount.length}</b><span>Meisters not entered yet</span></button>
+        </div>
+        <div class="gc-grid">
+          <div>
+            <div class="gc-sub">By region</div>
+            <table class="gc-table">
+              <thead><tr><th>Region</th><th>Meisters</th><th>Guests</th><th>Avg</th><th>Per alloc.</th><th></th></tr></thead>
+              <tbody>${gRegions.map((r) => `<tr class="drill" data-drill="gregion:${escapeAttr(r.key)}">
+                <td><b>${escapeHtml(r.key)}</b></td><td>${r.reporting}<span class="muted"> / ${r.meisters}</span></td><td>${r.total.toLocaleString()}</td><td>${fmt1(r.avg)}</td>
+                <td>${r.alloc ? fmt1(r.items.filter((m) => Number(m.allocation_count)).reduce((t, m) => t + m.guest_estimate, 0) / r.alloc) : "—"}</td>
+                <td class="gc-bar"><span style="width:${gTotal ? (r.total / Math.max(...gRegions.map((x) => x.total), 1)) * 100 : 0}%"></span></td></tr>`).join("")}</tbody>
+            </table>
+          </div>
+          <div>
+            <div class="gc-sub">How many guests each Meister has</div>
+            <div class="bar-chart">${gBuckets.map((b) => `
+              <button class="bar-row drill" data-drill="gbucket:${b.key}">
+                <span class="bar-label">${b.label}</span>
+                <span class="bar-track"><span class="bar-fill" style="width:${(b.items.length / Math.max(1, ...gBuckets.map((x) => x.items.length))) * 100}%"></span></span>
+                <span class="bar-val">${b.items.length}</span>
+              </button>`).join("")}</div>
+          </div>
+          <div>
+            <div class="gc-sub">Most guests</div>
+            <div class="rank-list">${gTop.map((m, idx) => `
+              <a href="#/meister/${m.id}" class="rank-row"><span class="rank-num">${idx + 1}</span><span class="rank-body"><span class="rank-name">${escapeHtml(m.name)}</span><span class="muted">${escapeHtml(m.dealership || "")}${m.state ? " · " + escapeHtml(m.state) : ""}</span></span><span class="bar-val">${m.guest_estimate}</span></a>`).join("")}</div>
+          </div>
+        </div>` : `<div class="empty-state">No guest counts yet. Add a Guest count under Key facts on a Meister's Edit Profile tab.</div>`}
+      </div>
+
+      <div class="card ana-span-12">
         <div class="card-head"><h3>${I.bell} Upcoming follow-ups</h3><span class="muted">team-wide, pending</span></div>
         <div class="fu-counters">
           ${buckets.map((b) => `
@@ -1438,7 +1500,7 @@ async function renderAnalyticsPage(route, seq) {
 
   // ---- drawer (drill-down) ----
   const allGuests = d.guests.filter((g) => conciergeOk(concOf(g.meisters)));
-  const ctx = { quiet, soldAll, deliveredAll, awaiting, ints, meisters, guests, allGuests, delivered, fus, series, salesSeries, deliverySeries, buckets, loggerName, byCat, history, heat };
+  const ctx = { gRegions, gBuckets, gMissing: meisters.filter((m) => m.guest_estimate == null), quiet, soldAll, deliveredAll, awaiting, ints, meisters, guests, allGuests, delivered, fus, series, salesSeries, deliverySeries, buckets, loggerName, byCat, history, heat };
   function renderDrawer() {
     let root = document.getElementById("drawer-root");
     if (!root) { root = document.createElement("div"); root.id = "drawer-root"; document.body.appendChild(root); }
@@ -1525,6 +1587,16 @@ function drillContent(key, ctx) {
         title: `Delivered — ${pt ? pt.label : ""}`, sub: `${rows.length} deliveries`,
         html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtMonth(g.delivery_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No deliveries that month.</div>`,
         csv: { name: "delivered-month.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Vehicle: g.vehicle_purchased || "", "Delivery Date": g.delivery_date, Meister: g.meisters?.name || "" })) },
+      };
+    }
+    case "gregion": case "gbucket": case "gmissing": {
+      const src = kind === "gregion" ? ctx.gRegions.find((r) => r.key === arg) : kind === "gbucket" ? ctx.gBuckets.find((b) => b.key === arg) : { label: "Not entered yet", items: ctx.gMissing };
+      const rows = src ? src.items : [];
+      const title = kind === "gregion" ? `Guest counts — ${arg}` : kind === "gbucket" ? `Meisters with ${src ? src.label : ""} guests` : "Guest count not entered yet";
+      return {
+        title, sub: `${rows.length} ${rows.length === 1 ? "Meister" : "Meisters"}`,
+        html: rows.length ? `<div class="mini-list">${rows.map((m) => `<a href="#/meister/${m.id}" class="mini-row"><span>${escapeHtml(m.name)}<span class="muted"> · ${escapeHtml(m.dealership || "")}${m.state ? " · " + escapeHtml(m.state) : ""}</span></span><span class="muted">${m.guest_estimate != null ? `<b>${m.guest_estimate}</b> guests` : "—"}${Number(m.allocation_count) ? ` · ${m.allocation_count} alloc.` : ""}</span></a>`).join("")}</div>` : `<div class="empty-state">Nobody here.</div>`,
+        csv: { name: slug(title) + ".csv", rows: rows.map((m) => ({ Meister: m.name, Dealership: m.dealership || "", State: m.state || "", "Guest Count": m.guest_estimate ?? "", Allocation: m.allocation_count ?? "" })) },
       };
     }
     case "quiet": {
@@ -2231,7 +2303,7 @@ async function renderDealershipsPage(route, seq) {
 const IMPORT_FIELDS = [
   ["name", "Name *"], ["job_title", "Job Title"], ["dealership", "Dealership"], ["dealership_website", "Dealership Website"],
   ["phone", "Phone"], ["email", "Email"], ["city", "City"], ["state", "State"], ["zip", "Zip"],
-  ["status", "Status"], ["concierge", "Concierge"], ["allocation_count", "Allocation"], ["pma", "PMA"], ["profile_summary", "Profile Summary"],
+  ["status", "Status"], ["concierge", "Concierge"], ["allocation_count", "Allocation"], ["guest_estimate", "Guest Count"], ["pma", "PMA"], ["profile_summary", "Profile Summary"],
 ];
 const IMPORT_ALIASES = {
   name: ["name", "meister", "full name", "contact", "contact name", "meister name"],
@@ -2242,7 +2314,7 @@ const IMPORT_ALIASES = {
   email: ["email", "e-mail", "email address"],
   city: ["city"], state: ["state", "st"], zip: ["zip", "zip code", "postal", "postal code"],
   status: ["status", "stage"], concierge: ["concierge", "owner", "assigned", "assigned to"],
-  allocation_count: ["allocation", "allocations", "allocation count"], pma: ["pma"],
+  allocation_count: ["allocation", "allocations", "allocation count"], guest_estimate: ["guest count", "guests", "number of guests", "guest estimate"], pma: ["pma"],
   profile_summary: ["summary", "notes", "profile summary", "comments"],
 };
 
@@ -2341,10 +2413,11 @@ function importRowToFields(r) {
   const conciergeRaw = get("concierge").toLowerCase();
   const concierge = CONCIERGES.find((c) => conciergeRaw.startsWith(c.toLowerCase())) || null;
   const alloc = get("allocation_count");
+  const gEst = get("guest_estimate");
   return {
     name: get("name"), job_title: get("job_title"), dealership: get("dealership"), dealership_website: get("dealership_website"),
     phone: formatPhone(get("phone")), email: get("email"), city: get("city"), state: get("state").toUpperCase().slice(0, 2), zip: get("zip"),
-    status, concierge, allocation_count: alloc && !isNaN(Number(alloc)) ? Math.round(Number(alloc)) : null, pma: get("pma"), profile_summary: get("profile_summary"),
+    status, concierge, allocation_count: alloc && !isNaN(Number(alloc)) ? Math.round(Number(alloc)) : null, guest_estimate: gEst && !isNaN(Number(gEst)) ? Math.round(Number(gEst)) : null, pma: get("pma"), profile_summary: get("profile_summary"),
   };
 }
 
@@ -2609,8 +2682,9 @@ async function renderMeister(route, seq) {
               <textarea id="f-summary" data-draft rows="4" placeholder="Who they are, interest level, what matters to them…">${escapeHtml(dv("f-summary", meister?.profile_summary))}</textarea>
             </div>
             <div class="group-label" style="margin-top:6px">Key facts</div>
-            <div class="form-grid form-grid-3">
+            <div class="form-grid form-grid-4">
               <div class="form-field"><label>Allocation count</label><input id="f-allocation" data-draft type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 2" value="${escapeAttr(dv("f-allocation", meister?.allocation_count ?? ""))}" /></div>
+              <div class="form-field"><label>Guest count</label><input id="f-guest-est" data-draft type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 12" title="How many potential buyers this Meister has for the GR GT (no names needed)" value="${escapeAttr(dv("f-guest-est", meister?.guest_estimate ?? ""))}" /></div>
               <div class="form-field"><label>PMA</label><input id="f-pma" data-draft placeholder="Primary market area" value="${escapeAttr(dv("f-pma", meister?.pma))}" /></div>
               <div class="form-field"><label>Next Guest Delivery</label>${(() => { const nd = nextGuestDelivery(guests); return `<div class="readonly-field">${nd ? `<b>${escapeHtml(fmtMonth(nd.delivery_date))}</b> <span class="muted">· ${escapeHtml(nd.guest_name)}</span>` : `<span class="muted">None scheduled</span>`}</div><div class="muted field-note">From the Guests tab</div>`; })()}</div>
             </div>
@@ -2648,6 +2722,7 @@ async function renderMeister(route, seq) {
       zip: g("f-zip"),
       profile_summary: g("f-summary"),
       allocation_count: g("f-allocation") === "" ? null : Number(g("f-allocation")),
+      guest_estimate: g("f-guest-est") === "" ? null : Number(g("f-guest-est")),
       pma: g("f-pma"),
     };
     if (!showFieldErrors(validateMeisterFields(fields))) return;
@@ -2733,9 +2808,10 @@ function renderProfileSidebar(m, followUps, guests = []) {
       ${m.email ? `<div class="field"><label>Email</label><div>${escapeHtml(m.email)}</div></div>` : ""}
       ${m.dealership_website ? `<div class="field"><label>Dealership Website</label><div><a href="${escapeAttr(withProtocol(m.dealership_website))}" target="_blank" rel="noopener">${escapeHtml(m.dealership_website.replace(/^https?:\/\//i, ""))} ${I.link}</a></div></div>` : ""}
       ${cityLine ? `<div class="field"><label>Location</label><div>${escapeHtml(cityLine)}</div></div>` : ""}
-      ${m.allocation_count !== null && m.allocation_count !== undefined || m.pma || nextDel ? `<div class="key-facts">
+      ${m.allocation_count !== null && m.allocation_count !== undefined || m.guest_estimate != null || m.pma || nextDel ? `<div class="key-facts">
         <div class="key-facts-lbl">${I.zap} Key facts</div>
         ${m.allocation_count !== null && m.allocation_count !== undefined ? `<div class="kf"><span class="kf-k">Allocation</span><span class="kf-v">${m.allocation_count}</span></div>` : ""}
+        ${m.guest_estimate != null ? `<div class="kf"><span class="kf-k">Guest count</span><span class="kf-v">${m.guest_estimate}</span></div>` : ""}
         ${m.pma ? `<div class="kf"><span class="kf-k">PMA</span><span class="kf-v">${escapeHtml(m.pma)}</span></div>` : ""}
         ${nextDel ? `<div class="kf"><span class="kf-k">Next guest delivery</span><span class="kf-v">${escapeHtml(fmtMonth(nextDel.delivery_date))} <span class="muted">· ${escapeHtml(nextDel.guest_name)}</span></span></div>` : ""}
       </div>` : ""}
@@ -3405,6 +3481,7 @@ function validateMeisterFields(f) {
   if (f.state && !/^[A-Z]{2}$/.test(f.state)) errors["f-state"] = "Use the 2 letter state code";
   if (f.dealership_website && !/^(https?:\/\/)?[\w-]+(\.[\w-]+)+([/?#].*)?$/i.test(f.dealership_website)) errors["f-dealership-website"] = "Doesn't look like a web address";
   if (f.allocation_count !== null && f.allocation_count !== undefined && (!Number.isInteger(f.allocation_count) || f.allocation_count < 0)) errors["f-allocation"] = "Whole number, 0 or more";
+  if (f.guest_estimate !== null && f.guest_estimate !== undefined && (!Number.isInteger(f.guest_estimate) || f.guest_estimate < 0)) errors["f-guest-est"] = "Whole number, 0 or more";
   return errors;
 }
 function showFieldErrors(errors) {

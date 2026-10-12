@@ -1,4 +1,4 @@
-import { fetchAllForExport, listMeisterRollups, markExported } from "./api.js?v=202610091423";
+import { fetchAllForExport, listMeisterRollups, markExported } from "./api.js?v=202610121513";
 
 // Dates are written as real Excel date cells (not text) so they sort and
 // filter properly in Excel.
@@ -47,6 +47,7 @@ export async function exportToExcel(userId) {
       State: m.state || "",
       Zip: m.zip || "",
       Allocation: m.allocation_count ?? "",
+      "Guest Count": m.guest_estimate ?? "",
       PMA: m.pma || "",
       "Delivery ETA": toDate(m.delivery_eta),
       "Profile Summary": m.profile_summary || "",

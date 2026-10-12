@@ -571,3 +571,6 @@ exception when duplicate_object then null; end $$;
 -- update profiles set is_admin = true where email = 'lwilliams@jacksondawson.com';
 -- update profiles set concierge = 'Logan'   where email = 'lwilliams@jacksondawson.com';
 -- update profiles set concierge = 'Freddie' where email = 'ftinkler@jacksondawson.com';
+
+-- How many potential buyers (guests) each Meister has for the GR GT. A number only, no names.
+alter table meisters add column if not exists guest_estimate int check (guest_estimate is null or guest_estimate >= 0);
