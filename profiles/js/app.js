@@ -4,14 +4,14 @@ import {
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
-} from "./api.js?v=202610121513";
+} from "./api.js?v=202610121702";
 import {
   USAGE_OPTIONS, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202610121513";
-import { SUPABASE_URL } from "./config.js?v=202610121513";
+} from "./outputs.js?v=202610121702";
+import { SUPABASE_URL } from "./config.js?v=202610121702";
 
 const app = document.getElementById("app");
 
@@ -123,7 +123,7 @@ function missingForComplete(a) {
 const FIELD_LABELS = {
   name: "Name", age_range: "Age Range", city: "City", state: "State", preferred_dealer: "Preferred Dealer", social_media: "Social Media (older notes)", socials: "Social Media", tmna_relationship: "TMNA Relationships",
   clubs: "Track and Driving Clubs", vip: "VIP", summary: "Bio", bio_short: "Short Bio",
-  persona_left: "Banner Phrase (left)", persona_center: "Banner Phrase (center)", persona_right: "Banner Phrase (right)", code_phrase: "Banner Center Option",
+  persona_left: "Banner Phrase (left)", persona_center: "Banner Phrase (center)", persona_right: "Banner Phrase (right)", code_phrase: "Banner Center Option", launch_edition: "Launch Edition",
   years_on_track: "Years on Track", track_days: "Track Days", race_series: "Racing Series", driver_style: "Raw Numbers vs Experience", driver_style_note: "Driver Style Note",
   lfa_status: "LFA Experience", lfa_note: "LFA Note", toyota_history: "Toyota / Lexus History", past_cars: "Significant Past Cars",
   usage_split: "Intended Usage", usage_note: "Intended Usage Note", target_quarter: "Target Quarter", timing_flex: "Timing Flexibility", timing_note: "Timing Note",
@@ -183,7 +183,7 @@ const TEXT_FIELDS = [
   "call_notes", "followup_note", "bio_short", "persona_left", "persona_center", "persona_right",
 ];
 const NUM_FIELDS = ["years_on_track", "track_days", "driver_style"];
-const BOOL_FIELDS = ["vip", "needs_followup", "code_phrase"];
+const BOOL_FIELDS = ["vip", "needs_followup", "code_phrase", "launch_edition"];
 
 const blankCar = () => ({ year: "", make: "", model: "", vehicle: "", usage: [], miles: "", acquired: "", use_note: "" });
 function blankApplicant() {
@@ -202,7 +202,7 @@ function blankApplicant() {
     concierge_rec: "", assessment: "", strengths: "", concerns: "",
     hpde_level: "", race_level: "", has_flips: null, allocation: "Pending",
     call_notes: "", needs_followup: false, followup_note: "",
-    bio_short: "", persona_left: "", persona_center: "", persona_right: "", code_phrase: false,
+    bio_short: "", persona_left: "", persona_center: "", persona_right: "", code_phrase: false, launch_edition: false,
   };
 }
 
@@ -578,7 +578,7 @@ function appendApplicantSheets(wb, rows) {
     "Recent Flips": r.has_flips === true ? "Yes" : r.has_flips === false ? "No" : "", "Flip Details": r.recent_flips,
     "Why the GR GT": r.intended_use, ...Object.fromEntries(USAGE_SPLIT.map(([k, l]) => [`${l} %`, u[k] ?? null])), "Usage Note": r.usage_note,
     "Target Quarter": r.target_quarter, "Timing Flexibility": r.timing_flex, "Timing Note": r.timing_note, "Timing (older answer)": r.timing,
-    "Spec Considerations": specText(r) || r.spec_consideration,
+    "Spec Considerations": r.launch_edition ? "Launch Edition (spec locked)" : specText(r) || r.spec_consideration,
     "Cross Shopping": rowsOf(r.cross_shop, "model").map((c) => `${c.model}${c.status ? ` (${c.status})` : ""}`).join("; "),
     "Concierge Rec": r.concierge_rec, "Assessment": r.assessment, Strengths: linesOf(r.strengths).join("; "), Flags: linesOf(r.concerns).join("; "),
     "Leadership Decision": r.allocation || "Pending", "Needs Follow Up": r.needs_followup ? "Yes" : "No", "Follow Up Note": r.followup_note,
@@ -877,7 +877,9 @@ async function renderEditor(route, seq) {
             ${field("target_quarter", "Target Delivery Quarter", { type: "select", options: quarterOptions() })}
             ${field("timing_flex", "Flexibility", { type: "select", options: TIMING_FLEX })}
             ${field("timing_note", "Timing Note", { type: "textarea", rows: 2, span: true, ph: "Wants delivery before the summer track season…", hint: a.timing ? `(earlier answer: ${escapeHtml(a.timing)})` : "" })}
-            <div class="form-field span-2"><label>Spec Considerations <span class="hint">(check everything they're considering)</span></label>${specBlock()}</div>
+            <div class="form-field span-2"><label>Spec Considerations <span class="hint">(check everything they're considering)</span></label>
+              <div class="le-toggle">${toggle("launch_edition", "Launch Edition", "Limited run, spec locked. The PDF shows Launch Edition instead of the options below")}</div>
+              <div id="spec-wrap" class="${a.launch_edition ? "spec-locked" : ""}">${specBlock()}<div class="spec-locked-note">Launch Edition is spec locked, so these options don't apply. Anything checked is kept in case the toggle is turned off.</div></div></div>
             ${legacy("spec_consideration", "Spec Consideration notes")}
           </div>
           <div class="form-field" style="margin-top:16px"><label>Cross Shopping</label></div>
@@ -1116,6 +1118,7 @@ async function renderEditor(route, seq) {
       e.target.closest(".toggle-card").classList.toggle("on", a[k]);
       if (k === "needs_followup") main.querySelector("#followup-note-wrap").hidden = !a[k];
       if (k === "code_phrase") paintPersona();
+      if (k === "launch_edition") main.querySelector("#spec-wrap").classList.toggle("spec-locked", !!a[k]);
     } else a[k] = e.target.value;
     markDirty();
   });

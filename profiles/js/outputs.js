@@ -1,4 +1,4 @@
-import { GRGT_LOGO } from "./logo.js?v=202610121513";
+import { GRGT_LOGO } from "./logo.js?v=202610121702";
 // Outputs for an applicant:
 //  1) a plain text summary to paste into the other internal tool
 //  2) the two page Buyer Profile PDF (built as HTML, printed to PDF)
@@ -234,7 +234,7 @@ function fullText(a) {
     line("Why the GR GT", a.intended_use),
     line("Intended Usage", [usageText(a), clean(a.usage_note)].filter(Boolean).join(". ")),
     line("Timing", [timingText(a), clean(a.timing_note)].filter(Boolean).join(". ")),
-    line("Spec Considerations", specText(a) || a.spec_consideration),
+    line("Spec Considerations", a.launch_edition ? "Launch Edition (spec locked)" : specText(a) || a.spec_consideration),
     line("Cross Shopping", crossText(a)),
   ].filter(Boolean);
   if (buyer.length) out.push("", "BUYER PROFILE", ...buyer);
@@ -291,7 +291,7 @@ function compactText(a) {
     has(a.intended_use) ? `Why: ${flat(a.intended_use)}` : null,
     usageText(a) ? `Use: ${usageText(a)}` : null,
     timingText(a) ? `Timing: ${timingText(a)}` : null,
-    specText(a) || has(a.spec_consideration) ? `Spec: ${specText(a) || flat(a.spec_consideration)}` : null,
+    a.launch_edition ? "Spec: Launch Edition (spec locked)" : specText(a) || has(a.spec_consideration) ? `Spec: ${specText(a) || flat(a.spec_consideration)}` : null,
     crossText(a) ? `Cross shopping: ${crossText(a)}` : null,
   ].filter(Boolean);
   if (buyer.length) parts.push(`Buyer: ${buyer.join("; ")}.`);
@@ -438,7 +438,7 @@ export function buildPersonaHtml(a, opts = {}) {
       </div>
       <div class="gl">
         <label>CAR SPEC PREFERENCES</label>
-        <div class="fit" data-fit="Car spec preferences">${specs.length ? `<div class="specp sm">${specs.map((s) => `<div class="sp-row"><b>${e(s.group || "Other").toUpperCase()}</b><span>${specChips(s, e)}</span></div>`).join("")}</div>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
+        <div class="fit" data-fit="Car spec preferences">${a.launch_edition ? `<div class="le-wrap"><div class="le-tile"><div><b>LAUNCH EDITION</b><span>SPEC LOCKED · LIMITED RUN</span></div></div><p class="le-note">Factory specified. No color, wheel, interior or option choices.</p></div>` : specs.length ? `<div class="specp sm">${specs.map((s) => `<div class="sp-row"><b>${e(s.group || "Other").toUpperCase()}</b><span>${specChips(s, e)}</span></div>`).join("")}</div>` : has(a.spec_consideration) ? `<p class="old">${e(a.spec_consideration)}</p>` : none()}</div>
       </div>
     </div>`;
 
@@ -712,6 +712,11 @@ ul { margin: 0; padding: 0; list-style: none; }
 .sp-row span { display: flex; flex-wrap: wrap; gap: 4px; }
 .sp-row i { font-style: normal; font: 700 10px "Barlow Condensed"; letter-spacing: .06em; text-transform: uppercase; border: 1px solid #111; padding: 2px 7px; }
 .specp.sm { gap: 3px 14px; }
+.le-wrap { display: flex; flex-direction: column; justify-content: center; height: 100%; gap: 10px; }
+.le-tile { background: #0d0d0f; color: #fff; padding: 14px 18px; clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%); border-left: 6px solid #eb0a1e; }
+.le-tile b { display: block; font: italic 800 30px/1 "Barlow Condensed"; letter-spacing: .03em; }
+.le-tile span { display: block; font: 700 9.5px "Barlow Condensed"; letter-spacing: .18em; color: #eb0a1e; margin-top: 4px; }
+.le-note { font-size: 10px; color: #5c5c64; margin: 0; }
 .specp.sm .sp-row { gap: 2px; padding-bottom: 4px; border-bottom-color: #e2e2e6; }
 .specp.sm .sp-row b { font-size: 9px; }
 .specp.sm .sp-row span { gap: 3px; align-items: center; }

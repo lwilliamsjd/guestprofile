@@ -262,3 +262,6 @@ alter table applicants add column if not exists persona_left text;
 alter table applicants add column if not exists persona_center text;
 alter table applicants add column if not exists persona_right text;
 alter table applicants add column if not exists code_phrase boolean not null default false;
+
+-- Launch Edition (limited run, spec locked): the PDF shows it instead of spec options
+alter table applicants add column if not exists launch_edition boolean not null default false;
