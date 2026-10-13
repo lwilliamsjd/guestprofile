@@ -378,7 +378,7 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
   border-radius: 12px;
   padding: 20px;
 }
-.profile-sidebar { position: sticky; top: 78px; }
+.profile-sidebar { position: sticky; top: 78px; max-height: calc(100vh - 94px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .avatar {
   width: 56px;
   height: 56px;
@@ -1027,7 +1027,7 @@ button.legend-item:hover { color: var(--text); }
 }
 @media (max-width: 860px) {
   .meister-layout { grid-template-columns: 1fr; }
-  .profile-sidebar { position: static; }
+  .profile-sidebar { position: static; max-height: none; overflow: visible; }
   .main-content { padding: 16px 16px 40px; }
   .topbar { padding: 10px 16px; }
   .nav { gap: 14px; }
