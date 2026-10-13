@@ -1,6 +1,7 @@
 // Meister Guest Map report: a printable two page report (US heat map + breakdown by area)
 // built from the Guest count and ZIP on each Meister profile. No guest names are used.
-import { ZIP3 } from "./zip3.js?v=202610131317";
+import { ZIP5 } from "./zip5.js?v=202610131335";
+import { ZIP3 } from "./zip3.js?v=202610131335";
 
 export const REGIONS = {
   Northeast: "CT ME MA NH RI VT NJ NY PA",
@@ -21,7 +22,8 @@ const median = (arr) => { if (!arr.length) return null; const s = arr.slice().so
 function stateOf(m) {
   const st = String(m.state || "").toUpperCase().trim();
   if (STATE_NAMES[st]) return st;
-  const z = ZIP3[String(m.zip || "").replace(/\D/g, "").slice(0, 3)];
+  const zip = String(m.zip || "").replace(/\D/g, "");
+  const z = ZIP5[zip.slice(0, 5)] || ZIP3[zip.slice(0, 3)];
   return z ? z[3] : "";
 }
 function group(list, keyFn) {
@@ -51,17 +53,20 @@ export function buildGuestMapReport(meisters, opts = {}) {
   const rep = list.filter((m) => m.guest_estimate != null);
   const nat = stats(list);
 
-  // bubbles: guests summed by 3 digit ZIP area
+  // bubbles: guests summed by city, placed at the 5 digit ZIP (3 digit area only as a fallback)
   const areas = new Map();
   const offMap = [];
   rep.forEach((m) => {
-    const z3 = String(m.zip || "").replace(/\D/g, "").slice(0, 3);
-    const z = ZIP3[z3];
+    const zip = String(m.zip || "").replace(/\D/g, "");
+    const z5 = ZIP5[zip.slice(0, 5)];
+    const z = z5 || ZIP3[zip.slice(0, 3)];
     if (!z) { offMap.push(m); return; }
-    if (!areas.has(z3)) areas.set(z3, { z3, lat: z[0], lng: z[1], city: z[2], state: z[3], guests: 0, meisters: 0 });
-    const a = areas.get(z3); a.guests += m.guest_estimate; a.meisters += 1;
+    const city = z5 ? z5[2] : (String(m.city || "").trim() || z[2]);
+    const key = (city + "|" + z[3]).toLowerCase();
+    if (!areas.has(key)) areas.set(key, { city, state: z[3], latSum: 0, lngSum: 0, zips: new Set(), guests: 0, meisters: 0 });
+    const a = areas.get(key); a.guests += m.guest_estimate; a.meisters += 1; a.latSum += z[0]; a.lngSum += z[1]; a.zips.add(z5 ? zip.slice(0, 5) : zip.slice(0, 3) + "xx");
   });
-  const areaList = [...areas.values()].sort((a, b) => b.guests - a.guests);
+  const areaList = [...areas.values()].map((a) => ({ ...a, lat: a.latSum / a.meisters, lng: a.lngSum / a.meisters, zipList: [...a.zips].sort() })).sort((a, b) => b.guests - a.guests);
 
   // states
   const byState = [...group(list.filter((m) => m._state), (m) => m._state).entries()].map(([st, ms]) => ({ st, name: STATE_NAMES[st] || st, region: REGION_OF[st] || "", ...stats(ms) }))
@@ -93,9 +98,10 @@ export function buildGuestMapReport(meisters, opts = {}) {
   list.forEach((m) => {
     const name = String(m.dealership || "").trim() || `${m.name || "Unnamed"} (no dealership)`;
     const k = name.toLowerCase();
-    if (!dmap.has(k)) dmap.set(k, { name, city: m.city || "", state: m._state, guests: null });
+    const zc = ZIP5[String(m.zip || "").replace(/\D/g, "").slice(0, 5)];
+    if (!dmap.has(k)) dmap.set(k, { name, city: m.city || (zc ? zc[2] : ""), state: m._state, guests: null });
     const d = dmap.get(k);
-    if (!d.city && m.city) d.city = m.city;
+    if (!d.city && (m.city || zc)) d.city = m.city || zc[2];
     if (!d.state && m._state) d.state = m._state;
     if (m.guest_estimate != null) d.guests = (d.guests || 0) + m.guest_estimate;
   });
@@ -126,17 +132,17 @@ export function buildGuestMapReport(meisters, opts = {}) {
     </div>
     <div class="maprow">
       <div class="mapbox"><svg id="map" viewBox="0 0 975 610" preserveAspectRatio="xMidYMin meet"></svg>
-        <div class="legend"><span>State total</span><span class="lo">0</span><i class="ramp"></i><span class="hi">${maxState}</span><span class="dot"></span><span>Bubble = guests in that ZIP area</span></div>
+        <div class="legend"><span>State total</span><span class="lo">0</span><i class="ramp"></i><span class="hi">${maxState}</span><span class="dot"></span><span>Bubble = guests in that city</span></div>
       </div>
       <aside class="side">
-        <h3>Top areas</h3>
+        <h3>Top cities</h3>
         <ol class="areas">${areaList.slice(0, 6).map((a) => `<li><b>${esc(a.city)}, ${esc(a.state)}</b><span>${a.meisters} Meister${a.meisters === 1 ? "" : "s"}</span><em>${a.guests}</em></li>`).join("") || `<li class="none">No ZIP codes yet</li>`}</ol>
         <h3>Quick read</h3>
         <ul class="notes">
           ${topState ? `<li><b>${esc(topState.name)}</b> leads with ${topState.total} guests (${pct(nat.total ? topState.total / nat.total : null)} of all).</li>` : ""}
           ${byRegion.filter((x) => x.r !== "No location").sort((a, b) => b.total - a.total)[0] ? (() => { const t = byRegion.filter((x) => x.r !== "No location").sort((a, b) => b.total - a.total)[0]; return `<li>The <b>${t.r}</b> holds ${pct(t.share)} of guests across ${t.reporting} Meisters.</li>`; })() : ""}
           ${top20share != null ? `<li>The top 20% of Meisters (${topN}) account for <b>${pct(top20share)}</b> of guests.</li>` : ""}
-          ${top5areasShare != null && areaList.length > 5 ? `<li>The top 5 ZIP areas hold <b>${pct(top5areasShare)}</b> of guests.</li>` : ""}
+          ${top5areasShare != null && areaList.length > 5 ? `<li>The top 5 cities hold <b>${pct(top5areasShare)}</b> of guests.</li>` : ""}
           ${nat.meisters - nat.reporting ? `<li><b>${nat.meisters - nat.reporting}</b> Meister${nat.meisters - nat.reporting === 1 ? " has" : "s have"} no guest count yet.</li>` : ""}
           ${offMap.length ? `<li>${offMap.length} Meister${offMap.length === 1 ? "" : "s"} with a count but no valid ZIP ${offMap.length === 1 ? "is" : "are"} not on the map.</li>` : ""}
         </ul>
@@ -170,10 +176,10 @@ export function buildGuestMapReport(meisters, opts = {}) {
           <tbody>${spread.map((x) => `<tr><td><b>${x.r}</b></td>${x.cells.map((c) => `<td><span class="cell" style="--a:${c ? 0.15 + 0.85 * (c / Math.max(1, ...spread.flatMap((y) => y.cells))) : 0}">${c || ""}</span></td>`).join("")}</tr>`).join("")}</tbody>
         </table>
         <p class="mut small">Number of Meisters in each range. Darker means more Meisters.</p>
-        <h2>Top ZIP areas</h2>
+        <h2>Top cities</h2>
         <table class="t compact">
-          <thead><tr><th>Area</th><th>ZIP</th><th>Meisters</th><th>Guests</th></tr></thead>
-          <tbody>${areaList.slice(0, 8).map((a) => `<tr><td><b>${esc(a.city)}, ${esc(a.state)}</b></td><td class="mut">${a.z3}xx</td><td>${a.meisters}</td><td><b>${a.guests}</b></td></tr>`).join("")}</tbody>
+          <thead><tr><th>City</th><th>ZIP</th><th>Meisters</th><th>Guests</th></tr></thead>
+          <tbody>${areaList.slice(0, 8).map((a) => `<tr><td><b>${esc(a.city)}, ${esc(a.state)}</b></td><td class="mut">${esc(a.zipList.slice(0, 3).join(", "))}${a.zipList.length > 3 ? " +" + (a.zipList.length - 3) : ""}</td><td>${a.meisters}</td><td><b>${a.guests}</b></td></tr>`).join("")}</tbody>
         </table>
       </div>
     </div>

@@ -56,9 +56,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610131317";
-import { exportToExcel } from "./export.js?v=202610131317";
-import { wireImport } from "./import-export.js?v=202610131317";
+} from "./api.js?v=202610131335";
+import { exportToExcel } from "./export.js?v=202610131335";
+import { wireImport } from "./import-export.js?v=202610131335";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1486,7 +1486,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202610131317");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202610131335");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
