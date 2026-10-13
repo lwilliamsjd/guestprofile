@@ -1122,7 +1122,7 @@ button.legend-item:hover { color: var(--text); }
 .gs-delivered { color: var(--green); border-color: rgba(61,220,132,0.45); }
 
 /* ---- key facts on the sidebar ---- */
-.key-facts { margin-top: 14px; padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; }
+.key-facts { margin: 14px 0 16px; padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; }
 .key-facts-lbl { display: flex; align-items: center; gap: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--grey-dim); font-weight: 700; margin-bottom: 6px; }
 .key-facts-lbl svg { width: 12px; height: 12px; color: var(--red); }
 .kf { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 3px 0; }
