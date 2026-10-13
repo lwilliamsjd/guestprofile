@@ -1,6 +1,6 @@
 // Meister Guest Map report: a printable two page report (US heat map + breakdown by area)
 // built from the Guest count and ZIP on each Meister profile. No guest names are used.
-import { ZIP3 } from "./zip3.js";
+import { ZIP3 } from "./zip3.js?v=202610131317";
 
 export const REGIONS = {
   Northeast: "CT ME MA NH RI VT NJ NY PA",
