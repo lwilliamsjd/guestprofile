@@ -56,9 +56,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610121702";
-import { exportToExcel } from "./export.js?v=202610121702";
-import { wireImport } from "./import-export.js?v=202610121702";
+} from "./api.js?v=202610131316";
+import { exportToExcel } from "./export.js?v=202610131316";
+import { wireImport } from "./import-export.js?v=202610131316";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1282,17 +1282,14 @@ async function renderAnalyticsPage(route, seq) {
   const gAvg = withCount.length ? gTotal / withCount.length : null;
   const sortedCounts = withCount.map((m) => m.guest_estimate).sort((x, y) => x - y);
   const gMedian = sortedCounts.length ? (sortedCounts.length % 2 ? sortedCounts[(sortedCounts.length - 1) / 2] : (sortedCounts[sortedCounts.length / 2 - 1] + sortedCounts[sortedCounts.length / 2]) / 2) : null;
-  const allocOf = (list) => list.reduce((t, m) => t + (Number(m.allocation_count) || 0), 0);
   const gRegions = ["South", "Northeast", "West", "Midwest", "No state"].map((r) => {
     const all = meisters.filter((m) => regionOf(m) === r), rep = all.filter((m) => m.guest_estimate != null);
-    const total = rep.reduce((t, m) => t + m.guest_estimate, 0), alloc = allocOf(rep.filter((m) => Number(m.allocation_count)));
-    return { key: r, meisters: all.length, reporting: rep.length, total, avg: rep.length ? total / rep.length : null, alloc, items: rep.sort((x, y) => y.guest_estimate - x.guest_estimate) };
+    const total = rep.reduce((t, m) => t + m.guest_estimate, 0);
+    return { key: r, meisters: all.length, reporting: rep.length, total, avg: rep.length ? total / rep.length : null, items: rep.sort((x, y) => y.guest_estimate - x.guest_estimate) };
   }).filter((r) => r.key !== "No state" || r.meisters);
   const gBuckets = [["0", 0, 0], ["1 to 5", 1, 5], ["6 to 10", 6, 10], ["11 to 20", 11, 20], ["21+", 21, Infinity]]
     .map(([label, lo, hi], i) => ({ key: "b" + i, label, items: withCount.filter((m) => m.guest_estimate >= lo && m.guest_estimate <= hi).sort((x, y) => y.guest_estimate - x.guest_estimate) }));
   const gTop = withCount.slice().sort((x, y) => y.guest_estimate - x.guest_estimate).slice(0, 5);
-  const withAlloc = withCount.filter((m) => Number(m.allocation_count));
-  const demandRatio = withAlloc.length ? withAlloc.reduce((t, m) => t + m.guest_estimate, 0) / allocOf(withAlloc) : null;
   const fmt1 = (n) => (n == null ? "—" : (Math.round(n * 10) / 10).toLocaleString());
 
   // ---- follow-up counters ----
@@ -1429,23 +1426,21 @@ async function renderAnalyticsPage(route, seq) {
       </div>
 
       <div class="card ana-span-12">
-        <div class="card-head"><h3>${I.users || ""} Meister guest counts</h3><span class="muted">from the Guest count on each Meister profile · ${withCount.length} of ${meisters.length} Meisters entered</span></div>
+        <div class="card-head"><h3>${I.users || ""} Meister guest counts</h3><span class="gc-head-r"><span class="muted">from the Guest count on each Meister profile · ${withCount.length} of ${meisters.length} Meisters entered</span>${meisters.length ? `<button class="btn btn-sm" id="gc-map-btn" type="button">${I.download || ""} Map report (PDF)</button>` : ""}</span></div>
         ${withCount.length ? `
         <div class="gc-kpis">
           <div class="veh-kpi"><b>${gTotal.toLocaleString()}</b><span>Total guests</span></div>
           <div class="veh-kpi"><b>${fmt1(gAvg)}</b><span>Average per Meister</span></div>
           <div class="veh-kpi"><b>${fmt1(gMedian)}</b><span>Median (typical Meister)</span></div>
-          <div class="veh-kpi"><b>${demandRatio == null ? "—" : fmt1(demandRatio) + "<small> : 1</small>"}</b><span>Guests per allocation</span></div>
           <button class="veh-kpi drill" data-drill="gmissing:1"><b>${meisters.length - withCount.length}</b><span>Meisters not entered yet</span></button>
         </div>
         <div class="gc-grid">
           <div>
             <div class="gc-sub">By region</div>
             <table class="gc-table">
-              <thead><tr><th>Region</th><th>Meisters</th><th>Guests</th><th>Avg</th><th>Per alloc.</th><th></th></tr></thead>
+              <thead><tr><th>Region</th><th>Meisters</th><th>Guests</th><th>Avg</th><th></th></tr></thead>
               <tbody>${gRegions.map((r) => `<tr class="drill" data-drill="gregion:${escapeAttr(r.key)}">
                 <td><b>${escapeHtml(r.key)}</b></td><td>${r.reporting}<span class="muted"> / ${r.meisters}</span></td><td>${r.total.toLocaleString()}</td><td>${fmt1(r.avg)}</td>
-                <td>${r.alloc ? fmt1(r.items.filter((m) => Number(m.allocation_count)).reduce((t, m) => t + m.guest_estimate, 0) / r.alloc) : "—"}</td>
                 <td class="gc-bar"><span style="width:${gTotal ? (r.total / Math.max(...gRegions.map((x) => x.total), 1)) * 100 : 0}%"></span></td></tr>`).join("")}</tbody>
             </table>
           </div>
@@ -1486,6 +1481,18 @@ async function renderAnalyticsPage(route, seq) {
   document.getElementById("ana-to")?.addEventListener("change", (e) => { anaState.to = e.target.value; render(); });
   document.getElementById("ana-concierge").addEventListener("change", (e) => { anaState.concierge = e.target.value; anaState.drill = null; render(); });
   document.getElementById("ana-compare")?.addEventListener("change", (e) => { anaState.compare = e.target.checked; render(); });
+  document.getElementById("gc-map-btn")?.addEventListener("click", async () => {
+    const win = window.open("", "_blank");
+    if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
+    win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
+    try {
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202610131316");
+      const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      win.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err) { win.close(); toast("Map report failed: " + err.message, "error"); }
+  });
   document.getElementById("ana-print-btn").addEventListener("click", () => { anaState.drill = null; document.getElementById("drawer-root")?.replaceChildren(); window.print(); });
   saveState("ana", { ...anaState, drill: null });
   document.getElementById("ana-export-btn").addEventListener("click", async (e) => {

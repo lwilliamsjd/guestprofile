@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202610121702";
+import { supabase } from "./supabase-client.js?v=202610131316";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -93,7 +93,7 @@ export async function fetchAnalyticsData() {
       .from("interactions")
       .select("id, meister_id, method, direction, note, category_id, occurred_at, created_by, created_by_name, meisters!inner(name, concierge, dealership, status, deleted_at)"))
       .order("occurred_at", { ascending: false }),
-    supabase.from("meisters").select("id, name, dealership, job_title, status, concierge, state, guest_estimate, allocation_count, created_at, updated_at").is("deleted_at", null).order("name"),
+    supabase.from("meisters").select("id, name, dealership, job_title, status, concierge, city, state, zip, guest_estimate, allocation_count, created_at, updated_at").is("deleted_at", null).order("name"),
     live(supabase.from("guests").select("*, meisters!inner(name, concierge, deleted_at)")).order("purchase_date", { ascending: false, nullsFirst: false }),
     live(supabase.from("follow_ups").select("*, meisters!inner(name, concierge, deleted_at)")).is("done_at", null).order("due_at", { ascending: true }),
     supabase.from("profiles").select("id, full_name, concierge"),
