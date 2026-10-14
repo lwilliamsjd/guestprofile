@@ -74,7 +74,7 @@ create table if not exists applicants (
   what_drives_you text,
 
   -- CAR PROFILE
-  -- garage: [{ "vehicle": "2024 GR Supra", "usage": ["Street","Track Only"], "miles": 4000 }]
+  -- garage: [{ "vehicle": "2024 GR Supra", "usage": ["Track","Events"], "miles": 4000 }]
   garage jsonb not null default '[]'::jsonb,
   lfa_owner boolean not null default false,
   previous_toyota_lexus text,

@@ -4,14 +4,14 @@ import {
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
-} from "./api.js?v=202610131614";
+} from "./api.js?v=202610141418";
 import {
-  USAGE_OPTIONS, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
+  USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202610131614";
-import { SUPABASE_URL } from "./config.js?v=202610131614";
+} from "./outputs.js?v=202610141418";
+import { SUPABASE_URL } from "./config.js?v=202610141418";
 
 const app = document.getElementById("app");
 
@@ -153,7 +153,7 @@ function diffFields(before, after) {
     const b = before[k] ?? null, a = after[k] ?? null;
     const norm = (x) => {
       if (BOOL_FIELDS.includes(k)) return JSON.stringify(!!x);
-      if (k === "garage" && Array.isArray(x)) x = x.filter((g) => g.vehicle).map((g) => ({ v: (g.vehicle || "").trim(), u: g.usage || [], m: Number(g.miles) || null, a: String(g.acquired || "") || null, n: (g.use_note || "").trim() || null }));
+      if (k === "garage" && Array.isArray(x)) x = x.filter((g) => g.vehicle).map((g) => ({ v: (g.vehicle || "").trim(), u: normUsage(g.usage), m: Number(g.miles) || null, a: String(g.acquired || "") || null, n: (g.use_note || "").trim() || null }));
       if (k === "usage_split" && x && typeof x === "object" && !USAGE_SPLIT.some(([s]) => Number(x[s]))) x = null;
       if (NUM_FIELDS.includes(k)) x = x === "" || x == null ? null : Number(x);
       return JSON.stringify(x === "" ? null : Array.isArray(x) && !x.length ? null : x);
@@ -620,6 +620,7 @@ async function renderEditor(route, seq) {
     : record ? JSON.parse(JSON.stringify(record)) : blankApplicant();
   if (!Array.isArray(a.garage) || !a.garage.length) a.garage = [blankCar()];
   a.garage.forEach((g) => {
+    g.usage = normUsage(g.usage);
     if (g.vehicle && !g.model && !g.year) {
       const p = splitVehicle(g.vehicle);
       g.year = p.year; g.model = p.model; g.make = g.make || p.make;

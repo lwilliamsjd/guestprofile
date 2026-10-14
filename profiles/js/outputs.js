@@ -1,9 +1,13 @@
-import { GRGT_LOGO } from "./logo.js?v=202610131614";
+import { GRGT_LOGO } from "./logo.js?v=202610141418";
 // Outputs for an applicant:
 //  1) a plain text summary to paste into the other internal tool
 //  2) the two page Buyer Profile PDF (built as HTML, printed to PDF)
 
-export const USAGE_OPTIONS = ["Private Collection", "Public Collection", "Street", "Track Only", "Daily"];
+export const USAGE_OPTIONS = ["Private Collection", "Public Collection", "Track", "Events", "Daily"];
+// Older profiles saved "Track Only" and "Street". Track Only is now Track; Street is dropped (street driving is assumed).
+const OLD_USAGE = { "Track Only": "Track", Street: null };
+export const normUsage = (list) => [...new Set((Array.isArray(list) ? list : []).map((u) => (Object.hasOwn(OLD_USAGE, u) ? OLD_USAGE[u] : u)).filter(Boolean))]
+  .sort((x, y) => USAGE_OPTIONS.indexOf(x) - USAGE_OPTIONS.indexOf(y));
 export const HPDE_LEVELS = ["None", "Beginner", "Intermediate", "Advanced", "Instructor"];
 export const RACE_LEVELS = ["None", "Autocross / Time Attack", "Club Racer", "Pro Am", "Pro"];
 export const LFA_STATUSES = ["Owned", "Driven", "Inquired", "None"];
@@ -64,7 +68,7 @@ export function initials(name) {
 }
 
 export function garageOf(a) {
-  return (Array.isArray(a.garage) ? a.garage : []).filter((g) => has(g.vehicle));
+  return (Array.isArray(a.garage) ? a.garage : []).filter((g) => has(g.vehicle)).map((g) => ({ ...g, usage: normUsage(g.usage) }));
 }
 export function totalMiles(a) {
   return garageOf(a).reduce((sum, g) => sum + (Number(g.miles) || 0), 0);
@@ -306,7 +310,7 @@ function compactText(a) {
 // printing; it is never saved anywhere.
 // ---------------------------------------------------------------
 const USE_TAG = {
-  "Track Only": ["TRACK ONLY", "t-red"], Street: ["STREET", "t-black"], Daily: ["DAILY", "t-outline"],
+  Track: ["TRACK", "t-red"], Events: ["EVENTS", "t-black"], Daily: ["DAILY", "t-outline"],
   "Private Collection": ["PRIVATE COLL.", "t-grey"], "Public Collection": ["PUBLIC COLL.", "t-outline-grey"],
 };
 const SPLIT_COLORS = { track: "#eb0a1e", street: "#111", events: "#5c5c64", collection: "#c4c4ca" };
