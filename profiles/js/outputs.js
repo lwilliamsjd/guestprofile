@@ -1,4 +1,4 @@
-import { GRGT_LOGO } from "./logo.js?v=202610141418";
+import { GRGT_LOGO } from "./logo.js?v=202610141436";
 // Outputs for an applicant:
 //  1) a plain text summary to paste into the other internal tool
 //  2) the two page Buyer Profile PDF (built as HTML, printed to PDF)
@@ -309,6 +309,7 @@ function compactText(a) {
 // from the Outputs page. The photo is passed in only for display and
 // printing; it is never saved anywhere.
 // ---------------------------------------------------------------
+const GL_CARS = 9; // cars listed in the page 1 garage box before "+N more on page 2"
 const USE_TAG = {
   Track: ["TRACK", "t-red"], Events: ["EVENTS", "t-black"], Daily: ["DAILY", "t-outline"],
   "Private Collection": ["PRIVATE COLL.", "t-grey"], "Public Collection": ["PUBLIC COLL.", "t-outline-grey"],
@@ -432,7 +433,7 @@ export function buildPersonaHtml(a, opts = {}) {
     <div class="glance">
       <div class="gl">
         <label>CURRENT GARAGE${g.length ? ` · ${g.length}` : ""}</label>
-        <div class="fit" data-fit="At a glance: current garage">${g.length ? `<ul class="gl-cars">${g.slice(0, 4).map((v) => `<li>${e(v.vehicle)}</li>`).join("")}</ul>${g.length > 4 ? `<div class="gl-more">+${g.length - 4} MORE ON PAGE 2</div>` : ""}` : none()}</div>
+        <div class="fit" data-fit="At a glance: current garage">${g.length ? `<ul class="gl-cars">${g.slice(0, GL_CARS).map((v) => `<li>${e(v.vehicle)}</li>`).join("")}</ul>${g.length > GL_CARS ? `<div class="gl-more">+${g.length - GL_CARS} MORE ON PAGE 2</div>` : ""}` : none()}</div>
       </div>
       <div class="gl">
         <label>TIMING &amp; USE</label>
@@ -687,7 +688,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .gl:last-child { border-right: none; }
 .gl label { font: 700 9px "Barlow Condensed"; letter-spacing: .16em; color: #eb0a1e; margin-bottom: 5px; display: block; }
 .gl .fit { flex: 1; min-height: 0; }
-.gl-cars li { font-size: 10.5px; font-weight: 700; line-height: 1.3; padding: 2px 0; border-bottom: 1px solid #e2e2e6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gl-cars li { font-size: 10.5px; font-weight: 700; line-height: 1.25; padding: 1px 0; border-bottom: 1px solid #e2e2e6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gl-cars li:last-child { border-bottom: none; }
 .gl-more { font: 700 8px "Barlow Condensed"; letter-spacing: .12em; color: #6b6b73; margin-top: 2px; }
 .gl-specs { display: grid; grid-template-columns: max-content 1fr; gap: 1px 10px; align-items: baseline; }
