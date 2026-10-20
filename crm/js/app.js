@@ -56,9 +56,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610141436";
-import { exportToExcel } from "./export.js?v=202610141436";
-import { wireImport } from "./import-export.js?v=202610141436";
+} from "./api.js?v=202610201542";
+import { exportToExcel } from "./export.js?v=202610201542";
+import { wireImport } from "./import-export.js?v=202610201542";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -76,6 +76,7 @@ const STATUSES = ["New", "Contacted"];
 const LEGACY_STATUSES = ["Engaged", "Sold", "Not Interested"];
 const ALL_STATUSES = [...STATUSES, ...LEGACY_STATUSES];
 const CONCIERGES = ["Freddie", "Logan"];
+const ASSIGNEES = ["Logan", "Freddie", "Rob"]; // who a follow-up can be assigned to
 const METHODS = ["Phone", "Text", "Email", "In Person", "Other"];
 const DIRECTIONS = ["Outbound", "Inbound"];
 const GUEST_STATUSES = ["Allocated", "Ordered", "Delivered"];
@@ -366,7 +367,7 @@ async function render() {
 
   if (currentProfile) {
     [myDueCount, myUnread, categories] = await Promise.all([
-      countMyDueFollowUps(currentProfile.id),
+      countMyDueFollowUps(currentProfile.id, myAssignee()),
       listUnreadNotifications(currentProfile.id),
       listCategories().catch(() => categories),
     ]);
@@ -489,7 +490,7 @@ function isStale(m) {
 async function renderDashboard(route, seq) {
   let meisters, rollups, myFus;
   try {
-    [meisters, rollups, myFus] = await Promise.all([listMeisters(), listMeisterRollups(currentProfile.id), listMyFollowUps(currentProfile.id).catch(() => [])]);
+    [meisters, rollups, myFus] = await Promise.all([listMeisters(), listMeisterRollups(currentProfile.id, myAssignee()), listMyFollowUps(currentProfile.id, myAssignee()).catch(() => [])]);
   } catch (err) {
     paint(route, seq, (c) => (c.innerHTML = `<div class="empty-state">Couldn't load meisters: ${escapeHtml(err.message)}</div>`));
     return;
@@ -872,7 +873,7 @@ async function renderActivity(route, seq) {
 async function renderFollowUpsPage(route, seq) {
   let all;
   try {
-    all = await listMyFollowUps(currentProfile.id);
+    all = await listMyFollowUps(currentProfile.id, myAssignee());
   } catch (err) {
     paint(route, seq, (c) => (c.innerHTML = `<div class="empty-state">Couldn't load follow-ups: ${escapeHtml(err.message)}</div>`));
     return;
@@ -898,7 +899,7 @@ async function renderFollowUpsPage(route, seq) {
             .map(
               ([label, items]) => `
           <div class="group-label ${label === "Overdue" ? "fu-overdue" : ""}">${escapeHtml(label)}</div>
-          <div class="fu-list">${items.map((f) => (fuPageState.editingId === f.id ? fuFormHtml(f, f.meisters?.name) : fuRowHtml(f, f.meisters?.name, true))).join("")}</div>`
+          <div class="fu-list">${items.map((f) => (fuPageState.editingId === f.id ? fuFormHtml(f, f.meisters?.name, f.meisters?.concierge) : fuRowHtml(f, f.meisters?.name, true))).join("")}</div>`
             )
             .join("")
         : `<div class="empty-state">Nothing pending. Set a follow-up when you log an activity on a Meister, or from their Activity tab.</div>`
@@ -936,8 +937,29 @@ function fuGroupLabel(iso) {
 }
 
 // ---------- follow-up rows/forms (shared by Follow-Ups page and Meister page) ----------
+function myAssignee() {
+  if (ASSIGNEES.includes(currentProfile?.concierge)) return currentProfile.concierge;
+  const first = String(currentProfile?.full_name || "").trim().split(/\s+/)[0] || "";
+  return ASSIGNEES.find((a) => a.toLowerCase() === first.toLowerCase()) || null;
+}
+function fuOwner(f) {
+  return f.assigned_to || ASSIGNEES.find((a) => String(f.user_name || "").toLowerCase().startsWith(a.toLowerCase())) || f.user_name || "";
+}
+function isMyFu(f) {
+  return f.assigned_to ? f.assigned_to === myAssignee() : f.user_id === currentProfile.id;
+}
 function canManageFu(f) {
-  return f.user_id === currentProfile.id || isAdmin();
+  return f.user_id === currentProfile.id || isAdmin() || (!!f.assigned_to && f.assigned_to === myAssignee());
+}
+function assignSelectHtml(id, selected, autoName) {
+  return `<select id="${id}" data-draft class="fu-assign" title="Assign to">
+    <option value="">Auto: ${escapeHtml(autoName || "Me")}</option>
+    ${ASSIGNEES.map((a) => `<option value="${a}" ${selected === a ? "selected" : ""}>${a}</option>`).join("")}
+  </select>`;
+}
+// Blank = the Meister's concierge; if the Meister has none, whoever is creating it.
+function resolveAssignee(picked, meisterConcierge, fallback) {
+  return picked || (ASSIGNEES.includes(meisterConcierge) ? meisterConcierge : null) || fallback || myAssignee();
 }
 
 function fuRowHtml(f, meisterName, showMeister) {
@@ -951,7 +973,7 @@ function fuRowHtml(f, meisterName, showMeister) {
         <div class="fu-meta">
           <span class="fu-chip fu-${st}">${I.calendar} ${f.done_at ? "Done " + fmtDateTime(f.done_at) : fmtDateTime(f.due_at)}</span>
           ${showMeister && meisterName ? `<a href="#/meister/${f.meister_id}" class="fu-meister">${escapeHtml(meisterName)}</a>` : ""}
-          ${!showMeister || f.user_id !== currentProfile.id ? `<span class="muted">${escapeHtml(f.user_name || "")}</span>` : ""}
+          ${!showMeister || !isMyFu(f) ? `<span class="muted fu-owner" title="Assigned to">→ ${escapeHtml(fuOwner(f))}</span>` : ""}
         </div>
       </div>
       <div class="fu-actions">
@@ -964,15 +986,17 @@ function fuRowHtml(f, meisterName, showMeister) {
     </div>`;
 }
 
-function fuFormHtml(existing, meisterName) {
+function fuFormHtml(existing, meisterName, meisterConcierge) {
   const p = existing ? `fue-${existing.id}-` : "fu-";
   const title = dv(`${p}title`, existing ? existing.title : "");
   const when = dv(`${p}when`, toLocalInput(existing ? existing.due_at : defaultFollowUpTime()));
+  const assign = dv(`${p}assign`, existing ? existing.assigned_to || "" : "");
   return `
-    <form class="composer fu-form" data-prefix="${p}" data-edit-id="${existing ? existing.id : ""}">
+    <form class="composer fu-form" data-prefix="${p}" data-edit-id="${existing ? existing.id : ""}" data-auto="${escapeAttr(meisterConcierge || "")}" data-prev="${escapeAttr(existing?.assigned_to || "")}">
       <div class="fu-form-grid">
         <input id="${p}title" data-draft placeholder="Follow-up title, e.g. Call about allocation" value="${escapeAttr(title)}" required />
         <input id="${p}when" data-draft type="datetime-local" value="${escapeAttr(when)}" required />
+        ${assignSelectHtml(`${p}assign`, assign, meisterConcierge)}
       </div>
       ${meisterName ? `<div class="muted" style="margin-top:6px">For ${escapeHtml(meisterName)}</div>` : ""}
       <div class="composer-actions">
@@ -1037,16 +1061,17 @@ function wireFollowUpControls(container, { onEdit, onCancel, afterSave, meisterI
       e.preventDefault();
       const title = document.getElementById(`${prefix}title`).value.trim();
       const due_at = fromLocalInput(document.getElementById(`${prefix}when`).value);
+      const assigned_to = resolveAssignee(document.getElementById(`${prefix}assign`)?.value, form.dataset.auto, form.dataset.prev);
       if (!title || !due_at) return;
       const btn = form.querySelector("button[type=submit]");
       btn.disabled = true;
       try {
         if (editId) {
-          await updateFollowUp(editId, { title, due_at });
+          await updateFollowUp(editId, assigned_to ? { title, due_at, assigned_to } : { title, due_at });
           toast("Follow-up updated");
         } else {
-          await addFollowUp({ meister_id: meisterId, title, due_at }, currentProfile.full_name, currentProfile.id);
-          toast("Follow-up set");
+          await addFollowUp({ meister_id: meisterId, title, due_at, assigned_to }, currentProfile.full_name, currentProfile.id);
+          toast(assigned_to && assigned_to !== myAssignee() ? `Follow-up set for ${assigned_to}` : "Follow-up set");
         }
         clearDrafts(prefix);
         afterSave(editId);
@@ -1468,7 +1493,7 @@ async function renderAnalyticsPage(route, seq) {
             <button class="fu-counter drill ${b.key === "overdue" && b.items.length ? "alert" : ""}" data-drill="fu:${b.key}">
               <span class="kpi-num">${b.items.length}</span>
               <span class="kpi-label">${b.label}</span>
-              <span class="fu-counter-sub muted">${CONCIERGES.map((c) => `${c} ${b.items.filter((f) => f.user_name && f.user_name.toLowerCase().startsWith(c.toLowerCase())).length}`).join(" · ")}</span>
+              <span class="fu-counter-sub muted">${ASSIGNEES.map((c) => `${c} ${b.items.filter((f) => fuOwner(f) === c).length}`).join(" · ")}</span>
             </button>`).join("")}
         </div>
       </div>
@@ -1486,7 +1511,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202610141436");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202610201542");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -1552,7 +1577,7 @@ function drillContent(key, ctx) {
   const fuList = (rows, title) => ({
     title, sub: `${rows.length} pending`,
     html: rows.length ? `<div class="fu-list">${rows.map((f) => fuRowHtml(f, f.meisters?.name, true)).join("")}</div>` : `<div class="empty-state">Nothing here.</div>`,
-    csv: { name: slug(title) + ".csv", rows: rows.map((f) => ({ Title: f.title, Meister: f.meisters?.name || "", Due: fmtDateTime(f.due_at), Owner: f.user_name || "" })) },
+    csv: { name: slug(title) + ".csv", rows: rows.map((f) => ({ Title: f.title, Meister: f.meisters?.name || "", Due: fmtDateTime(f.due_at), "Assigned To": fuOwner(f) })) },
   });
 
   switch (kind) {
@@ -1938,7 +1963,7 @@ async function renderNotificationsPage(route, seq) {
               .map(
                 (n) => `
               <a href="#/meister/${n.meister_id}" class="notif ${n.read_at ? "" : "unread"}" data-id="${n.id}">
-                <span class="notif-ic ${n.kind === "mention" ? "mention" : ""}">${n.kind === "comment" ? I.reply : n.kind === "mention" ? "@" : I.note}</span>
+                <span class="notif-ic ${n.kind === "mention" ? "mention" : ""}">${n.kind === "comment" ? I.reply : n.kind === "mention" ? "@" : n.kind === "assigned" ? I.calendar : I.note}</span>
                 <span class="notif-body">
                   <span class="notif-msg">${escapeHtml(n.message)}</span>
                   <span class="muted">${escapeHtml(n.meisters?.name || "")} · ${fmtTime(n.created_at)}</span>
@@ -2230,7 +2255,7 @@ function wireCategoryManager(container) {
 async function renderDealershipsPage(route, seq) {
   let meisters, rollups;
   try {
-    [meisters, rollups] = await Promise.all([listMeisters(), listMeisterRollups(currentProfile.id)]);
+    [meisters, rollups] = await Promise.all([listMeisters(), listMeisterRollups(currentProfile.id, myAssignee())]);
   } catch (err) {
     paint(route, seq, (c) => (c.innerHTML = `<div class="empty-state">Couldn't load dealerships: ${escapeHtml(err.message)}</div>`));
     return;
@@ -2794,7 +2819,7 @@ function renderProfileSidebar(m, followUps, guests = []) {
   const nextDel = nextGuestDelivery(guests);
   const cityLine = [m.city, [m.state, m.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const role = [m.job_title, m.dealership].filter(Boolean).join(" · ");
-  const mine = followUps.filter((f) => f.user_id === currentProfile.id && !f.done_at).sort((a, b) => (a.due_at < b.due_at ? -1 : 1))[0];
+  const mine = followUps.filter((f) => isMyFu(f) && !f.done_at).sort((a, b) => (a.due_at < b.due_at ? -1 : 1))[0];
   return `
     <div class="card profile-sidebar">
       <div class="avatar">${initials(m.name)}</div>
@@ -2876,14 +2901,14 @@ function renderActivityTab(meister, interactions, followUps, comments, history =
         </div>
       </div>
 
-      ${uiState.fuFormOpen && !uiState.editingFuId ? fuFormHtml(null, meister.name) : ""}
-      ${uiState.composerOpen ? composerHtml() : ""}
+      ${uiState.fuFormOpen && !uiState.editingFuId ? fuFormHtml(null, meister.name, meister.concierge) : ""}
+      ${uiState.composerOpen ? composerHtml(meister) : ""}
 
       ${
         pendingFus.length
           ? `<div class="fu-panel">
               <div class="group-label" style="margin-top:0">Pending follow-ups</div>
-              <div class="fu-list">${pendingFus.map((f) => (uiState.editingFuId === f.id ? fuFormHtml(f, meister.name) : fuRowHtml(f, meister.name, false))).join("")}</div>
+              <div class="fu-list">${pendingFus.map((f) => (uiState.editingFuId === f.id ? fuFormHtml(f, meister.name, meister.concierge) : fuRowHtml(f, meister.name, false))).join("")}</div>
             </div>`
           : ""
       }
@@ -3089,7 +3114,7 @@ function commentFormHtml(noteId, existing) {
     </form>`;
 }
 
-function composerHtml() {
+function composerHtml(meister) {
   const p = "c-";
   const method = dv(`${p}method`, uiState.composerMethod);
   const when = dv(`${p}when`, toLocalInput(new Date().toISOString()));
@@ -3114,6 +3139,7 @@ function composerHtml() {
           ? `<div class="fu-form-grid" style="margin-top:8px">
               <input id="c-fu-title" data-draft placeholder="Follow-up title" value="${escapeAttr(dv("c-fu-title", ""))}" />
               <input id="c-fu-when" data-draft type="datetime-local" value="${escapeAttr(dv("c-fu-when", toLocalInput(defaultFollowUpTime())))}" />
+              ${assignSelectHtml("c-fu-assign", dv("c-fu-assign", ""), meister.concierge)}
             </div>`
           : ""
       }
@@ -3187,7 +3213,7 @@ function wireActivityTab(container, meister) {
         const title = document.getElementById("c-fu-title")?.value.trim();
         const due_at = fromLocalInput(document.getElementById("c-fu-when")?.value);
         if (!title || !due_at) return toast("Give the follow-up a title and a time, or untick it.", "error");
-        fu = { title, due_at };
+        fu = { title, due_at, assigned_to: resolveAssignee(document.getElementById("c-fu-assign")?.value, meister.concierge) };
       }
 
       const btn = form.querySelector("button[type=submit]");
@@ -3197,7 +3223,7 @@ function wireActivityTab(container, meister) {
         if (fu) await addFollowUp({ meister_id: meister.id, interaction_id: created.id, ...fu }, currentProfile.full_name, currentProfile.id);
         uiState.composerOpen = false;
         uiState.composerWithFollowUp = false;
-        toast(`${payload.method === "Other" ? "Note" : payload.method} logged${fu ? " + follow-up set" : ""}`);
+        toast(`${payload.method === "Other" ? "Note" : payload.method} logged${fu ? ` + follow-up set${fu.assigned_to && fu.assigned_to !== myAssignee() ? " for " + fu.assigned_to : ""}` : ""}`);
         clearDrafts(prefix);
         clearDrafts("c-fu-");
         render();

@@ -352,7 +352,7 @@ create table if not exists notifications (
 create index if not exists notifications_user_idx on notifications (user_id, read_at, created_at desc);
 
 alter table notifications drop constraint if exists notifications_kind_check;
-alter table notifications add constraint notifications_kind_check check (kind in ('comment','activity','mention'));
+alter table notifications add constraint notifications_kind_check check (kind in ('comment','activity','mention','assigned'));
 
 create or replace function public.notify_concierge()
 returns trigger
@@ -574,3 +574,64 @@ exception when duplicate_object then null; end $$;
 
 -- How many potential buyers (guests) each Meister has for the GR GT. A number only, no names.
 alter table meisters add column if not exists guest_estimate int check (guest_estimate is null or guest_estimate >= 0);
+
+-- ============================================================
+-- FOLLOW-UP ASSIGNMENT (Oct 2026)
+-- A follow-up can be assigned to Logan, Freddie or Rob. Left blank in the
+-- form, it goes to the Meister's concierge. The assignee can complete,
+-- snooze, edit and delete it, and gets a bell notification when someone
+-- else assigns it to them. Safe to run more than once.
+-- ============================================================
+alter table follow_ups add column if not exists assigned_to text;
+alter table follow_ups drop constraint if exists follow_ups_assigned_to_check;
+alter table follow_ups add constraint follow_ups_assigned_to_check check (assigned_to is null or assigned_to in ('Logan','Freddie','Rob'));
+create index if not exists follow_ups_assigned_idx on follow_ups (assigned_to, due_at);
+
+-- Rob can be linked to a login the same way as Logan and Freddie.
+alter table profiles drop constraint if exists profiles_concierge_check;
+alter table profiles add constraint profiles_concierge_check check (concierge is null or concierge in ('Freddie','Logan','Rob'));
+
+-- Existing follow-ups stay with whoever created them.
+update follow_ups f set assigned_to = p.concierge
+  from profiles p where p.id = f.user_id and f.assigned_to is null and p.concierge is not null;
+
+create or replace function public.my_concierge()
+returns text language sql stable security definer set search_path = public
+as $$ select concierge from profiles where id = auth.uid() $$;
+
+drop policy if exists "follow_ups_update" on follow_ups;
+drop policy if exists "follow_ups_delete" on follow_ups;
+create policy "follow_ups_update" on follow_ups for update
+  using (user_id = auth.uid() or public.is_admin() or (assigned_to is not null and assigned_to = public.my_concierge()))
+  with check (auth.role() = 'authenticated'); -- whoever can edit it can also hand it to someone else
+create policy "follow_ups_delete" on follow_ups for delete
+  using (user_id = auth.uid() or public.is_admin() or (assigned_to is not null and assigned_to = public.my_concierge()));
+
+alter table notifications drop constraint if exists notifications_kind_check;
+alter table notifications add constraint notifications_kind_check check (kind in ('comment','activity','mention','assigned'));
+
+create or replace function public.notify_follow_up_assignee()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+declare
+  target uuid;
+  actor uuid := auth.uid();
+  actor_name text;
+  m_name text;
+begin
+  if new.assigned_to is null or new.done_at is not null then return new; end if;
+  if tg_op = 'UPDATE' and old.assigned_to is not distinct from new.assigned_to then return new; end if;
+  select id into target from profiles where concierge = new.assigned_to limit 1;
+  if target is null or target = coalesce(actor, new.user_id) then return new; end if;
+  select full_name into actor_name from profiles where id = coalesce(actor, new.user_id);
+  select name into m_name from meisters where id = new.meister_id;
+  insert into notifications (user_id, actor_id, actor_name, kind, meister_id, message)
+  values (target, coalesce(actor, new.user_id), actor_name, 'assigned', new.meister_id,
+          coalesce(actor_name, 'Someone') || ' assigned you a follow-up for ' || coalesce(m_name, 'a Meister') || ': ' || left(new.title, 120));
+  return new;
+end;
+$$;
+
+drop trigger if exists notify_on_follow_up_assign on follow_ups;
+create trigger notify_on_follow_up_assign after insert or update of assigned_to on follow_ups
+  for each row execute procedure public.notify_follow_up_assignee();

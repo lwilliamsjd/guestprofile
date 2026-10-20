@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202610141436";
+import { supabase } from "./supabase-client.js?v=202610201542";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -204,11 +204,11 @@ export async function markExported() {
 
 // Lightweight per-meister rollups for the dashboard (last contact, counts,
 // and the signed-in user's own next pending follow-up).
-export async function listMeisterRollups(userId) {
+export async function listMeisterRollups(userId, name = null) {
   const [ints, gs, fus] = await Promise.all([
     supabase.from("interactions").select("meister_id, occurred_at"),
     supabase.from("guests").select("meister_id"),
-    supabase.from("follow_ups").select("id, meister_id, title, due_at").eq("user_id", userId).is("done_at", null),
+    withFallback((n) => mineFilter(supabase.from("follow_ups").select("id, meister_id, title, due_at"), userId, n).is("done_at", null), userId, name),
   ]);
   if (ints.error) throw ints.error;
   if (gs.error) throw gs.error;
@@ -230,6 +230,16 @@ export async function listMeisterRollups(userId) {
 }
 
 // ---------- follow-ups ----------
+// "Mine" = assigned to my concierge name, or (older rows with no assignee) created by me.
+// If the assigned_to column isn't there yet (SQL not run), fall back to creator only.
+function mineFilter(q, userId, name) {
+  return name ? q.or(`assigned_to.eq.${name},and(assigned_to.is.null,user_id.eq.${userId})`) : q.eq("user_id", userId);
+}
+async function withFallback(build, userId, name) {
+  let res = await build(name);
+  if (res.error && name && /assigned_to/.test(res.error.message || "")) res = await build(null);
+  return res;
+}
 export async function listFollowUpsForMeister(meisterId) {
   const { data, error } = await supabase
     .from("follow_ups")
@@ -240,13 +250,12 @@ export async function listFollowUpsForMeister(meisterId) {
   return data;
 }
 
-export async function listMyFollowUps(userId) {
-  const { data, error } = await supabase
+export async function listMyFollowUps(userId, name = null) {
+  const { data, error } = await withFallback((n) => mineFilter(supabase
     .from("follow_ups")
-    .select("*, meisters!inner(name, deleted_at)")
-    .is("meisters.deleted_at", null)
-    .eq("user_id", userId)
-    .order("due_at", { ascending: true });
+    .select("*, meisters!inner(name, concierge, deleted_at)")
+    .is("meisters.deleted_at", null), userId, n)
+    .order("due_at", { ascending: true }), userId, name);
   if (error) throw error;
   return data;
 }
@@ -263,32 +272,37 @@ export async function listRecentDoneFollowUps(limit = 300) {
   return data;
 }
 
-export async function countMyDueFollowUps(userId) {
+export async function countMyDueFollowUps(userId, name = null) {
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
-  const { count, error } = await supabase
+  const { count, error } = await withFallback((n) => mineFilter(supabase
     .from("follow_ups")
     .select("id, meisters!inner(deleted_at)", { count: "exact", head: true })
-    .is("meisters.deleted_at", null)
-    .eq("user_id", userId)
+    .is("meisters.deleted_at", null), userId, n)
     .is("done_at", null)
-    .lte("due_at", endOfToday.toISOString());
+    .lte("due_at", endOfToday.toISOString()), userId, name);
   if (error) return 0;
   return count || 0;
 }
 
-export async function addFollowUp({ meister_id, interaction_id = null, title, due_at }, userName, userId) {
-  const { data, error } = await supabase
-    .from("follow_ups")
-    .insert([{ meister_id, interaction_id, title, due_at, user_id: userId, user_name: userName }])
-    .select()
-    .single();
+export async function addFollowUp({ meister_id, interaction_id = null, title, due_at, assigned_to = null }, userName, userId) {
+  const row = { meister_id, interaction_id, title, due_at, user_id: userId, user_name: userName };
+  if (assigned_to) row.assigned_to = assigned_to;
+  let { data, error } = await supabase.from("follow_ups").insert([row]).select().single();
+  if (error && row.assigned_to && /assigned_to/.test(error.message || "")) {
+    delete row.assigned_to; // column not added yet: save without the assignee rather than fail
+    ({ data, error } = await supabase.from("follow_ups").insert([row]).select().single());
+  }
   if (error) throw error;
   return data;
 }
 
 export async function updateFollowUp(id, fields) {
-  const { data, error } = await supabase.from("follow_ups").update(fields).eq("id", id).select().single();
+  let { data, error } = await supabase.from("follow_ups").update(fields).eq("id", id).select().single();
+  if (error && "assigned_to" in fields && /assigned_to/.test(error.message || "")) {
+    const { assigned_to, ...rest } = fields;
+    ({ data, error } = await supabase.from("follow_ups").update(rest).eq("id", id).select().single());
+  }
   if (error) throw error;
   return data;
 }

@@ -929,8 +929,8 @@ button.legend-item:hover { color: var(--text); }
 .fu-meister:hover { color: var(--red); text-decoration: none; }
 .fu-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .fu-done { color: var(--green); background: rgba(61,220,132,0.12); }
-.fu-form-grid { display: grid; grid-template-columns: 1fr 220px; gap: 10px; }
-.fu-form-grid input {
+.fu-form-grid { display: grid; grid-template-columns: 1fr 220px 190px; gap: 10px; }
+.fu-form-grid input, .fu-form-grid select {
   padding: 9px 12px;
   border-radius: 7px;
   border: 1px solid var(--border);
@@ -940,7 +940,8 @@ button.legend-item:hover { color: var(--text); }
   font-family: inherit;
   color-scheme: dark;
 }
-.fu-form-grid input:focus { outline: none; border-color: var(--red); }
+.fu-form-grid input:focus, .fu-form-grid select:focus { outline: none; border-color: var(--red); }
+.fu-owner { white-space: nowrap; }
 .fu-toggle {
   display: inline-flex;
   align-items: center;
@@ -1300,3 +1301,5 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 .gc-table tr.drill { cursor: pointer; } .gc-table tr.drill:hover td { background: var(--panel-2); }
 .gc-bar { width: 30%; } .gc-bar span { display: block; height: 8px; border-radius: 4px; background: var(--red); min-width: 2px; }
 @media (max-width: 900px) { .gc-kpis { grid-template-columns: repeat(2, 1fr); } .gc-grid { grid-template-columns: 1fr; } }
+
+@media (max-width: 900px) and (min-width: 601px) { .fu-form-grid { grid-template-columns: 1fr 1fr; } .fu-form-grid > input:first-child { grid-column: 1 / -1; } }
