@@ -635,3 +635,9 @@ $$;
 drop trigger if exists notify_on_follow_up_assign on follow_ups;
 create trigger notify_on_follow_up_assign after insert or update of assigned_to on follow_ups
   for each row execute procedure public.notify_follow_up_assignee();
+
+-- ============================================================
+-- DEALER CODE (Oct 2026): replaces PMA on the Meister profile.
+-- The old pma column is kept (hidden) so nothing already entered is lost.
+-- ============================================================
+alter table meisters add column if not exists dealer_code text;

@@ -1,6 +1,6 @@
 // Reads the old CRM's Excel export in the browser and sends it to the
 // import_crm_export database function (sql/crm_import.sql).
-import { importCrmExport } from "./api.js?v=202610201542";
+import { importCrmExport } from "./api.js?v=202610211144";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const iso = (v) => (v instanceof Date && !isNaN(v) ? v.toISOString() : v ? String(v) : "");
@@ -20,7 +20,7 @@ export function readExport(wb) {
     name: txt(r.Name), job_title: txt(r["Job Title"]), concierge: txt(r.Concierge), status: txt(r.Status),
     phone: txt(r.Phone), email: txt(r.Email), dealership: txt(r.Dealership), dealership_website: txt(r["Dealership Website"]),
     city: txt(r.City), state: txt(r.State), zip: txt(r.Zip), allocation_count: txt(r.Allocation).replace(/[^0-9]/g, ""),
-    pma: txt(r.PMA), delivery_eta: day(r["Delivery ETA"]), profile_summary: txt(r["Profile Summary"]),
+    pma: txt(r.PMA), dealer_code: txt(r["Dealer Code"]), delivery_eta: day(r["Delivery ETA"]), profile_summary: txt(r["Profile Summary"]),
     created_by_name: txt(r["Created By"]), created_at: iso(r["Created At"]),
     updated_by_name: txt(r["Last Updated By"]), updated_at: iso(r["Last Updated At"]),
   }));

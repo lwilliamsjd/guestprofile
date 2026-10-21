@@ -56,9 +56,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610201542";
-import { exportToExcel } from "./export.js?v=202610201542";
-import { wireImport } from "./import-export.js?v=202610201542";
+} from "./api.js?v=202610211144";
+import { exportToExcel } from "./export.js?v=202610211144";
+import { wireImport } from "./import-export.js?v=202610211144";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1511,7 +1511,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202610201542");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202610211144");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -2335,7 +2335,7 @@ async function renderDealershipsPage(route, seq) {
 const IMPORT_FIELDS = [
   ["name", "Name *"], ["job_title", "Job Title"], ["dealership", "Dealership"], ["dealership_website", "Dealership Website"],
   ["phone", "Phone"], ["email", "Email"], ["city", "City"], ["state", "State"], ["zip", "Zip"],
-  ["status", "Status"], ["concierge", "Concierge"], ["allocation_count", "Allocation"], ["guest_estimate", "Guest Count"], ["pma", "PMA"], ["profile_summary", "Profile Summary"],
+  ["status", "Status"], ["concierge", "Concierge"], ["allocation_count", "Allocation"], ["guest_estimate", "Guest Count"], ["dealer_code", "Dealer Code"], ["profile_summary", "Profile Summary"],
 ];
 const IMPORT_ALIASES = {
   name: ["name", "meister", "full name", "contact", "contact name", "meister name"],
@@ -2346,7 +2346,7 @@ const IMPORT_ALIASES = {
   email: ["email", "e-mail", "email address"],
   city: ["city"], state: ["state", "st"], zip: ["zip", "zip code", "postal", "postal code"],
   status: ["status", "stage"], concierge: ["concierge", "owner", "assigned", "assigned to"],
-  allocation_count: ["allocation", "allocations", "allocation count"], guest_estimate: ["guest count", "guests", "number of guests", "guest estimate"], pma: ["pma"],
+  allocation_count: ["allocation", "allocations", "allocation count"], guest_estimate: ["guest count", "guests", "number of guests", "guest estimate"], dealer_code: ["dealer code", "dealer #", "dealer number", "dealer no", "dealer no."],
   profile_summary: ["summary", "notes", "profile summary", "comments"],
 };
 
@@ -2449,7 +2449,7 @@ function importRowToFields(r) {
   return {
     name: get("name"), job_title: get("job_title"), dealership: get("dealership"), dealership_website: get("dealership_website"),
     phone: formatPhone(get("phone")), email: get("email"), city: get("city"), state: get("state").toUpperCase().slice(0, 2), zip: get("zip"),
-    status, concierge, allocation_count: alloc && !isNaN(Number(alloc)) ? Math.round(Number(alloc)) : null, guest_estimate: gEst && !isNaN(Number(gEst)) ? Math.round(Number(gEst)) : null, pma: get("pma"), profile_summary: get("profile_summary"),
+    status, concierge, allocation_count: alloc && !isNaN(Number(alloc)) ? Math.round(Number(alloc)) : null, guest_estimate: gEst && !isNaN(Number(gEst)) ? Math.round(Number(gEst)) : null, dealer_code: get("dealer_code"), profile_summary: get("profile_summary"),
   };
 }
 
@@ -2717,7 +2717,7 @@ async function renderMeister(route, seq) {
             <div class="form-grid form-grid-4">
               <div class="form-field"><label>Allocation count</label><input id="f-allocation" data-draft type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 2" value="${escapeAttr(dv("f-allocation", meister?.allocation_count ?? ""))}" /></div>
               <div class="form-field"><label>Guest count</label><input id="f-guest-est" data-draft type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 12" title="How many potential buyers this Meister has for the GR GT (no names needed)" value="${escapeAttr(dv("f-guest-est", meister?.guest_estimate ?? ""))}" /></div>
-              <div class="form-field"><label>PMA</label><input id="f-pma" data-draft placeholder="Primary market area" value="${escapeAttr(dv("f-pma", meister?.pma))}" /></div>
+              <div class="form-field"><label>Dealer Code</label><input id="f-dealer-code" data-draft maxlength="20" autocomplete="off" placeholder="e.g. 04136" value="${escapeAttr(dv("f-dealer-code", meister?.dealer_code))}" /></div>
               <div class="form-field"><label>Next Guest Delivery</label>${(() => { const nd = nextGuestDelivery(guests); return `<div class="readonly-field">${nd ? `<b>${escapeHtml(fmtMonth(nd.delivery_date))}</b> <span class="muted">· ${escapeHtml(nd.guest_name)}</span>` : `<span class="muted">None scheduled</span>`}</div><div class="muted field-note">From the Guests tab</div>`; })()}</div>
             </div>
             ${isNew ? "" : `<div class="form-meta muted">Created by ${escapeHtml(meister.created_by_name || "—")} on ${fmtDate(meister.created_at)} &middot; Last updated by ${escapeHtml(meister.updated_by_name || "—")} ${relativeTime(meister.updated_at)}</div>`}
@@ -2755,7 +2755,7 @@ async function renderMeister(route, seq) {
       profile_summary: g("f-summary"),
       allocation_count: g("f-allocation") === "" ? null : Number(g("f-allocation")),
       guest_estimate: g("f-guest-est") === "" ? null : Number(g("f-guest-est")),
-      pma: g("f-pma"),
+      dealer_code: g("f-dealer-code"),
     };
     if (!showFieldErrors(validateMeisterFields(fields))) return;
     const btn = e.target.querySelector("button[type=submit]");
@@ -2840,11 +2840,11 @@ function renderProfileSidebar(m, followUps, guests = []) {
       ${m.email ? `<div class="field"><label>Email</label><div>${escapeHtml(m.email)}</div></div>` : ""}
       ${m.dealership_website ? `<div class="field"><label>Dealership Website</label><div><a href="${escapeAttr(withProtocol(m.dealership_website))}" target="_blank" rel="noopener">${escapeHtml(m.dealership_website.replace(/^https?:\/\//i, ""))} ${I.link}</a></div></div>` : ""}
       ${cityLine ? `<div class="field"><label>Location</label><div>${escapeHtml(cityLine)}</div></div>` : ""}
-      ${m.allocation_count !== null && m.allocation_count !== undefined || m.guest_estimate != null || m.pma || nextDel ? `<div class="key-facts">
+      ${m.allocation_count !== null && m.allocation_count !== undefined || m.guest_estimate != null || m.dealer_code || nextDel ? `<div class="key-facts">
         <div class="key-facts-lbl">${I.zap} Key facts</div>
         ${m.allocation_count !== null && m.allocation_count !== undefined ? `<div class="kf"><span class="kf-k">Allocation</span><span class="kf-v">${m.allocation_count}</span></div>` : ""}
         ${m.guest_estimate != null ? `<div class="kf"><span class="kf-k">Guest count</span><span class="kf-v">${m.guest_estimate}</span></div>` : ""}
-        ${m.pma ? `<div class="kf"><span class="kf-k">PMA</span><span class="kf-v">${escapeHtml(m.pma)}</span></div>` : ""}
+        ${m.dealer_code ? `<div class="kf"><span class="kf-k">Dealer Code</span><span class="kf-v">${escapeHtml(m.dealer_code)}</span></div>` : ""}
         ${nextDel ? `<div class="kf"><span class="kf-k">Next guest delivery</span><span class="kf-v">${escapeHtml(fmtMonth(nextDel.delivery_date))} <span class="muted">· ${escapeHtml(nextDel.guest_name)}</span></span></div>` : ""}
       </div>` : ""}
       ${m.profile_summary ? `<div class="field"><label>Profile Summary</label><div class="summary-text">${escapeHtml(m.profile_summary)}</div></div>` : ""}

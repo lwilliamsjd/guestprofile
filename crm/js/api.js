@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202610201542";
+import { supabase } from "./supabase-client.js?v=202610211144";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -364,12 +364,18 @@ export async function getMeister(id) {
   return data;
 }
 
+// Until the dealer_code column is added in Supabase, save everything else instead of failing.
+const missingDealerCode = (error, fields) => error && "dealer_code" in fields && /dealer_code/.test(error.message || "");
+const withoutDealerCode = ({ dealer_code, ...rest }) => rest;
+
 export async function createMeister(fields, authorName, authorId) {
-  const { data, error } = await supabase
+  const ins = (f) => supabase
     .from("meisters")
-    .insert([{ ...fields, created_by: authorId, created_by_name: authorName, updated_by_name: authorName }])
+    .insert([{ ...f, created_by: authorId, created_by_name: authorName, updated_by_name: authorName }])
     .select()
     .single();
+  let { data, error } = await ins(fields);
+  if (missingDealerCode(error, fields)) ({ data, error } = await ins(withoutDealerCode(fields)));
   if (error) throw error;
   return data;
 }
@@ -377,9 +383,9 @@ export async function createMeister(fields, authorName, authorId) {
 // expectedUpdatedAt: pass the updated_at you loaded; if someone saved in between,
 // the update matches nothing and a CONFLICT error is thrown instead of overwriting.
 export async function updateMeister(id, fields, authorName, expectedUpdatedAt = null) {
-  let q = supabase.from("meisters").update({ ...fields, updated_by_name: authorName }).eq("id", id);
-  if (expectedUpdatedAt) q = q.eq("updated_at", expectedUpdatedAt);
-  const { data, error } = await q.select();
+  const upd = (f) => { let q = supabase.from("meisters").update({ ...f, updated_by_name: authorName }).eq("id", id); if (expectedUpdatedAt) q = q.eq("updated_at", expectedUpdatedAt); return q.select(); };
+  let { data, error } = await upd(fields);
+  if (missingDealerCode(error, fields)) ({ data, error } = await upd(withoutDealerCode(fields)));
   if (error) throw error;
   if (!data || !data.length) {
     const err = new Error("This profile was changed by someone else while you were editing.");
