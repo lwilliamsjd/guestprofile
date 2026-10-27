@@ -56,9 +56,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610211144";
-import { exportToExcel } from "./export.js?v=202610211144";
-import { wireImport } from "./import-export.js?v=202610211144";
+} from "./api.js?v=202610271002";
+import { exportToExcel } from "./export.js?v=202610271002";
+import { wireImport } from "./import-export.js?v=202610271002";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -80,7 +80,7 @@ const ASSIGNEES = ["Logan", "Freddie", "Rob"]; // who a follow-up can be assigne
 const METHODS = ["Phone", "Text", "Email", "In Person", "Other"];
 const DIRECTIONS = ["Outbound", "Inbound"];
 const GUEST_STATUSES = ["Allocated", "Ordered", "Delivered"];
-const STALE_DAYS = 30; // no contact for this long = "stale" on the dashboard
+const STALE_DAYS = 60; // no contact for this long = "stale" on the dashboard
 let team = []; // [{id, full_name, concierge}] for @mentions
 let connState = "ok"; // ok | reconnecting | offline
 
@@ -1270,13 +1270,13 @@ async function renderAnalyticsPage(route, seq) {
   for (const i of d.interactions) if (!lastTalk[i.meister_id] || i.occurred_at > lastTalk[i.meister_id]) lastTalk[i.meister_id] = i.occurred_at;
   const daysSince = (m) => (lastTalk[m.id] ? Math.floor((Date.now() - new Date(lastTalk[m.id])) / 86400000) : null);
   const quiet = [
-    { key: "q14", label: "14 to 29 days", color: "#f5a623", test: (n) => n != null && n >= 14 && n < 30 },
-    { key: "q30", label: "30 to 59 days", color: "#f5764a", test: (n) => n != null && n >= 30 && n < 60 },
-    { key: "q60", label: "60+ days", color: "#e0263f", test: (n) => n != null && n >= 60 },
+    { key: "q60", label: "60 to 89 days", color: "#f5a623", test: (n) => n != null && n >= STALE_DAYS && n < 90 },
+    { key: "q90", label: "90 to 119 days", color: "#f5764a", test: (n) => n != null && n >= 90 && n < 120 },
+    { key: "q120", label: "120+ days", color: "#e0263f", test: (n) => n != null && n >= 120 },
     { key: "never", label: "Never contacted", color: "#6b6b73", test: (n) => n == null },
   ].map((b) => ({ ...b, items: meisters.filter((m) => b.test(daysSince(m))).map((m) => ({ ...m, days: daysSince(m), last: lastTalk[m.id] })).sort((x, y) => (y.days ?? 1e9) - (x.days ?? 1e9)) }))
    .filter((b) => b.key !== "never" || b.items.length);
-  const recentlyTalked = meisters.filter((m) => { const n = daysSince(m); return n != null && n < 14; }).length;
+  const recentlyTalked = meisters.filter((m) => { const n = daysSince(m); return n != null && n < STALE_DAYS; }).length;
 
   // ---- vehicles: all guests for these Meisters (not limited to the range) ----
   const allG = d.guests.filter((g) => conciergeOk(concOf(g.meisters)));
@@ -1422,7 +1422,7 @@ async function renderAnalyticsPage(route, seq) {
               <span class="bar-val">${b.items.length}</span>
             </button>`).join("")}
         </div>
-        <p class="muted quiet-note">${recentlyTalked} of ${meisters.length} Meisters talked to in the last 2 weeks.</p>
+        <p class="muted quiet-note">${recentlyTalked} of ${meisters.length} Meisters talked to in the last ${STALE_DAYS} days.</p>
       </div>
 
       <div class="card ana-span-7">
@@ -1511,7 +1511,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202610211144");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202610271002");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
