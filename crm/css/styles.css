@@ -1185,9 +1185,9 @@ input.invalid, select.invalid, textarea.invalid { border-color: var(--red) !impo
 .kpi-delta.flat { color: var(--grey-dim); }
 .compare-note { margin: -8px 0 14px; font-size: 12px; }
 .pref-row.inline { margin: 0; font-size: 13px; color: var(--grey); }
-.heatmap { display: grid; gap: 3px; align-items: center; font-size: 11px; min-width: 0; }
+.heatmap { display: grid; grid-template-columns: 44px repeat(var(--cols, 16), minmax(0, 1fr)); gap: 3px; align-items: center; font-size: 11px; min-width: 0; }
 .heat-h, .heat-d { min-width: 0; overflow: hidden; }
-.heat-h { text-align: center; color: var(--grey-dim); font-size: 10px; }
+.heat-h { text-align: center; color: var(--grey-dim); font-size: 10px; overflow: visible !important; white-space: nowrap; }
 .heat-d { color: var(--grey); font-weight: 600; }
 .heat-cell { aspect-ratio: 1.6; min-height: 22px; min-width: 0; border-radius: 4px; border: 1px solid var(--border); background: rgba(224,38,63,var(--a, 0)); color: var(--text); font-size: 10px; font-weight: 600; padding: 0; }
 .heat-cell:hover { border-color: var(--red); }
@@ -1222,6 +1222,22 @@ input.invalid, select.invalid, textarea.invalid { border-color: var(--red) !impo
   .kpi-delta.up { color: #1a8f4e !important; } .kpi-delta.down { color: #c0182f !important; }
   .stack-seg, .bar-fill, .legend-dot, .donut path, .status-pill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   a { color: #111 !important; }
+  /* heatmap: fixed short rows so 16 hour columns fit a printed card */
+  .heatmap { grid-template-columns: 30px repeat(var(--cols, 16), minmax(0, 1fr)) !important; gap: 2px !important; }
+  .heat-cell { aspect-ratio: auto !important; min-height: 0 !important; height: 15px; font-size: 7.5px !important; border-radius: 2px !important; line-height: 1; }
+  .heat-h { font-size: 8px !important; overflow: visible !important; white-space: nowrap; }
+  .heat-d { font-size: 9px !important; }
+  /* dark tiles and rows print light */
+  .veh-kpi, .fu-counter, .mini-row, .rank-num { background: #f4f4f6 !important; border-color: #ddd !important; color: #111 !important; }
+  .veh-kpi b, .fu-counter .kpi-num, .mini-row > span:first-child { color: #111 !important; }
+  .veh-kpi span, .fu-counter .kpi-label, .mini-row .muted, .veh-kpi b small { color: #555 !important; }
+  .stack-track { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ana-engaged { grid-column: span 12 !important; }
+  .gc-kpis { grid-template-columns: repeat(4, 1fr) !important; }
+  .gc-grid { grid-template-columns: 1fr 1fr !important; gap: 12px 24px !important; }
+  .gc-grid > div:first-child { grid-column: 1 / -1; }
+  .ana-engaged .rank-list { display: grid !important; grid-template-columns: 1fr 1fr; column-gap: 24px; }
+  .donut-num { fill: #111 !important; } .donut-lbl { fill: #555 !important; } .donut .seg { stroke: #fff !important; }
 }
 
 /* ---------- tool switch (top left, shared with the other tool) ---------- */

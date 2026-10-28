@@ -56,9 +56,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610271002";
-import { exportToExcel } from "./export.js?v=202610271002";
-import { wireImport } from "./import-export.js?v=202610271002";
+} from "./api.js?v=202610281444";
+import { exportToExcel } from "./export.js?v=202610281444";
+import { wireImport } from "./import-export.js?v=202610281444";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1437,7 +1437,7 @@ async function renderAnalyticsPage(route, seq) {
         ${recentSales.length ? `<div class="veh-recent"><div class="veh-recent-h">Latest orders</div>${recentSales.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.purchase_date)}${g.delivery_date ? " · delivered" : ""}</span></a>`).join("")}</div>` : ""}
       </div>
 
-      <div class="card ana-span-5">
+      <div class="card ana-span-5 ana-engaged">
         <div class="card-head"><h3>Most engaged Meisters</h3><span class="muted">by conversations in range</span></div>
         <div class="rank-list">
           ${engaged.map((m, idx) => `
@@ -1511,7 +1511,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202610271002");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202610281444");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -1753,7 +1753,7 @@ function heatmapHtml(heat, max) {
   const val = (dIdx, h) => (h === 6 ? heat[dIdx].slice(0, 7).reduce((a, b) => a + b, 0) : h === 21 ? heat[dIdx].slice(21).reduce((a, b) => a + b, 0) : heat[dIdx][h]);
   const order = [1, 2, 3, 4, 5, 6, 0]; // Monday first
   return `
-    <div class="heatmap" style="grid-template-columns: 44px repeat(${shown.length}, 1fr)">
+    <div class="heatmap" style="--cols:${shown.length}">
       <div></div>${shown.map((h) => `<div class="heat-h">${h % 3 === 0 ? hourLabel(h) : ""}</div>`).join("")}
       ${order.map((dIdx) => `<div class="heat-d">${days[dIdx]}</div>${shown.map((h) => { const v = val(dIdx, h); return `<button class="heat-cell drill" data-drill="heat:${dIdx}:${h}" style="--a:${v ? 0.15 + 0.85 * (v / max) : 0}" title="${days[dIdx]} ${hourLabel(h)}${h === 6 ? " and earlier" : h === 21 ? " and later" : ""}: ${v}">${v || ""}</button>`; }).join("")}`).join("")}
     </div>`;
