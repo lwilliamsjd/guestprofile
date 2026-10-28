@@ -56,9 +56,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610281444";
-import { exportToExcel } from "./export.js?v=202610281444";
-import { wireImport } from "./import-export.js?v=202610281444";
+} from "./api.js?v=202610281448";
+import { exportToExcel } from "./export.js?v=202610281448";
+import { wireImport } from "./import-export.js?v=202610281448";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1486,7 +1486,7 @@ async function renderAnalyticsPage(route, seq) {
         </div>` : `<div class="empty-state">No guest counts yet. Add a Guest count under Key facts on a Meister's Edit Profile tab.</div>`}
       </div>
 
-      <div class="card ana-span-12">
+      <div class="card ana-span-12 no-print">
         <div class="card-head"><h3>${I.bell} Upcoming follow-ups</h3><span class="muted">team-wide, pending</span></div>
         <div class="fu-counters">
           ${buckets.map((b) => `
@@ -1511,7 +1511,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202610281444");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202610281448");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
