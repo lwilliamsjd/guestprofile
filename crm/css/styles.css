@@ -1233,15 +1233,16 @@ input.invalid, select.invalid, textarea.invalid { border-color: var(--red) !impo
   .veh-kpi span, .fu-counter .kpi-label, .mini-row .muted, .veh-kpi b small { color: #555 !important; }
   .stack-track { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .no-print { display: none !important; }
-  /* fit the whole analytics report on 3 letter pages */
+  /* fit the whole analytics report on 2 letter pages */
   .main-content { zoom: 0.84; }
   .kpi-strip-5 { grid-template-columns: repeat(5, 1fr) !important; }
   .ana-grid .card { padding: 14px 16px !important; }
-  .ana-engaged { grid-column: span 12 !important; }
+  .ana-quiet { grid-column: span 4 !important; }
+  .ana-quiet .bar-row { grid-template-columns: 1fr 70px 28px !important; gap: 8px !important; }
+  .ana-engaged { grid-column: span 8 !important; }
   .gc-kpis { grid-template-columns: repeat(4, 1fr) !important; }
   .gc-grid { grid-template-columns: 1fr 1fr !important; gap: 12px 24px !important; }
   .gc-grid > div:first-child { grid-column: 1 / -1; }
-  .ana-engaged .rank-list { display: grid !important; grid-template-columns: 1fr 1fr; column-gap: 24px; }
   .donut-num { fill: #111 !important; } .donut-lbl { fill: #555 !important; } .donut .seg { stroke: #fff !important; }
 }
 

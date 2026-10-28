@@ -56,9 +56,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610281448";
-import { exportToExcel } from "./export.js?v=202610281448";
-import { wireImport } from "./import-export.js?v=202610281448";
+} from "./api.js?v=202610281452";
+import { exportToExcel } from "./export.js?v=202610281452";
+import { wireImport } from "./import-export.js?v=202610281452";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1412,7 +1412,7 @@ async function renderAnalyticsPage(route, seq) {
         </div>
       </div>
 
-      <div class="card ana-span-4">
+      <div class="card ana-span-4 ana-quiet">
         <div class="card-head"><h3>${I.clock} Going quiet</h3><span class="muted">time since last conversation</span></div>
         <div class="bar-chart">
           ${quiet.map((b) => `
@@ -1425,7 +1425,7 @@ async function renderAnalyticsPage(route, seq) {
         <p class="muted quiet-note">${recentlyTalked} of ${meisters.length} Meisters talked to in the last ${STALE_DAYS} days.</p>
       </div>
 
-      <div class="card ana-span-7">
+      <div class="card ana-span-7 no-print">
         <div class="card-head"><h3>${I.chart} Vehicles sold & delivered</h3><span class="muted">all time · guests</span></div>
         <div class="veh-kpis">
           <button class="veh-kpi drill" data-drill="gall:sold"><b class="st-sold">${soldAll.length}</b><span>Sold</span></button>
@@ -1511,7 +1511,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202610281448");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202610281452");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
