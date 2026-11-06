@@ -15,6 +15,8 @@ import {
   listStatusHistory,
   listMeisterRollups,
   getMeister,
+  setMeisterDeparted,
+  moveGuests,
   createMeister,
   updateMeister,
   deleteMeister,
@@ -56,9 +58,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202610281452";
-import { exportToExcel } from "./export.js?v=202610281452";
-import { wireImport } from "./import-export.js?v=202610281452";
+} from "./api.js?v=202611061735";
+import { exportToExcel } from "./export.js?v=202611061735";
+import { wireImport } from "./import-export.js?v=202611061735";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -330,6 +332,7 @@ function parseHash() {
   if (parts[0] === "account") return { name: "account", key: "account" };
   if (parts[0] === "dealerships") return { name: "dealerships", key: "dealerships" };
   if (parts[0] === "import") return { name: "import", key: "import" };
+  if (parts[0] === "meister" && parts[1] === "new" && parts[2] === "from" && parts[3]) return { name: "meister", mode: "new", fromId: parts[3], key: `meister:new:${parts[3]}` };
   if (parts[0] === "meister" && parts[1] === "new") return { name: "meister", mode: "new", key: "meister:new" };
   if (parts[0] === "meister" && parts[1]) return { name: "meister", mode: "view", id: parts[1], key: `meister:${parts[1]}` };
   return { name: "dashboard", key: "dashboard" };
@@ -481,7 +484,16 @@ function renderLogin() {
 // ============================================================
 // DASHBOARD
 // ============================================================
+// A Meister who left the store: kept with all history, but out of every active list and tracker.
+function isDeparted(m) {
+  return !!m?.departed_at;
+}
+function departedPill(m) {
+  return `<span class="status-pill status-departed" title="${escapeAttr(`Left ${fmtDate(m.departed_at)}${m.departed_note ? " · " + m.departed_note : ""}`)}">Departed</span>`;
+}
+
 function isStale(m) {
+  if (isDeparted(m)) return false;
   if (m.status === "Sold" || m.status === "Not Interested") return false;
   const last = m.last_contact || m.created_at;
   return last && Date.now() - new Date(last).getTime() > STALE_DAYS * 86400000;
@@ -500,9 +512,12 @@ async function renderDashboard(route, seq) {
 
   meisters.forEach((m) => Object.assign(m, rollups[m.id] || { last_contact: null, interaction_count: 0, guest_count: 0, my_follow_up: null }));
 
-  const counts = { total: meisters.length, overdue: 0, stale: 0 };
+  const departedCount = meisters.filter(isDeparted).length;
+  if (!departedCount && dashState.status === "__departed") dashState.status = "";
+  const counts = { total: meisters.length - departedCount, overdue: 0, stale: 0 };
   ALL_STATUSES.forEach((s) => (counts[s] = 0));
   meisters.forEach((m) => {
+    if (isDeparted(m)) return;
     counts[m.status] = (counts[m.status] || 0) + 1;
     if (m.my_follow_up && followUpState(m.my_follow_up.due_at) === "overdue") counts.overdue++;
     if (isStale(m)) counts.stale++;
@@ -565,6 +580,7 @@ async function renderDashboard(route, seq) {
       ).join("")}
       <button class="kpi kpi-alert ${dashState.status === "__overdue" ? "active" : ""}" data-status="__overdue"><span class="kpi-num">${counts.overdue}</span><span class="kpi-label">My overdue</span></button>
       <button class="kpi kpi-stale ${dashState.status === "__stale" ? "active" : ""}" data-status="__stale" title="No contact in ${STALE_DAYS}+ days"><span class="kpi-num">${counts.stale}</span><span class="kpi-label">Going quiet</span></button>
+      ${departedCount ? `<button class="kpi kpi-departed ${dashState.status === "__departed" ? "active" : ""}" data-status="__departed" title="Left their store. History kept; not counted anywhere else."><span class="kpi-num">${departedCount}</span><span class="kpi-label">Departed</span></button>` : ""}
     </div>
 
     <div class="filters">
@@ -574,6 +590,7 @@ async function renderDashboard(route, seq) {
         ${shownStatuses.map((s) => `<option ${dashState.status === s ? "selected" : ""}>${s}</option>`).join("")}
         <option value="__overdue" ${dashState.status === "__overdue" ? "selected" : ""}>My overdue follow-ups</option>
         <option value="__stale" ${dashState.status === "__stale" ? "selected" : ""}>Going quiet (${STALE_DAYS}+ days)</option>
+        ${departedCount ? `<option value="__departed" ${dashState.status === "__departed" ? "selected" : ""}>Departed Meisters</option>` : ""}
       </select>
       <select id="concierge-filter">
         <option value="">All Concierges</option>
@@ -624,12 +641,15 @@ async function renderDashboard(route, seq) {
   // tiles are the status filter, so each one shows how many you'd get by clicking it.
   function updateKpiCounts() {
     const q = dashState.q.toLowerCase().trim();
-    const base = meisters.filter((m) =>
+    const base = meisters.filter((m) => !isDeparted(m) &&
       (!q || [m.name, m.job_title, m.dealership, m.city, m.phone, m.email, m.concierge].some((f) => (f || "").toLowerCase().includes(q))) &&
       (!dashState.concierge || (dashState.concierge === "__none" ? !m.concierge : m.concierge === dashState.concierge)));
     const n = { "": base.length,
       __overdue: base.filter((m) => m.my_follow_up && followUpState(m.my_follow_up.due_at) === "overdue").length,
-      __stale: base.filter(isStale).length };
+      __stale: base.filter(isStale).length,
+      __departed: meisters.filter((m) => isDeparted(m) &&
+        (!q || [m.name, m.job_title, m.dealership, m.city, m.phone, m.email, m.concierge].some((f) => (f || "").toLowerCase().includes(q))) &&
+        (!dashState.concierge || (dashState.concierge === "__none" ? !m.concierge : m.concierge === dashState.concierge))).length };
     container.querySelectorAll(".kpi-strip .kpi").forEach((k) => {
       const st = k.dataset.status;
       const v = st in n ? n[st] : base.filter((m) => m.status === st).length;
@@ -686,8 +706,9 @@ function drawMeisterRows(meisters) {
     const matchesQuery =
       !q ||
       [m.name, m.job_title, m.dealership, m.city, m.phone, m.email, m.concierge].some((f) => (f || "").toLowerCase().includes(q));
+    if ((dashState.status === "__departed") !== isDeparted(m)) return false;
     const matchesStatus =
-      !dashState.status ||
+      !dashState.status || dashState.status === "__departed" ||
       (dashState.status === "__overdue"
         ? m.my_follow_up && followUpState(m.my_follow_up.due_at) === "overdue"
         : dashState.status === "__stale"
@@ -729,7 +750,7 @@ function drawMeisterRows(meisters) {
         </td>
         <td>${escapeHtml(m.dealership || "—")}${m.city ? `<div class="muted cell-sub">${escapeHtml([m.city, m.state].filter(Boolean).join(", "))}</div>` : ""}</td>
         <td>${escapeHtml(m.concierge || "—")}</td>
-        <td><span class="status-pill status-${slug(m.status)}">${escapeHtml(m.status)}</span></td>
+        <td>${isDeparted(m) ? departedPill(m) + `<div class="muted cell-sub">left ${fmtDate(m.departed_at)}</div>` : `<span class="status-pill status-${slug(m.status)}">${escapeHtml(m.status)}</span>`}</td>
         <td>${m.my_follow_up ? followUpChip(m.my_follow_up.due_at) + `<div class="muted cell-sub">${escapeHtml(m.my_follow_up.title)}</div>` : `<span class="muted">—</span>`}</td>
         <td>${m.last_contact ? `<div>${isStale(m) ? `<span class="stale-dot" title="No contact in ${STALE_DAYS}+ days"></span>` : ""}${relativeTime(m.last_contact)}</div><div class="muted cell-sub">${m.interaction_count} logged</div>` : `<span class="muted">${isStale(m) ? `<span class="stale-dot" title="Never contacted"></span>` : ""}Never</span>`}</td>
         <td class="muted">${relativeTime(m.updated_at)}</td>
@@ -1203,7 +1224,9 @@ async function renderAnalyticsPage(route, seq) {
   };
 
   const ints = d.interactions.filter((i) => inWindow(i.occurred_at) && conciergeOk(concOf(i.meisters)));
-  const meisters = d.meisters.filter((m) => conciergeOk(m.concierge));
+  // Departed Meisters keep their history in the conversation totals but are left out of every Meister-level number.
+  const departedIds = new Set(d.meisters.filter(isDeparted).map((m) => m.id));
+  const meisters = d.meisters.filter((m) => !isDeparted(m) && conciergeOk(m.concierge));
   const guests = d.guests.filter((g) => g.purchase_date && inWindow(g.purchase_date + "T12:00:00") && conciergeOk(concOf(g.meisters)));
   const delivered = d.guests.filter((g) => g.delivery_date && inWindow(g.delivery_date + "T12:00:00") && conciergeOk(concOf(g.meisters)));
   const fus = d.followUps.filter((f) => conciergeOk(concOf(f.meisters)));
@@ -1235,7 +1258,7 @@ async function renderAnalyticsPage(route, seq) {
   };
 
   // ---- KPIs ----
-  const contactedIds = new Set(ints.map((i) => i.meister_id));
+  const contactedIds = new Set(ints.map((i) => i.meister_id).filter((id) => !departedIds.has(id)));
   const weekEnd = endOfWeek(new Date());
   const dueThisWeek = fus.filter((f) => new Date(f.due_at) <= weekEnd);
   const inbound = ints.filter((i) => i.direction === "Inbound");
@@ -1291,7 +1314,7 @@ async function renderAnalyticsPage(route, seq) {
   const salesSeries = monthlySeries(soldAll.map((g) => g.purchase_date + "T12:00:00"), nMonths);
   const deliverySeries = monthlySeries(deliveredAll.map((g) => g.delivery_date + "T12:00:00"), nMonths);
   const recentSales = soldAll.slice().sort((a, b) => (b.purchase_date || "").localeCompare(a.purchase_date || "")).slice(0, 3);
-  const engaged = groupBy(ints, (i) => i.meister_id)
+  const engaged = groupBy(ints.filter((i) => !departedIds.has(i.meister_id)), (i) => i.meister_id)
     .map(([id, items]) => ({ id, name: items[0].meisters?.name || "Unknown", dealership: items[0].meisters?.dealership, status: items[0].meisters?.status, n: items.length, last: items[0].occurred_at }))
     .sort((a, b) => b.n - a.n)
     .slice(0, 8);
@@ -1511,7 +1534,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202610281452");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611061735");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -2267,9 +2290,12 @@ async function renderDealershipsPage(route, seq) {
   const groups = groupBy(meisters, (m) => (m.dealership || "").trim().toLowerCase() || "__none").map(([key, items]) => {
     const name = key === "__none" ? "No dealership set" : items[0].dealership.trim();
     const last = items.map((m) => m.last_contact).filter(Boolean).sort().pop() || null;
-    const conc = [...new Set(items.map((m) => m.concierge).filter(Boolean))];
+    const conc = [...new Set(items.filter((m) => !isDeparted(m)).map((m) => m.concierge).filter(Boolean))];
+    const active = items.filter((m) => !isDeparted(m));
+    // Most recent departed Meister with no replacement yet: the store's data is copied from them.
+    const lastDeparted = items.filter((m) => isDeparted(m) && !m.replaced_by_id).sort((a, b) => (a.departed_at < b.departed_at ? 1 : -1))[0] || null;
     return {
-      key, name, items, none: key === "__none",
+      key, name, items, active, lastDeparted, none: key === "__none",
       city: [...new Set(items.map((m) => [m.city, m.state].filter(Boolean).join(", ")).filter(Boolean))][0] || "",
       website: items.map((m) => m.dealership_website).find(Boolean) || "",
       conversations: items.reduce((a, m) => a + (m.interaction_count || 0), 0),
@@ -2281,7 +2307,7 @@ async function renderDealershipsPage(route, seq) {
 
   container.innerHTML = `
     <div class="page-header">
-      <div><h1>Dealerships</h1><p class="muted">${groups.filter((g) => !g.none).length} stores · ${meisters.length} Meisters. Click a store to see everyone there.</p></div>
+      <div><h1>Dealerships</h1><p class="muted">${groups.filter((g) => !g.none).length} stores · ${meisters.filter((m) => !isDeparted(m)).length} active Meisters${groups.some((g) => !g.none && !g.active.length) ? ` · ${groups.filter((g) => !g.none && !g.active.length).length} without an active Meister` : ""}. Click a store to see everyone there.</p></div>
     </div>
     <div class="filters">
       <div class="search-box">${I.search}<input id="dealer-search" type="text" placeholder="Search dealership or city…" value="${escapeAttr(dealerState.q)}" /></div>
@@ -2296,7 +2322,7 @@ async function renderDealershipsPage(route, seq) {
     const q = dealerState.q.toLowerCase().trim();
     const list = groups.filter((g) => !q || g.name.toLowerCase().includes(q) || g.city.toLowerCase().includes(q) || g.items.some((m) => m.name.toLowerCase().includes(q)));
     const sorters = {
-      meisters: (a, b) => b.items.length - a.items.length,
+      meisters: (a, b) => b.active.length - a.active.length,
       conversations: (a, b) => b.conversations - a.conversations,
       recent: (a, b) => ((b.last || "") < (a.last || "") ? -1 : 1),
       name: (a, b) => a.name.localeCompare(b.name),
@@ -2304,22 +2330,23 @@ async function renderDealershipsPage(route, seq) {
     list.sort((a, b) => (a.none ? 1 : b.none ? -1 : sorters[dealerState.sort](a, b)));
     document.getElementById("dealer-list").innerHTML = list.length
       ? list.map((g) => `
-        <div class="card dealer-card ${g.none ? "none" : ""}">
+        <div class="card dealer-card ${g.none ? "none" : ""} ${!g.none && !g.active.length ? "no-meister" : ""}">
           <div class="dealer-head">
             <div>
               <div class="dealer-name">${I.building} ${escapeHtml(g.name)}</div>
               <div class="muted">${escapeHtml(g.city)}${g.website ? ` · <a href="${escapeAttr(withProtocol(g.website))}" target="_blank" rel="noopener">website ${I.link}</a>` : ""}</div>
             </div>
             <div class="dealer-stats">
-              <span><strong>${g.items.length}</strong> Meister${g.items.length === 1 ? "" : "s"}</span>
+              ${g.active.length || g.none ? `<span><strong>${g.active.length}</strong> Meister${g.active.length === 1 ? "" : "s"}</span>` : `<span class="dealer-flag">No active Meister</span>`}
               <span><strong>${g.conversations}</strong> conversations</span>
               <span><strong>${g.guests}</strong> guests</span>
               ${g.sold ? `<span class="st-sold"><strong>${g.sold}</strong> sold</span>` : ""}
             </div>
           </div>
           <div class="dealer-meta muted">${g.last ? "Last contact " + relativeTime(g.last) : "No contact yet"}${g.conc.length ? " · " + g.conc.join(", ") : ""}</div>
+          ${!g.none && !g.active.length && g.lastDeparted ? `<div class="dealer-vacant"><span class="muted">Not participating until a newly trained Meister is appointed.</span><a href="#/meister/new/from/${g.lastDeparted.id}" class="btn btn-sm">${I.plus} Add new Meister</a></div>` : ""}
           <div class="mini-list">
-            ${g.items.sort((a, b) => a.name.localeCompare(b.name)).map((m) => `<a href="#/meister/${m.id}" class="mini-row"><span>${escapeHtml(m.name)}${m.job_title ? `<span class="muted"> · ${escapeHtml(m.job_title)}</span>` : ""}</span><span class="mini-right"><span class="muted">${m.last_contact ? relativeTime(m.last_contact) : "never"}</span><span class="status-pill status-${slug(m.status)}">${escapeHtml(m.status)}</span></span></a>`).join("")}
+            ${g.items.sort((a, b) => (isDeparted(a) - isDeparted(b)) || a.name.localeCompare(b.name)).map((m) => `<a href="#/meister/${m.id}" class="mini-row ${isDeparted(m) ? "departed" : ""}"><span>${escapeHtml(m.name)}${m.job_title ? `<span class="muted"> · ${escapeHtml(m.job_title)}</span>` : ""}</span><span class="mini-right"><span class="muted">${isDeparted(m) ? "left " + fmtDate(m.departed_at) : m.last_contact ? relativeTime(m.last_contact) : "never"}</span>${isDeparted(m) ? departedPill(m) : `<span class="status-pill status-${slug(m.status)}">${escapeHtml(m.status)}</span>`}</span></a>`).join("")}
           </div>
         </div>`).join("")
       : `<div class="empty-state">No dealerships match.</div>`;
@@ -2631,6 +2658,7 @@ function highlightTerm(text, term) {
 async function renderMeister(route, seq) {
   const isNew = route.mode === "new";
   let meister = null, interactions = [], guests = [], followUps = [], comments = [], history = [], dealerships = [];
+  let source = null, sourceGuests = [], prevMeister = null, nextMeister = null; // departed-Meister links
 
   try {
     if (!isNew) {
@@ -2643,8 +2671,17 @@ async function renderMeister(route, seq) {
         listDealerships().catch(() => []),
       ]);
       comments = await listCommentsForInteractions(interactions.map((i) => i.id));
+      [prevMeister, nextMeister] = await Promise.all([
+        meister.previous_meister_id ? getMeister(meister.previous_meister_id).catch(() => null) : null,
+        meister.replaced_by_id ? getMeister(meister.replaced_by_id).catch(() => null) : null,
+      ]);
     } else {
       dealerships = await listDealerships().catch(() => []);
+      if (route.fromId) {
+        // "Add new Meister for this dealership": copy the store data from the departed Meister.
+        [source, sourceGuests] = await Promise.all([getMeister(route.fromId).catch(() => null), listGuests(route.fromId).catch(() => [])]);
+        if (source?.deleted_at) source = null;
+      }
     }
   } catch {
     paint(route, seq, (c) => (c.innerHTML = `<div class="empty-state">Could not load this meister. They may have been removed.</div>`));
@@ -2665,19 +2702,56 @@ async function renderMeister(route, seq) {
   if (!paint(route, seq, (c) => (container = c))) return;
 
   const defaultConcierge = CONCIERGES.find((c) => (currentProfile?.full_name || "").toLowerCase().startsWith(c.toLowerCase())) || "";
-  const conciergeVal = dv("f-concierge", meister ? meister.concierge || "" : defaultConcierge);
+  // Store data carried over to a replacement Meister (person fields stay blank).
+  const seed = source ? {
+    dealership: source.dealership, dealership_website: source.dealership_website, city: source.city, state: source.state, zip: source.zip,
+    dealer_code: source.dealer_code, concierge: source.concierge, guest_estimate: source.guest_estimate, allocation_count: source.allocation_count,
+  } : null;
+  const base = meister || seed;
+  const conciergeVal = dv("f-concierge", base ? base.concierge || "" : defaultConcierge);
+  const departed = !isNew && isDeparted(meister);
+  const openFus = followUps.filter((f) => !f.done_at).length;
 
   container.innerHTML = `
     <div class="page-header">
       <div>
         <a href="#/dashboard" class="back-link">${I.back}All Meisters</a>
         <h1>${isNew ? "New Meister" : escapeHtml(meister.name)}</h1>
+        ${source ? `<p class="muted">Replacing ${escapeHtml(source.name)} at ${escapeHtml(source.dealership || "this dealership")}</p>` : ""}
       </div>
-      ${!isNew && isAdmin() ? `<button id="delete-btn" class="btn btn-danger">${I.trash} Move to Trash</button>` : ""}
+      ${!isNew ? `<div class="page-actions">
+        ${departed ? `<button id="reactivate-btn" class="btn btn-ghost">${I.back} Reactivate</button>` : `<button id="depart-btn" class="btn btn-ghost" title="They left this store. Keeps all history, takes them off every active list.">${I.flag} Mark as departed</button>`}
+        ${isAdmin() ? `<button id="delete-btn" class="btn btn-danger">${I.trash} Move to Trash</button>` : ""}
+      </div>` : ""}
     </div>
 
+    ${!isNew && !departed && uiState.departOpen ? `
+    <form id="depart-form" class="form-card depart-form">
+      <div class="depart-title">${I.flag} Mark ${escapeHtml(meister.name)} as departed</div>
+      <p class="muted">Use this when they leave ${escapeHtml(meister.dealership || "the store")}. Every conversation, follow-up and guest stays on this record and the dealership stays in the CRM. They stop counting toward Going Quiet, follow-up counts and analytics. You can add the store's new Meister afterwards.</p>
+      <div class="form-grid">
+        <div class="form-field"><label>Date they left</label><input id="dp-when" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}" required /></div>
+        <div class="form-field"><label>Note</label><input id="dp-note" maxlength="300" placeholder="e.g. Moved to Smith Toyota (not participating)" /></div>
+      </div>
+      ${openFus ? `<label class="check-line"><input type="checkbox" id="dp-close" checked /> Close their ${openFus} open follow-up${openFus === 1 ? "" : "s"}</label>` : ""}
+      <div class="composer-actions" style="justify-content:flex-start">
+        <button type="submit" class="btn btn-primary">Mark as departed</button>
+        <button type="button" id="depart-cancel" class="btn">Cancel</button>
+      </div>
+    </form>` : ""}
+
+    ${departed ? `
+    <div class="departed-banner">
+      <div>
+        <div class="departed-head">${departedPill(meister)} <b>Left ${escapeHtml(meister.dealership || "the store")} on ${fmtDate(meister.departed_at)}</b>${meister.departed_by_name ? `<span class="muted"> · marked by ${escapeHtml(meister.departed_by_name)}</span>` : ""}</div>
+        ${meister.departed_note ? `<div class="departed-note">${escapeHtml(meister.departed_note)}</div>` : ""}
+        <div class="muted">History is kept here. This Meister isn't counted in Going Quiet, follow-ups or analytics.</div>
+      </div>
+      ${nextMeister ? `<a href="#/meister/${nextMeister.id}" class="btn btn-ghost">Replaced by ${escapeHtml(nextMeister.name)} ${I.link}</a>` : `<a href="#/meister/new/from/${meister.id}" class="btn btn-primary">${I.plus} Add new Meister for this dealership</a>`}
+    </div>` : ""}
+
     <div class="${isNew ? "" : "meister-layout"}">
-      ${!isNew ? renderProfileSidebar(meister, followUps, guests) : ""}
+      ${!isNew ? renderProfileSidebar(meister, followUps, guests, prevMeister, nextMeister) : ""}
       <div>
         <div class="tabs" id="tabs">
           ${!isNew ? `<button class="tab-btn ${uiState.activeTab === "activity" ? "active" : ""}" data-tab="activity">Activity <span class="tab-count">${interactions.length}</span></button>` : ""}
@@ -2701,13 +2775,13 @@ async function renderMeister(route, seq) {
               </div>
               <div class="form-field"><label>Phone</label><input id="f-phone" data-draft type="tel" placeholder="(xxx) xxx-xxxx" value="${escapeAttr(dv("f-phone", formatPhone(meister?.phone)))}" /></div>
               <div class="form-field"><label>Email</label><input id="f-email" data-draft type="email" value="${escapeAttr(dv("f-email", meister?.email))}" /></div>
-              <div class="form-field"><label>Dealership</label><input id="f-dealership" data-draft list="dealership-list" autocomplete="off" placeholder="Start typing to match an existing store" value="${escapeAttr(dv("f-dealership", meister?.dealership))}" />
+              <div class="form-field"><label>Dealership</label><input id="f-dealership" data-draft list="dealership-list" autocomplete="off" placeholder="Start typing to match an existing store" value="${escapeAttr(dv("f-dealership", base?.dealership))}" />
                 <datalist id="dealership-list">${dealerships.map((d) => `<option value="${escapeAttr(d)}"></option>`).join("")}</datalist></div>
-              <div class="form-field"><label>Dealership Website</label><input id="f-dealership-website" data-draft placeholder="https://…" value="${escapeAttr(dv("f-dealership-website", meister?.dealership_website))}" /></div>
-              <div class="form-field"><label>City</label><input id="f-city" data-draft value="${escapeAttr(dv("f-city", meister?.city))}" /></div>
+              <div class="form-field"><label>Dealership Website</label><input id="f-dealership-website" data-draft placeholder="https://…" value="${escapeAttr(dv("f-dealership-website", base?.dealership_website))}" /></div>
+              <div class="form-field"><label>City</label><input id="f-city" data-draft value="${escapeAttr(dv("f-city", base?.city))}" /></div>
               <div class="form-field form-field-split">
-                <div><label>State</label><input id="f-state" data-draft maxlength="2" style="text-transform:uppercase" value="${escapeAttr(dv("f-state", meister?.state))}" /></div>
-                <div><label>Zip</label><input id="f-zip" data-draft inputmode="numeric" value="${escapeAttr(dv("f-zip", meister?.zip))}" /></div>
+                <div><label>State</label><input id="f-state" data-draft maxlength="2" style="text-transform:uppercase" value="${escapeAttr(dv("f-state", base?.state))}" /></div>
+                <div><label>Zip</label><input id="f-zip" data-draft inputmode="numeric" value="${escapeAttr(dv("f-zip", base?.zip))}" /></div>
               </div>
             </div>
             <div class="form-field"><label>Profile Summary</label>
@@ -2715,11 +2789,13 @@ async function renderMeister(route, seq) {
             </div>
             <div class="group-label" style="margin-top:6px">Key facts</div>
             <div class="form-grid form-grid-4">
-              <div class="form-field"><label>Allocation count</label><input id="f-allocation" data-draft type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 2" value="${escapeAttr(dv("f-allocation", meister?.allocation_count ?? ""))}" /></div>
-              <div class="form-field"><label>Guest count</label><input id="f-guest-est" data-draft type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 12" title="How many potential buyers this Meister has for the GR GT (no names needed)" value="${escapeAttr(dv("f-guest-est", meister?.guest_estimate ?? ""))}" /></div>
-              <div class="form-field"><label>Dealer Code</label><input id="f-dealer-code" data-draft maxlength="20" autocomplete="off" placeholder="e.g. 04136" value="${escapeAttr(dv("f-dealer-code", meister?.dealer_code))}" /></div>
+              <div class="form-field"><label>Allocation count</label><input id="f-allocation" data-draft type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 2" value="${escapeAttr(dv("f-allocation", base?.allocation_count ?? ""))}" /></div>
+              <div class="form-field"><label>Guest count</label><input id="f-guest-est" data-draft type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 12" title="How many potential buyers this Meister has for the GR GT (no names needed)" value="${escapeAttr(dv("f-guest-est", base?.guest_estimate ?? ""))}" /></div>
+              <div class="form-field"><label>Dealer Code</label><input id="f-dealer-code" data-draft maxlength="20" autocomplete="off" placeholder="e.g. 04136" value="${escapeAttr(dv("f-dealer-code", base?.dealer_code))}" /></div>
               <div class="form-field"><label>Next Guest Delivery</label>${(() => { const nd = nextGuestDelivery(guests); return `<div class="readonly-field">${nd ? `<b>${escapeHtml(fmtMonth(nd.delivery_date))}</b> <span class="muted">· ${escapeHtml(nd.guest_name)}</span>` : `<span class="muted">None scheduled</span>`}</div><div class="muted field-note">From the Guests tab</div>`; })()}</div>
             </div>
+            ${source && sourceGuests.length ? `<label class="check-line"><input type="checkbox" id="f-move-guests" checked /> Move ${escapeHtml(source.name)}'s ${sourceGuests.length} guest${sourceGuests.length === 1 ? "" : "s"} to this Meister</label>` : ""}
+            ${source ? `<p class="muted field-note">Dealership details are copied from ${escapeHtml(source.name)}. ${escapeHtml(source.name)}'s conversations stay on their departed record.</p>` : ""}
             ${isNew ? "" : `<div class="form-meta muted">Created by ${escapeHtml(meister.created_by_name || "—")} on ${fmtDate(meister.created_at)} &middot; Last updated by ${escapeHtml(meister.updated_by_name || "—")} ${relativeTime(meister.updated_at)}</div>`}
             <div class="composer-actions" style="justify-content:flex-start">
               <button type="submit" class="btn btn-primary">${isNew ? "Create Meister" : "Save Changes"}</button>
@@ -2757,6 +2833,7 @@ async function renderMeister(route, seq) {
       guest_estimate: g("f-guest-est") === "" ? null : Number(g("f-guest-est")),
       dealer_code: g("f-dealer-code"),
     };
+    if (isNew && source) fields.previous_meister_id = source.id;
     if (!showFieldErrors(validateMeisterFields(fields))) return;
     const btn = e.target.querySelector("button[type=submit]");
     btn.disabled = true;
@@ -2769,7 +2846,10 @@ async function renderMeister(route, seq) {
         }
         const created = await createMeister(fields, currentProfile.full_name, currentProfile.id);
         clearDrafts("f-");
-        toast(`${created.name} added`);
+        if (source && document.getElementById("f-move-guests")?.checked) {
+          await moveGuests(source.id, created.id).catch((err) => toast("Meister added, but guests didn't move: " + err.message, "error"));
+        }
+        toast(`${created.name} added${source ? ` for ${source.dealership || "the dealership"}` : ""}`);
         navigate(`#/meister/${created.id}`);
       } else {
         await updateMeister(meister.id, fields, currentProfile.full_name, meister.updated_at);
@@ -2799,6 +2879,33 @@ async function renderMeister(route, seq) {
         toast("Could not delete: " + err.message, "error");
       }
     });
+    document.getElementById("depart-btn")?.addEventListener("click", () => { uiState.departOpen = true; render(); });
+    document.getElementById("depart-cancel")?.addEventListener("click", () => { uiState.departOpen = false; render(); });
+    document.getElementById("depart-form")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector("button[type=submit]");
+      btn.disabled = true;
+      const when = document.getElementById("dp-when").value;
+      try {
+        await setMeisterDeparted(meister.id, true, document.getElementById("dp-note").value.trim(), when ? new Date(when + "T12:00:00").toISOString() : null, document.getElementById("dp-close")?.checked ?? true);
+        uiState.departOpen = false;
+        toast(`${meister.name} marked as departed`);
+        render();
+      } catch (err) {
+        toast("Could not update: " + err.message, "error");
+        btn.disabled = false;
+      }
+    });
+    document.getElementById("reactivate-btn")?.addEventListener("click", async () => {
+      if (!confirm(`Reactivate ${meister.name}? They go back on the active lists and trackers.${nextMeister ? ` ${nextMeister.name} stays as well.` : ""}`)) return;
+      try {
+        await setMeisterDeparted(meister.id, false);
+        toast(`${meister.name} reactivated`);
+        render();
+      } catch (err) {
+        toast("Could not update: " + err.message, "error");
+      }
+    });
     wireQuickActions();
     wireActivityTab(container, meister);
     wireGuestsTab(meister);
@@ -2815,7 +2922,7 @@ async function renderMeister(route, seq) {
 }
 
 // ---------- sidebar ----------
-function renderProfileSidebar(m, followUps, guests = []) {
+function renderProfileSidebar(m, followUps, guests = [], prevMeister = null, nextMeister = null) {
   const nextDel = nextGuestDelivery(guests);
   const cityLine = [m.city, [m.state, m.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const role = [m.job_title, m.dealership].filter(Boolean).join(" · ");
@@ -2826,7 +2933,7 @@ function renderProfileSidebar(m, followUps, guests = []) {
       <div class="mname">${escapeHtml(m.name)}</div>
       ${role ? `<div class="mrole">${escapeHtml(role)}</div>` : ""}
       <div class="pill-row">
-        <span class="status-pill status-${slug(m.status)}">${escapeHtml(m.status)}</span>
+        ${isDeparted(m) ? departedPill(m) : `<span class="status-pill status-${slug(m.status)}">${escapeHtml(m.status)}</span>`}
         ${m.concierge ? `<span class="concierge-pill">${I.person} ${escapeHtml(m.concierge)}</span>` : ""}
       </div>
 
@@ -2836,6 +2943,8 @@ function renderProfileSidebar(m, followUps, guests = []) {
       <p class="muted qa-hint">Logs the conversation here. Doesn't dial, text, or send email.</p>
 
       ${mine ? `<div class="field"><label>My next follow-up</label><div class="fu-${followUpState(mine.due_at)}">${I.calendar} ${fmtDateTime(mine.due_at)}</div><div class="muted" style="font-size:12px">${escapeHtml(mine.title)}</div></div>` : ""}
+      ${prevMeister ? `<div class="field"><label>Previous Meister</label><div><a href="#/meister/${prevMeister.id}">${escapeHtml(prevMeister.name)}</a>${prevMeister.departed_at ? `<span class="muted"> · left ${fmtDate(prevMeister.departed_at)}</span>` : ""}</div></div>` : ""}
+      ${nextMeister ? `<div class="field"><label>Replaced by</label><div><a href="#/meister/${nextMeister.id}">${escapeHtml(nextMeister.name)}</a></div></div>` : ""}
       ${m.phone ? `<div class="field"><label>Phone</label><div>${escapeHtml(formatPhone(m.phone))}</div></div>` : ""}
       ${m.email ? `<div class="field"><label>Email</label><div>${escapeHtml(m.email)}</div></div>` : ""}
       ${m.dealership_website ? `<div class="field"><label>Dealership Website</label><div><a href="${escapeAttr(withProtocol(m.dealership_website))}" target="_blank" rel="noopener">${escapeHtml(m.dealership_website.replace(/^https?:\/\//i, ""))} ${I.link}</a></div></div>` : ""}

@@ -319,6 +319,7 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .status-engaged { color: var(--orange); }
 .status-sold { color: var(--green); }
 .status-not-interested { color: var(--grey-dim); }
+.status-departed { color: var(--grey-dim); border-style: dashed; }
 
 .concierge-pill {
   display: inline-flex;
@@ -1103,6 +1104,7 @@ button.legend-item:hover { color: var(--text); }
 .link-btn:hover { text-decoration: underline; }
 .st-stale { color: var(--amber); }
 .kpi-stale .kpi-num { color: var(--amber); }
+.kpi-departed .kpi-num { color: var(--grey-dim); }
 .stale-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); margin-right: 6px; vertical-align: middle; }
 
 /* ---- direction chip ---- */
@@ -1151,6 +1153,10 @@ input.invalid, select.invalid, textarea.invalid { border-color: var(--red) !impo
 /* ---- dealerships ---- */
 .dealer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
 .dealer-card.none { opacity: 0.8; border-style: dashed; }
+.dealer-card.no-meister { border-style: dashed; }
+.dealer-flag { color: var(--amber); font-weight: 700; }
+.dealer-vacant { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; font-size: 12px; }
+.mini-row.departed { opacity: 0.7; }
 .dealer-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 .dealer-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
 .dealer-name svg { width: 16px; height: 16px; color: var(--red); }
@@ -1325,3 +1331,12 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 @media (max-width: 900px) { .gc-kpis { grid-template-columns: repeat(2, 1fr); } .gc-grid { grid-template-columns: 1fr; } }
 
 @media (max-width: 900px) and (min-width: 601px) { .fu-form-grid { grid-template-columns: 1fr 1fr; } .fu-form-grid > input:first-child { grid-column: 1 / -1; } }
+
+/* ---------- departed Meisters ---------- */
+.departed-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 14px 18px; margin-bottom: 18px; border: 1px dashed var(--border); border-radius: 12px; background: var(--panel); }
+.departed-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.departed-note { margin: 2px 0 4px; }
+.depart-form { margin-bottom: 18px; }
+.depart-title { font-weight: 700; display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.check-line { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0 10px; cursor: pointer; }
+.check-line input { width: auto; }

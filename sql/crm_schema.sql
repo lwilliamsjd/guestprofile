@@ -641,3 +641,69 @@ create trigger notify_on_follow_up_assign after insert or update of assigned_to 
 -- The old pma column is kept (hidden) so nothing already entered is lost.
 -- ============================================================
 alter table meisters add column if not exists dealer_code text;
+
+-- ============================================================
+-- DEPARTED MEISTERS (Nov 2026)
+-- A Meister who leaves the store is marked Departed instead of deleted:
+-- every conversation, follow-up and guest stays on their record, the
+-- dealership data stays, and they drop out of Going Quiet, follow-up
+-- counts and analytics. "Add new Meister for this dealership" creates the
+-- replacement with the store data copied over and links the two records.
+-- Safe to run more than once.
+-- ============================================================
+alter table meisters add column if not exists departed_at timestamptz;
+alter table meisters add column if not exists departed_note text;
+alter table meisters add column if not exists departed_by_name text;
+alter table meisters add column if not exists previous_meister_id uuid references meisters(id) on delete set null;
+alter table meisters add column if not exists replaced_by_id uuid references meisters(id) on delete set null;
+create index if not exists meisters_departed_idx on meisters (departed_at);
+
+-- Mark departed (or bring back). Records the change on the timeline and
+-- optionally closes that Meister's open follow-ups (anyone's).
+create or replace function public.set_meister_departed(p_id uuid, p_departed boolean, p_note text default null, p_when timestamptz default null, p_close_follow_ups boolean default true)
+returns void language plpgsql security definer set search_path = public
+as $$
+declare
+  who text;
+  cur_status text;
+  was timestamptz;
+begin
+  if auth.uid() is null then raise exception 'not allowed'; end if;
+  select coalesce(full_name, 'someone') into who from profiles where id = auth.uid();
+  select status, departed_at into cur_status, was from meisters where id = p_id and deleted_at is null;
+  if not found then raise exception 'Meister not found'; end if;
+  if p_when is not null and p_when > now() + interval '1 day' then raise exception 'Departure date cannot be in the future'; end if;
+
+  if p_departed then
+    update meisters set departed_at = coalesce(p_when, departed_at, now()), departed_note = nullif(trim(coalesce(p_note, '')), ''),
+      departed_by_name = who, updated_by_name = who where id = p_id;
+    if was is null then
+      insert into status_history (meister_id, from_status, to_status, changed_by, changed_by_name) values (p_id, cur_status, 'Departed', auth.uid(), who);
+    end if;
+    if p_close_follow_ups then
+      update follow_ups set done_at = now() where meister_id = p_id and done_at is null;
+    end if;
+  else
+    update meisters set departed_at = null, departed_note = null, departed_by_name = null, updated_by_name = who where id = p_id;
+    if was is not null then
+      insert into status_history (meister_id, from_status, to_status, changed_by, changed_by_name) values (p_id, 'Departed', cur_status, auth.uid(), who);
+    end if;
+  end if;
+end;
+$$;
+
+-- When a replacement is created from a departed Meister, link the old record to it.
+create or replace function public.link_replacement_meister()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+begin
+  if new.previous_meister_id is not null then
+    update meisters set replaced_by_id = new.id where id = new.previous_meister_id and id <> new.id;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists meisters_link_replacement on meisters;
+create trigger meisters_link_replacement after insert on meisters
+  for each row execute procedure public.link_replacement_meister();

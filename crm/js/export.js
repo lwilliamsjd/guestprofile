@@ -1,4 +1,4 @@
-import { fetchAllForExport, listMeisterRollups, markExported } from "./api.js?v=202610281452";
+import { fetchAllForExport, listMeisterRollups, markExported } from "./api.js?v=202611061735";
 
 // Dates are written as real Excel date cells (not text) so they sort and
 // filter properly in Excel.
@@ -35,7 +35,7 @@ export async function exportToExcel(userId) {
       Name: m.name,
       "Job Title": m.job_title || "",
       Concierge: m.concierge || "",
-      Status: m.status,
+      Status: m.departed_at ? "Departed" : m.status,
       "Last Contact": toDate(r.last_contact),
       Conversations: r.interaction_count || 0,
       Guests: r.guest_count || 0,
@@ -49,6 +49,8 @@ export async function exportToExcel(userId) {
       Allocation: m.allocation_count ?? "",
       "Guest Count": m.guest_estimate ?? "",
       "Dealer Code": m.dealer_code || "",
+      "Departed On": m.departed_at ? new Date(m.departed_at).toLocaleDateString() : "",
+      "Departure Note": m.departed_note || "",
       "Delivery ETA": toDate(m.delivery_eta),
       "Profile Summary": m.profile_summary || "",
       "Created By": m.created_by_name || "",

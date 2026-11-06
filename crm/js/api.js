@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202610281452";
+import { supabase } from "./supabase-client.js?v=202611061735";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -93,7 +93,7 @@ export async function fetchAnalyticsData() {
       .from("interactions")
       .select("id, meister_id, method, direction, note, category_id, occurred_at, created_by, created_by_name, meisters!inner(name, concierge, dealership, status, deleted_at)"))
       .order("occurred_at", { ascending: false }),
-    supabase.from("meisters").select("id, name, dealership, job_title, status, concierge, city, state, zip, guest_estimate, allocation_count, created_at, updated_at").is("deleted_at", null).order("name"),
+    supabase.from("meisters").select("*").is("deleted_at", null).order("name"),
     live(supabase.from("guests").select("*, meisters!inner(name, concierge, deleted_at)")).order("purchase_date", { ascending: false, nullsFirst: false }),
     live(supabase.from("follow_ups").select("*, meisters!inner(name, concierge, deleted_at)")).is("done_at", null).order("due_at", { ascending: true }),
     supabase.from("profiles").select("id, full_name, concierge"),
@@ -358,6 +358,19 @@ export async function deleteComment(id) {
   if (error) throw error;
 }
 
+// ---------- departed Meisters ----------
+export async function setMeisterDeparted(id, departed, note = null, whenIso = null, closeFollowUps = true) {
+  const { error } = await supabase.rpc("set_meister_departed", { p_id: id, p_departed: departed, p_note: note, p_when: whenIso, p_close_follow_ups: closeFollowUps });
+  if (error) {
+    if (/set_meister_departed/.test(error.message || "")) throw new Error("The Departed feature needs its database update. Run the DEPARTED MEISTERS block of crm_schema.sql in Supabase first.");
+    throw error;
+  }
+}
+export async function moveGuests(fromMeisterId, toMeisterId) {
+  const { error } = await supabase.from("guests").update({ meister_id: toMeisterId }).eq("meister_id", fromMeisterId);
+  if (error) throw error;
+}
+
 export async function getMeister(id) {
   const { data, error } = await supabase.from("meisters").select("*").eq("id", id).single();
   if (error) throw error;
@@ -367,6 +380,7 @@ export async function getMeister(id) {
 // Until the dealer_code column is added in Supabase, save everything else instead of failing.
 const missingDealerCode = (error, fields) => error && "dealer_code" in fields && /dealer_code/.test(error.message || "");
 const withoutDealerCode = ({ dealer_code, ...rest }) => rest;
+const missingPrevious = (error, fields) => error && "previous_meister_id" in fields && /previous_meister_id/.test(error.message || "");
 
 export async function createMeister(fields, authorName, authorId) {
   const ins = (f) => supabase
@@ -376,6 +390,7 @@ export async function createMeister(fields, authorName, authorId) {
     .single();
   let { data, error } = await ins(fields);
   if (missingDealerCode(error, fields)) ({ data, error } = await ins(withoutDealerCode(fields)));
+  if (missingPrevious(error, fields)) { const { previous_meister_id, ...rest } = fields; ({ data, error } = await ins(rest)); }
   if (error) throw error;
   return data;
 }
