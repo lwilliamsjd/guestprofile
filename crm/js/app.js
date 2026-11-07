@@ -58,9 +58,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611062020";
-import { exportToExcel } from "./export.js?v=202611062020";
-import { wireImport } from "./import-export.js?v=202611062020";
+} from "./api.js?v=202611062023";
+import { exportToExcel } from "./export.js?v=202611062023";
+import { wireImport } from "./import-export.js?v=202611062023";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -166,10 +166,7 @@ function freshUiState(tab) {
 const dashState = loadState("dash", { q: "", status: "", concierge: "", sort: "updated", dir: "desc" });
 const actState = loadState("act", { q: "", method: "", person: "", category: "", direction: "" });
 const fuPageState = { showDone: false, editingId: null };
-const anaState = loadState("ana", { range: "30d", from: "", to: "", concierge: "", drill: null, compare: true, chartSpan: "1m" });
-// Activity over time has its own span, independent of the page date range.
-const CHART_SPANS = [["1m", "1M", "Last month"], ["3m", "3M", "Last 3 months"], ["6m", "6M", "Last 6 months"], ["12m", "12M", "Last 12 months"], ["max", "Max", "All time"]];
-if (!CHART_SPANS.some(([k]) => k === anaState.chartSpan)) anaState.chartSpan = "1m";
+const anaState = loadState("ana", { range: "30d", from: "", to: "", concierge: "", drill: null, compare: true });
 anaState.drill = null;
 const catMgrState = { editingId: null };
 const dealerState = { q: "", sort: "meisters" };
@@ -1277,21 +1274,10 @@ async function renderAnalyticsPage(route, seq) {
   for (const i of ints) { const t = new Date(i.occurred_at); heat[t.getDay()][t.getHours()]++; }
   const heatMax = Math.max(1, ...heat.flat());
 
-  // ---- time series (own span: 1M / 3M / 6M / 12M / Max) ----
-  const allConcInts = d.interactions.filter((i) => conciergeOk(concOf(i.meisters)));
-  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
-  const chartFrom = {
-    "1m": addDays(today0, -29),
-    "3m": addDays(today0, -90),
-    "6m": addDays(today0, -182),
-    "12m": new Date(today0.getFullYear(), today0.getMonth() - 11, 1),
-    max: null,
-  }[anaState.chartSpan];
-  const chartInts = allConcInts.filter((i) => !chartFrom || new Date(i.occurred_at) >= chartFrom);
-  const spanDays = chartFrom ? Math.max(1, Math.round((Date.now() - chartFrom) / 86400000)) : dataSpanDays(chartInts.map((i) => i.occurred_at));
-  const bucket = spanDays <= 31 ? "day" : spanDays <= 190 ? "week" : "month";
-  const series = timeSeries(chartInts.map((i) => i.occurred_at), bucket, chartFrom, null);
-  const chartSpanLabel = CHART_SPANS.find(([k]) => k === anaState.chartSpan)[2];
+  // ---- time series ----
+  const spanDays = from ? Math.max(1, Math.round(((to || new Date()) - from) / 86400000)) : dataSpanDays(ints.map((i) => i.occurred_at));
+  const bucket = spanDays <= 31 ? "day" : spanDays <= 182 ? "week" : "month";
+  const series = timeSeries(ints.map((i) => i.occurred_at), bucket, from, to);
 
   // ---- breakdowns ----
   const byMethod = METHODS.map((m) => ({ key: m, label: m, value: ints.filter((i) => i.method === m).length, color: METHOD_COLOR[m] })).filter((x) => x.value);
@@ -1405,13 +1391,8 @@ async function renderAnalyticsPage(route, seq) {
 
     <div class="ana-grid">
       <div class="card ana-span-8">
-        <div class="card-head chart-head"><h3>${I.chart} Activity over time</h3>
-          <div class="chart-head-r">
-            <div class="filter-chips span-chips no-print" role="group" aria-label="Time frame">${CHART_SPANS.map(([k, l, t]) => `<button type="button" class="chip ${anaState.chartSpan === k ? "active" : ""}" data-span="${k}" title="${t}">${l}</button>`).join("")}</div>
-            <span class="muted">${escapeHtml(chartSpanLabel)} · ${bucket === "day" ? "daily" : bucket === "week" ? "weekly" : "monthly"} · ${chartInts.length} total</span>
-          </div>
-        </div>
-        ${chartInts.length ? barChartSvg(series, { drillPrefix: "bucket" }) : `<div class="empty-state">No activity in this time frame.</div>`}
+        <div class="card-head"><h3>${I.chart} Activity over time</h3><span class="muted">${bucket === "day" ? "Daily" : bucket === "week" ? "Weekly" : "Monthly"} · ${ints.length} total</span></div>
+        ${ints.length ? barChartSvg(series, { drillPrefix: "bucket" }) : `<div class="empty-state">No activity in this range.</div>`}
       </div>
       <div class="card ana-span-4">
         <div class="card-head"><h3>Interactions by type</h3></div>
@@ -1548,13 +1529,12 @@ async function renderAnalyticsPage(route, seq) {
   document.getElementById("ana-to")?.addEventListener("change", (e) => { anaState.to = e.target.value; render(); });
   document.getElementById("ana-concierge").addEventListener("change", (e) => { anaState.concierge = e.target.value; anaState.drill = null; render(); });
   document.getElementById("ana-compare")?.addEventListener("change", (e) => { anaState.compare = e.target.checked; render(); });
-  container.querySelectorAll(".span-chips [data-span]").forEach((b) => b.addEventListener("click", () => { anaState.chartSpan = b.dataset.span; anaState.drill = null; render(); }));
   document.getElementById("gc-map-btn")?.addEventListener("click", async () => {
     const win = window.open("", "_blank");
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611062020");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611062023");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -1575,7 +1555,7 @@ async function renderAnalyticsPage(route, seq) {
 
   // ---- drawer (drill-down) ----
   const allGuests = d.guests.filter((g) => conciergeOk(concOf(g.meisters)));
-  const ctx = { chartInts, gRegions, gBuckets, gMissing: meisters.filter((m) => m.guest_estimate == null), quiet, soldAll, deliveredAll, awaiting, ints, meisters, guests, allGuests, delivered, fus, series, salesSeries, deliverySeries, buckets, loggerName, byCat, history, heat };
+  const ctx = { gRegions, gBuckets, gMissing: meisters.filter((m) => m.guest_estimate == null), quiet, soldAll, deliveredAll, awaiting, ints, meisters, guests, allGuests, delivered, fus, series, salesSeries, deliverySeries, buckets, loggerName, byCat, history, heat };
   function renderDrawer() {
     let root = document.getElementById("drawer-root");
     if (!root) { root = document.createElement("div"); root.id = "drawer-root"; document.body.appendChild(root); }
@@ -1645,7 +1625,7 @@ function drillContent(key, ctx) {
     }
     case "bucket": {
       const pt = ctx.series[Number(arg)];
-      const rows = pt ? ctx.chartInts.filter((i) => { const t = new Date(i.occurred_at); return t >= pt.start && t < pt.end; }) : [];
+      const rows = pt ? ctx.ints.filter((i) => { const t = new Date(i.occurred_at); return t >= pt.start && t < pt.end; }) : [];
       return intsList(rows, `Activity — ${pt ? pt.label : ""}`);
     }
     case "method": return intsList(ctx.ints.filter((i) => i.method === arg), `${arg} interactions`);

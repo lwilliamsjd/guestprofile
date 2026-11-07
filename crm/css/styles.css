@@ -1340,8 +1340,3 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 .depart-title { font-weight: 700; display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .check-line { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0 10px; cursor: pointer; }
 .check-line input { width: auto; }
-
-/* Activity over time: time frame chips */
-.chart-head { flex-wrap: wrap; gap: 8px 12px; }
-.chart-head-r { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-left: auto; }
-.span-chips .chip { padding: 4px 10px; font-size: 11.5px; font-weight: 600; }
