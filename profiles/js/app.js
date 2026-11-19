@@ -5,14 +5,14 @@ import {
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations,
-} from "./api.js?v=202611191239";
+} from "./api.js?v=202611191243";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611191239";
-import { SUPABASE_URL } from "./config.js?v=202611191239";
+} from "./outputs.js?v=202611191243";
+import { SUPABASE_URL } from "./config.js?v=202611191243";
 
 const app = document.getElementById("app");
 
@@ -2019,7 +2019,7 @@ render();
 // INQUIRIES: guests who reach out to us directly (not through a dealer)
 // ============================================================
 const INQ_METHODS = ["Phone", "Email", "Referral", "Other"];
-const inqState = Object.assign({ view: "open", q: "" }, store.get("gtap-inq") || {});
+const inqState = Object.assign({ view: "open", q: "", sort: "received_on", dir: "desc" }, store.get("gtap-inq") || {});
 let dealerCache = null; // participating dealers with a ZIP, from the CRM
 async function dealerLocations() {
   if (!dealerCache) dealerCache = await listDealerLocations().catch(() => []);
@@ -2038,7 +2038,13 @@ async function renderInquiries(seq) {
     const q = inqState.q.trim().toLowerCase();
     const open = all.filter((r) => r.status !== "Moved"), moved = all.filter((r) => r.status === "Moved");
     const base = inqState.view === "moved" ? moved : inqState.view === "all" ? all : open;
-    const list = base.filter((r) => !q || [r.name, r.email, r.phone, r.city, r.state, r.zip, r.closest_dealer, r.notes, r.referred_by].some((f) => (f || "").toLowerCase().includes(q)));
+    const sortVal = (r) => ({
+      received_on: r.received_on || "", name: (r.name || "").toLowerCase(), method: r.method || "",
+      location: [r.state, r.city].filter(Boolean).join(" ").toLowerCase() || "~", closest_dealer: (r.closest_dealer || "~").toLowerCase(), status: r.status || "",
+    }[inqState.sort] ?? "");
+    const list = base.filter((r) => !q || [r.name, r.email, r.phone, r.city, r.state, r.zip, r.closest_dealer, r.notes, r.referred_by].some((f) => (f || "").toLowerCase().includes(q)))
+      .sort((a, b) => { const x = sortVal(a), y = sortVal(b); const c = x < y ? -1 : x > y ? 1 : (a.name || "").localeCompare(b.name || ""); return inqState.dir === "asc" ? c : -c; });
+    const th = (label, key) => { const on = inqState.sort === key; return `<th data-sort="${key}">${label}<span class="sort-ic ${on ? "on" : ""}">${on ? (inqState.dir === "asc" ? "▲" : "▼") : "▼"}</span></th>`; };
     const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const tab = (k, label, n) => `<button class="kpi ${inqState.view === k ? "active" : ""}" data-view="${k}"><span class="kpi-num">${n}</span><span class="kpi-label">${label}</span></button>`;
     main.innerHTML = `
@@ -2060,7 +2066,7 @@ async function renderInquiries(seq) {
       </div>
       <div class="table-wrap">
         ${list.length ? `<table class="crm-table inq-table">
-          <thead><tr><th>Received</th><th>Guest</th><th>Reached out by</th><th>Location</th><th>Closest dealer</th><th>Notes</th><th>Status</th></tr></thead>
+          <thead><tr>${th("Received", "received_on")}${th("Guest", "name")}${th("Reached out by", "method")}${th("Location", "location")}${th("Closest dealer", "closest_dealer")}<th style="cursor:default">Notes</th>${th("Status", "status")}</tr></thead>
           <tbody>${list.map((r) => `
             <tr class="clickable-row ${r.status === "Moved" ? "inq-moved" : ""}" data-id="${r.id}">
               <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}</td>
@@ -2076,6 +2082,12 @@ async function renderInquiries(seq) {
     const qi = main.querySelector("#inq-q");
     qi.addEventListener("input", () => { inqState.q = qi.value; const pos = qi.selectionStart; draw(); const n = main.querySelector("#inq-q"); n.focus(); n.setSelectionRange(pos, pos); });
     main.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { inqState.view = b.dataset.view; draw(); }));
+    main.querySelectorAll("th[data-sort]").forEach((t) => t.addEventListener("click", () => {
+      const k = t.dataset.sort;
+      if (inqState.sort === k) inqState.dir = inqState.dir === "asc" ? "desc" : "asc";
+      else { inqState.sort = k; inqState.dir = k === "received_on" ? "desc" : "asc"; }
+      draw();
+    }));
     main.querySelectorAll(".clickable-row").forEach((tr) => tr.addEventListener("click", () => navigate(`#/inquiries/${tr.dataset.id}`)));
     main.querySelector("#inq-export").addEventListener("click", () => exportInquiries(all));
   }
@@ -2154,7 +2166,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611191239");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611191243");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2267,7 +2279,7 @@ async function openInquiryMap(inqs) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611191239");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611191243");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "" });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
