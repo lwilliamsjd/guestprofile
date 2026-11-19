@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611062023";
+import { supabase } from "./supabase-client.js?v=202611191239";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -177,4 +177,46 @@ export async function lastExportAt() {
     .limit(1);
   if (error || !data || !data.length) return null;
   return data[0];
+}
+
+// ---------- inquiries (guests who reach out to us directly, not through a dealer) ----------
+const NO_INQ = "The Inquiries list needs its database update. Run the INQUIRIES block of sql/schema.sql in Supabase first.";
+const inqErr = (error) => (/inquiries/.test(error.message || "") && /exist|schema cache|relation/i.test(error.message || "") ? new Error(NO_INQ) : error);
+export async function listInquiries() {
+  const { data, error } = await supabase.from("inquiries").select("*").order("received_on", { ascending: false }).order("created_at", { ascending: false });
+  if (error) throw inqErr(error);
+  return data;
+}
+export async function getInquiry(id) {
+  const { data, error } = await supabase.from("inquiries").select("*").eq("id", id).single();
+  if (error) throw inqErr(error);
+  return data;
+}
+export async function createInquiry(fields, profile) {
+  const { data, error } = await supabase.from("inquiries")
+    .insert({ ...fields, created_by: profile.id, created_by_name: profile.full_name, updated_by_name: profile.full_name })
+    .select().single();
+  if (error) throw inqErr(error);
+  return data;
+}
+export async function updateInquiry(id, fields, profile) {
+  const { data, error } = await supabase.from("inquiries").update({ ...fields, updated_by_name: profile.full_name }).eq("id", id).select().single();
+  if (error) throw inqErr(error);
+  return data;
+}
+export async function deleteInquiry(id) {
+  const { error } = await supabase.from("inquiries").delete().eq("id", id);
+  if (error) throw inqErr(error);
+}
+// Participating dealerships (from the Concierge CRM) with a ZIP, for "closest dealer".
+export async function listDealerLocations() {
+  const { data, error } = await supabase.from("meisters").select("*").is("deleted_at", null);
+  if (error) return [];
+  const seen = new Map();
+  for (const m of data) {
+    if (m.departed_at || !m.dealership || !m.zip) continue;
+    const key = m.dealership.trim().toLowerCase();
+    if (!seen.has(key)) seen.set(key, { dealership: m.dealership.trim(), zip: String(m.zip), city: m.city || "", state: m.state || "" });
+  }
+  return [...seen.values()];
 }

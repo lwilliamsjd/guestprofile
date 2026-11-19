@@ -4,14 +4,15 @@ import {
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
-} from "./api.js?v=202611062023";
+  listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations,
+} from "./api.js?v=202611191239";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611062023";
-import { SUPABASE_URL } from "./config.js?v=202611062023";
+} from "./outputs.js?v=202611191239";
+import { SUPABASE_URL } from "./config.js?v=202611191239";
 
 const app = document.getElementById("app");
 
@@ -283,6 +284,8 @@ function parseRoute() {
   if (parts[0] === "p" && parts[1]) return { name: "editor", id: parts[1] };
   if (parts[0] === "account") return { name: "account" };
   if (parts[0] === "analytics") return { name: "analytics" };
+  if (parts[0] === "inquiries" && parts[1]) return { name: "inquiry", id: parts[1] === "new" ? null : parts[1] };
+  if (parts[0] === "inquiries") return { name: "inquiries" };
   return { name: "list" };
 }
 
@@ -322,6 +325,8 @@ async function render() {
   if (route.name === "outputs") return renderOutputs(route, seq);
   if (route.name === "account") return renderAccount(seq);
   if (route.name === "analytics") return renderAnalytics(seq);
+  if (route.name === "inquiries") return renderInquiries(seq);
+  if (route.name === "inquiry") return renderInquiryForm(route, seq);
 }
 
 // Deferred with setTimeout: running Supabase calls inside the auth callback
@@ -366,6 +371,7 @@ function shell(active, inner) {
         <nav class="nav">
           <a href="#/" class="${active === "list" ? "active" : ""}">Applicants</a>
           <a href="#/new" class="${active === "new" ? "active" : ""}">New Profile</a>
+          <a href="#/inquiries" class="${active === "inquiries" ? "active" : ""}" title="Guests who reached out to us directly, not through a dealer">Inquiries</a>
           <a href="#/analytics" class="${active === "analytics" ? "active" : ""}">Analytics</a>
         </nav>
         <div class="user-area">
@@ -1634,8 +1640,8 @@ function weekStart(d) {
 
 async function renderAnalytics(seq) {
   const main = shell("analytics", `<div class="loading">Crunching numbers…</div>`);
-  let all;
-  try { all = await listApplicants(); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  let all, inqs = null;
+  try { [all, inqs] = await Promise.all([listApplicants(), listInquiries().catch(() => null)]); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
   if (seq !== renderSeq) return;
   liveRefresh = async () => { try { all = await listApplicants(); draw(); } catch {} };
 
@@ -1899,6 +1905,7 @@ async function renderAnalytics(seq) {
         ${columns("Interviews per Week", weekly, { cls: "span-8 weekly", note: "Last 12 weeks, by interview date" })}
         ${split("Interviews by Team Member", team, { cls: "span-4" })}
       </div>
+      ${inquiryAnalyticsHtml(inqs)}
       <div class="drawer-scrim ${drawer ? "open" : ""}" id="an-scrim"></div>
       <aside class="drawer ${drawer ? "open" : ""}" id="an-drawer">
         ${drawer ? `
@@ -1911,6 +1918,7 @@ async function renderAnalytics(seq) {
             </a>`).join("")}</div>` : ""}
       </aside>`;
 
+    main.querySelector("#inq-map-btn")?.addEventListener("click", () => openInquiryMap(inqs));
     main.querySelector("#an-print").addEventListener("click", () => {
       const t = document.title;
       document.title = `GR GT Applicant Analytics ${todayISO()}`;
@@ -2006,3 +2014,263 @@ async function renderAccount(seq) {
 }
 
 render();
+
+// ============================================================
+// INQUIRIES: guests who reach out to us directly (not through a dealer)
+// ============================================================
+const INQ_METHODS = ["Phone", "Email", "Referral", "Other"];
+const inqState = Object.assign({ view: "open", q: "" }, store.get("gtap-inq") || {});
+let dealerCache = null; // participating dealers with a ZIP, from the CRM
+async function dealerLocations() {
+  if (!dealerCache) dealerCache = await listDealerLocations().catch(() => []);
+  return dealerCache;
+}
+const inqLocation = (q) => [[q.city, q.state].filter(Boolean).join(", "), q.zip].filter(Boolean).join(" ");
+
+async function renderInquiries(seq) {
+  const main = shell("inquiries", `<div class="loading">Loading inquiries…</div>`);
+  let all;
+  try { all = await listInquiries(); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  if (seq !== renderSeq) return;
+
+  function draw() {
+    store.set("gtap-inq", inqState);
+    const q = inqState.q.trim().toLowerCase();
+    const open = all.filter((r) => r.status !== "Moved"), moved = all.filter((r) => r.status === "Moved");
+    const base = inqState.view === "moved" ? moved : inqState.view === "all" ? all : open;
+    const list = base.filter((r) => !q || [r.name, r.email, r.phone, r.city, r.state, r.zip, r.closest_dealer, r.notes, r.referred_by].some((f) => (f || "").toLowerCase().includes(q)));
+    const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const tab = (k, label, n) => `<button class="kpi ${inqState.view === k ? "active" : ""}" data-view="${k}"><span class="kpi-num">${n}</span><span class="kpi-label">${label}</span></button>`;
+    main.innerHTML = `
+      <div class="page-header">
+        <div><h1>Inquiries</h1><p class="muted">Guests who reached out to us directly, not through a dealer</p></div>
+        <div class="page-actions">
+          <button class="btn" id="inq-export">${I.excel}Export Excel</button>
+          <a href="#/inquiries/new" class="btn btn-primary">${I.plus}New Inquiry</a>
+        </div>
+      </div>
+      <div class="kpi-strip inq-kpis">
+        ${tab("open", "Open", open.length)}
+        ${tab("moved", "Moved to profiles", moved.length)}
+        ${tab("all", "All inquiries", all.length)}
+        <div class="kpi static"><span class="kpi-num">${all.filter((r) => (r.received_on || "") >= since).length}</span><span class="kpi-label">Last 30 days</span></div>
+      </div>
+      <div class="filters">
+        <label class="search-box">${I.search}<input id="inq-q" placeholder="Search name, email, phone, city, dealer, notes…" value="${escapeHtml(inqState.q)}"></label>
+      </div>
+      <div class="table-wrap">
+        ${list.length ? `<table class="crm-table inq-table">
+          <thead><tr><th>Received</th><th>Guest</th><th>Reached out by</th><th>Location</th><th>Closest dealer</th><th>Notes</th><th>Status</th></tr></thead>
+          <tbody>${list.map((r) => `
+            <tr class="clickable-row ${r.status === "Moved" ? "inq-moved" : ""}" data-id="${r.id}">
+              <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}</td>
+              <td><div class="cell-name">${escapeHtml(r.name)}</div><div class="cell-sub muted">${escapeHtml([r.email, r.phone].filter(Boolean).join(" · "))}</div></td>
+              <td><span class="pill pill-method">${escapeHtml(r.method || "Other")}</span>${r.method === "Referral" && r.referred_by ? `<div class="cell-sub muted">from ${escapeHtml(r.referred_by)}</div>` : ""}</td>
+              <td>${escapeHtml(inqLocation(r))}</td>
+              <td>${escapeHtml(r.closest_dealer || "")}${r.closest_dealer_miles != null && r.closest_dealer ? `<div class="cell-sub muted">about ${Math.round(r.closest_dealer_miles)} mi</div>` : ""}</td>
+              <td class="inq-notes">${escapeHtml((r.notes || "").slice(0, 110))}${(r.notes || "").length > 110 ? "…" : ""}</td>
+              <td>${r.status === "Moved" ? `<span class="pill pill-complete" title="Moved to profiles ${r.moved_at ? fmtDate(r.moved_at) : ""}">${I.check}Profile started</span>` : `<span class="pill pill-draft">Open</span>`}</td>
+            </tr>`).join("")}</tbody></table>`
+          : `<div class="empty-state">${all.length ? (q ? "No inquiries match that search." : inqState.view === "moved" ? "No inquiries have been moved to profiles yet." : "No open inquiries.") : "No inquiries yet. Add one with <b>New Inquiry</b> when a guest reaches out on their own."}</div>`}
+      </div>`;
+    const qi = main.querySelector("#inq-q");
+    qi.addEventListener("input", () => { inqState.q = qi.value; const pos = qi.selectionStart; draw(); const n = main.querySelector("#inq-q"); n.focus(); n.setSelectionRange(pos, pos); });
+    main.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { inqState.view = b.dataset.view; draw(); }));
+    main.querySelectorAll(".clickable-row").forEach((tr) => tr.addEventListener("click", () => navigate(`#/inquiries/${tr.dataset.id}`)));
+    main.querySelector("#inq-export").addEventListener("click", () => exportInquiries(all));
+  }
+  draw();
+}
+
+function exportInquiries(rows) {
+  if (!window.XLSX) return alert("Excel library didn't load. Check your connection and try again.");
+  const data = rows.map((r) => ({
+    Received: r.received_on || "", Name: r.name, Email: r.email || "", Phone: r.phone || "", "Reached Out By": r.method || "", "Referred By": r.referred_by || "",
+    ZIP: r.zip || "", City: r.city || "", State: r.state || "", "Closest Dealer": r.closest_dealer || "", "Miles (approx)": r.closest_dealer_miles ?? "",
+    Notes: r.notes || "", Status: r.status === "Moved" ? "Moved to profiles" : "Open", "Moved On": r.moved_at ? fmtDate(r.moved_at) : "", "Added By": r.created_by_name || "",
+  }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Inquiries");
+  XLSX.writeFile(wb, `GR GT Inquiries ${todayISO()}.xlsx`);
+}
+
+async function renderInquiryForm(route, seq) {
+  const isNew = !route.id;
+  const main = shell("inquiries", `<div class="loading">Loading…</div>`);
+  let rec = null;
+  try { if (!isNew) rec = await getInquiry(route.id); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  if (seq !== renderSeq) return;
+  const v = rec || { method: "Phone", received_on: todayISO() };
+  const moved = rec && rec.status === "Moved";
+  const val = (k) => escapeHtml(v[k] ?? "");
+
+  main.innerHTML = `
+    <a href="#/inquiries" class="back-link">${I.back}Inquiries</a>
+    <div class="page-header">
+      <div><h1>${isNew ? "New Inquiry" : escapeHtml(rec.name)}</h1><p class="muted">${isNew ? "A guest who reached out to us directly" : `Added ${fmtDate(rec.created_at)}${rec.created_by_name ? ` by ${escapeHtml(rec.created_by_name)}` : ""}`}</p></div>
+      <div class="page-actions">
+        ${!isNew && !moved ? `<button class="btn btn-primary" id="inq-move" type="button">${I.doc}Start a profile</button>` : ""}
+        ${!isNew && currentProfile?.is_admin ? `<button class="btn btn-danger" id="inq-delete" type="button">${I.trash}Delete</button>` : ""}
+      </div>
+    </div>
+    ${moved ? `<div class="banner inq-moved-banner">${I.check}<span><b>Profile started</b> ${rec.moved_at ? fmtDate(rec.moved_at) : ""}${rec.moved_by_name ? ` by ${escapeHtml(rec.moved_by_name)}` : ""}. This inquiry stays here for the record.</span>${rec.applicant_id ? `<a class="btn btn-sm" href="#/p/${rec.applicant_id}">Open profile</a>` : ""}</div>` : ""}
+    <form id="inq-form" class="form-section inq-form" autocomplete="off">
+      <div class="form-grid">
+        <div class="form-field"><label>Name</label><input type="text" id="i-name" required maxlength="120" value="${val("name")}" placeholder="First and last name"></div>
+        <div class="form-field"><label>Received</label><input id="i-received" type="date" value="${val("received_on")}" max="${todayISO()}"></div>
+        <div class="form-field"><label>Email</label><input id="i-email" type="email" maxlength="160" value="${val("email")}"></div>
+        <div class="form-field"><label>Phone</label><input id="i-phone" type="tel" maxlength="40" value="${val("phone")}"></div>
+        <div class="form-field"><label>How they reached out</label><select id="i-method">${INQ_METHODS.map((m) => `<option ${v.method === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
+        <div class="form-field" id="i-ref-wrap" ${v.method === "Referral" ? "" : "hidden"}><label>Referred by</label><input type="text" id="i-ref" maxlength="120" value="${val("referred_by")}" placeholder="Who sent them our way"></div>
+      </div>
+      <div class="sec-kicker inq-kicker">Location</div>
+      <div class="form-grid inq-loc">
+        <div class="form-field"><label>ZIP</label><input type="text" id="i-zip" inputmode="numeric" maxlength="10" value="${val("zip")}" placeholder="5 digit ZIP"></div>
+        <div class="form-field"><label>City</label><input type="text" id="i-city" maxlength="80" value="${val("city")}"></div>
+        <div class="form-field"><label>State</label><select id="i-state"><option value=""></option>${US_STATES.map((s) => `<option ${v.state === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+      </div>
+      <div class="form-field">
+        <label>Closest participating dealer <span class="hint">(suggested from the ZIP, straight line distance)</span></label>
+        <input type="text" id="i-dealer" maxlength="120" value="${val("closest_dealer")}" placeholder="Enter a ZIP to see suggestions">
+        <div id="i-dealer-sugg" class="dealer-sugg"></div>
+      </div>
+      <div class="form-field"><label>Notes</label><textarea id="i-notes" rows="6" maxlength="4000" placeholder="What they asked about, timing, anything to follow up on">${val("notes")}</textarea></div>
+      <div class="inq-actions">
+        <button type="submit" class="btn btn-primary">${I.save}${isNew ? "Save Inquiry" : "Save Changes"}</button>
+        <a href="#/inquiries" class="btn">Cancel</a>
+      </div>
+    </form>`;
+
+  const $ = (id) => main.querySelector("#" + id);
+  let dealerMiles = rec?.closest_dealer_miles ?? null;
+  $("i-method").addEventListener("change", (e) => { $("i-ref-wrap").hidden = e.target.value !== "Referral"; });
+  $("i-dealer").addEventListener("input", () => { dealerMiles = null; });
+
+  let zipSeq = 0;
+  async function onZip(fill) {
+    const my = ++zipSeq;
+    const zip = $("i-zip").value.replace(/\D/g, "");
+    const box = $("i-dealer-sugg");
+    if (zip.length !== 5) { box.innerHTML = ""; return; }
+    box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
+    try {
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611191239");
+      const here = await lookupZip(zip);
+      if (my !== zipSeq) return;
+      if (here && fill) {
+        if (!$("i-city").value.trim()) $("i-city").value = here.city;
+        if (!$("i-state").value) $("i-state").value = here.state;
+      }
+      const near = await closestDealers(zip, await dealerLocations(), 3);
+      if (my !== zipSeq) return;
+      if (!near.length) { box.innerHTML = `<span class="muted">${here ? "No participating dealers with a ZIP in the CRM yet." : "ZIP not recognized."}</span>`; return; }
+      box.innerHTML = near.map((d, i) => `<button type="button" class="dealer-opt ${$("i-dealer").value.trim() === d.dealership ? "on" : ""}" data-name="${escapeHtml(d.dealership)}" data-mi="${d.miles}">${i === 0 ? `<span class="best">Closest</span>` : ""}<b>${escapeHtml(d.dealership)}</b><span class="muted">${escapeHtml([d.city, d.state].filter(Boolean).join(", "))} · about ${d.miles} mi</span></button>`).join("");
+      box.querySelectorAll(".dealer-opt").forEach((b) => b.addEventListener("click", () => {
+        $("i-dealer").value = b.dataset.name; dealerMiles = Number(b.dataset.mi);
+        box.querySelectorAll(".dealer-opt").forEach((x) => x.classList.toggle("on", x === b));
+      }));
+      if (fill && !$("i-dealer").value.trim()) { $("i-dealer").value = near[0].dealership; dealerMiles = near[0].miles; box.querySelector(".dealer-opt").classList.add("on"); }
+    } catch (e) {
+      box.innerHTML = `<span class="muted">Couldn't look up that ZIP.</span>`;
+    }
+  }
+  $("i-zip").addEventListener("input", () => onZip(true));
+  if ((v.zip || "").replace(/\D/g, "").length === 5) onZip(false);
+
+  const collect = () => ({
+    name: $("i-name").value.trim(),
+    received_on: $("i-received").value || todayISO(),
+    email: $("i-email").value.trim() || null,
+    phone: $("i-phone").value.trim() || null,
+    method: $("i-method").value,
+    referred_by: $("i-method").value === "Referral" ? $("i-ref").value.trim() || null : null,
+    zip: $("i-zip").value.trim() || null,
+    city: $("i-city").value.trim() || null,
+    state: $("i-state").value || null,
+    closest_dealer: $("i-dealer").value.trim() || null,
+    closest_dealer_miles: $("i-dealer").value.trim() ? dealerMiles : null,
+    notes: $("i-notes").value.trim() || null,
+  });
+
+  $("inq-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = collect();
+    if (!f.name) return;
+    const btn = e.target.querySelector("button[type=submit]");
+    btn.disabled = true;
+    try {
+      if (isNew) { await createInquiry(f, currentProfile); toast("Inquiry saved"); }
+      else { await updateInquiry(rec.id, f, currentProfile); toast("Changes saved"); }
+      navigate("#/inquiries");
+    } catch (err) { alert("Couldn't save: " + err.message); btn.disabled = false; }
+  });
+
+  $("inq-move")?.addEventListener("click", async () => {
+    const f = collect();
+    if (!f.name) return alert("Add a name first.");
+    if (!confirm(`Start an applicant profile for ${f.name}? The inquiry stays on this list, marked "Profile started".`)) return;
+    const btn = $("inq-move");
+    btn.disabled = true;
+    try {
+      // Profiles only keep name, city and state (no contact details). Notes go into Call Notes.
+      const fromLine = `From a direct inquiry received ${fmtDate(f.received_on)} by ${f.method.toLowerCase()}${f.referred_by ? ` (referred by ${f.referred_by})` : ""}.`;
+      const applicant = await createApplicant({
+        status: "Draft",
+        name: f.name, city: f.city || "", state: f.state || "", preferred_dealer: f.closest_dealer || "",
+        call_notes: [fromLine, f.notes].filter(Boolean).join("\n\n"),
+        interviewed_by: currentProfile.full_name, interview_date: todayISO(),
+      }, currentProfile);
+      await addChange(applicant.id, [{ field: "Profile", note: "created from a direct inquiry" }], currentProfile);
+      await updateInquiry(rec.id, { ...f, status: "Moved", applicant_id: applicant.id, moved_at: new Date().toISOString(), moved_by_name: currentProfile.full_name }, currentProfile);
+      toast("Profile started");
+      navigate(`#/p/${applicant.id}`);
+    } catch (err) { alert("Couldn't start the profile: " + err.message); btn.disabled = false; }
+  });
+
+  $("inq-delete")?.addEventListener("click", async () => {
+    if (!confirm(`Delete the inquiry from ${rec.name}? This can't be undone.${moved ? " The profile that was started stays." : ""}`)) return;
+    try { await deleteInquiry(rec.id); toast("Inquiry deleted"); navigate("#/inquiries"); } catch (err) { alert(err.message); }
+  });
+}
+
+// Analytics: Direct inquiries section (a simple count, where they come from, and the map report)
+function inquiryAnalyticsHtml(inqs) {
+  if (!inqs) return "";
+  const REG = { Northeast: "CT ME MA NH RI VT NJ NY PA", Midwest: "IL IN MI OH WI IA KS MN MO NE ND SD", South: "DE DC FL GA MD NC SC VA WV AL KY MS TN AR LA OK TX PR", West: "AZ CO ID MT NV NM UT WY AK CA HI OR WA" };
+  const regionOf = (st) => Object.keys(REG).find((r) => REG[r].split(" ").includes(String(st || "").toUpperCase())) || "No location";
+  const total = inqs.length, open = inqs.filter((r) => r.status !== "Moved").length, moved = total - open;
+  const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const regions = ["South", "Northeast", "West", "Midwest", "No location"].map((r) => ({ r, n: inqs.filter((q) => regionOf(q.state) === r).length })).filter((x) => x.r !== "No location" || x.n);
+  const methods = INQ_METHODS.map((m) => ({ m, n: inqs.filter((q) => (q.method || "Other") === m).length }));
+  const bar = (label, n, max) => `<div class="hbar static"><span class="hbar-text"><span class="hbar-label">${escapeHtml(label)}</span><span class="hbar-num">${n}<span class="hbar-pct">${total ? Math.round((n / total) * 100) : 0}%</span></span></span><span class="hbar-track"><span class="hbar-fill" style="width:${max ? (n / max) * 100 : 0}%"></span></span></div>`;
+  const rMax = Math.max(1, ...regions.map((x) => x.n)), mMax = Math.max(1, ...methods.map((x) => x.n));
+  return `
+      <div class="an-section-title">Direct inquiries</div>
+      <div class="an-grid">
+        <div class="an-card span-4">
+          <div class="an-head"><h2>Inquiries</h2><span class="an-note">Guests who reached out directly</span></div>
+          <div class="inq-stats">
+            <a href="#/inquiries" class="inq-stat"><b>${total}</b><span>Total</span></a>
+            <a href="#/inquiries" class="inq-stat"><b>${open}</b><span>Open</span></a>
+            <a href="#/inquiries" class="inq-stat"><b>${moved}</b><span>Moved to profiles</span></a>
+            <div class="inq-stat"><b>${inqs.filter((r) => (r.received_on || "") >= since).length}</b><span>Last 30 days</span></div>
+          </div>
+          <button class="btn btn-primary no-print" id="inq-map-btn" type="button" ${total ? "" : "disabled"}>${I.doc}Map report (PDF)</button>
+        </div>
+        <div class="an-card span-4"><div class="an-head"><h2>By region</h2></div>${total ? `<div class="hbars">${regions.map((x) => bar(x.r, x.n, rMax)).join("")}</div>` : `<div class="an-empty">Nothing recorded yet</div>`}</div>
+        <div class="an-card span-4"><div class="an-head"><h2>How they reached out</h2></div>${total ? `<div class="hbars">${methods.map((x) => bar(x.m, x.n, mMax)).join("")}</div>` : `<div class="an-empty">Nothing recorded yet</div>`}</div>
+      </div>`;
+}
+
+async function openInquiryMap(inqs) {
+  const win = window.open("", "_blank");
+  if (!win) return alert("Allow pop ups for this site to open the map report.");
+  win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
+  try {
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611191239");
+    const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "" });
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    win.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) { win.close(); alert("Map report failed: " + err.message); }
+}

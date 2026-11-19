@@ -265,3 +265,48 @@ alter table applicants add column if not exists code_phrase boolean not null def
 
 -- Launch Edition (limited run, spec locked): the PDF shows it instead of spec options
 alter table applicants add column if not exists launch_edition boolean not null default false;
+
+-- ============================================================
+-- INQUIRIES (Nov 2026)
+-- Guests who reach out to us directly (phone, email, referral), not through
+-- a dealership. "Start a profile" creates an applicant from the inquiry and
+-- marks it Moved; it stays on the list. Safe to run more than once.
+-- ============================================================
+create table if not exists inquiries (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  email text,
+  phone text,
+  method text not null default 'Phone' check (method in ('Phone','Email','Referral','Other')),
+  referred_by text,
+  zip text,
+  city text,
+  state text,
+  closest_dealer text,
+  closest_dealer_miles numeric,
+  notes text,
+  received_on date not null default current_date,
+  status text not null default 'Open' check (status in ('Open','Moved')),
+  applicant_id uuid references applicants(id) on delete set null,
+  moved_at timestamptz,
+  moved_by_name text,
+  created_by uuid references auth.users(id),
+  created_by_name text,
+  updated_by_name text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists inquiries_status_idx on inquiries (status, received_on desc);
+
+alter table inquiries enable row level security;
+drop policy if exists "inquiries_select" on inquiries;
+drop policy if exists "inquiries_insert" on inquiries;
+drop policy if exists "inquiries_update" on inquiries;
+drop policy if exists "inquiries_delete_admin" on inquiries;
+create policy "inquiries_select" on inquiries for select using (auth.role() = 'authenticated');
+create policy "inquiries_insert" on inquiries for insert with check (auth.role() = 'authenticated');
+create policy "inquiries_update" on inquiries for update using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "inquiries_delete_admin" on inquiries for delete using (public.is_admin());
+
+drop trigger if exists inquiries_touch on inquiries;
+create trigger inquiries_touch before update on inquiries for each row execute procedure touch_updated_at();
