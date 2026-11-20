@@ -762,3 +762,22 @@ end $$;
 
 revoke execute on function public.dealer_locations() from anon;
 revoke execute on function public.set_crm_access(uuid, boolean) from anon;
+
+-- ============================================================
+-- USER ACCESS LEVELS (run after CRM ACCESS; safe to run more than once)
+-- 'admin'    = CRM + Profiles, can delete records and manage users
+-- 'full'     = CRM + Profiles
+-- 'profiles' = Applicant Profiles only (clients)
+-- ============================================================
+create or replace function public.set_user_access(p_user uuid, p_level text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Only admins can change access'; end if;
+  if p_level not in ('admin', 'full', 'profiles') then raise exception 'Unknown access level'; end if;
+  if p_user = auth.uid() then raise exception 'You can''t change your own access'; end if;
+  update public.profiles
+     set is_admin = (p_level = 'admin'),
+         crm_access = (p_level <> 'profiles')
+   where id = p_user;
+end $$;
+revoke execute on function public.set_user_access(uuid, text) from anon;

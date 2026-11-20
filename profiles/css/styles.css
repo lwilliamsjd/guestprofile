@@ -689,11 +689,20 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .ta-row:last-child { border-bottom: 0; }
 .ta-who { min-width: 0; font-size: 14px; }
 .ta-who .muted { font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
-.ta-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; flex: none; }
-.ta-switch input { display: none; }
-.ta-track { width: 38px; height: 22px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--border-strong); position: relative; transition: background .15s, border-color .15s; }
-.ta-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--grey); transition: transform .15s, background .15s; }
-.ta-switch.on .ta-track { background: var(--red); border-color: var(--red); }
-.ta-switch.on .ta-knob { transform: translateX(16px); background: #fff; }
-.ta-switch.locked { opacity: .55; cursor: not-allowed; }
-.ta-lbl { font-size: 13px; color: var(--grey); width: 118px; }
+.ta-level { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; color-scheme: dark; min-width: 150px; flex: none; }
+.ta-level.lvl-admin { border-color: var(--red); }
+.ta-level.lvl-profiles { border-color: var(--gold); }
+.ta-level:disabled { opacity: .6; cursor: not-allowed; }
+.ta-legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 8px; font-size: 12.5px; }
+.ta-legend > div { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); display: flex; flex-direction: column; gap: 3px; }
+.ta-add-wrap { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.ta-add .form-grid { row-gap: 14px; }
+.ta-add .form-field input, .ta-add .form-field select { height: 43px; }
+.ta-pw { display: flex; gap: 8px; }
+.ta-pw input { flex: 1; font-family: ui-monospace, Menlo, monospace !important; }
+.ta-add-actions { display: flex; gap: 10px; margin-top: 16px; }
+.ta-made { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; border-color: var(--green); background: rgba(61,220,132,.06); }
+.ta-made > svg { width: 16px; height: 16px; color: var(--green); flex: none; margin-top: 2px; }
+.ta-made > div { flex: 1; font-size: 13.5px; }
+.ta-creds { margin-top: 8px; padding: 10px 12px; border-radius: 7px; background: var(--panel-2); font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.6; user-select: all; }
+@media (max-width: 700px) { .ta-legend { grid-template-columns: 1fr; } .ta-row { flex-direction: column; align-items: stretch; } }

@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611201720";
+import { supabase } from "./supabase-client.js?v=202611201724";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -20,9 +20,21 @@ export async function listTeamAccess() {
   if (error) throw error;
   return data || [];
 }
-export async function setCrmAccess(userId, access) {
-  const { error } = await supabase.rpc("set_crm_access", { p_user: userId, p_access: access });
-  if (error) throw error;
+export async function setUserAccess(userId, level) {
+  const { error } = await supabase.rpc("set_user_access", { p_user: userId, p_level: level });
+  if (error) throw new Error(/set_user_access/.test(error.message) ? "Run crm-access.sql in Supabase first." : error.message);
+}
+// Creates a login through the admin-users Edge Function (needs the service key, so it can't run in the browser).
+export async function createUserLogin({ full_name, email, password, level }) {
+  const { data, error } = await supabase.functions.invoke("admin-users", { body: { full_name, email, password, level } });
+  if (error) {
+    let msg = "";
+    try { msg = (await error.context.json()).error; } catch {}
+    if (!msg && /Failed to send|not found|404/i.test(error.message || "")) msg = "The admin-users function isn't set up in Supabase yet.";
+    throw new Error(msg || error.message || "Couldn't create the login");
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
 }
 export async function getCurrentProfile() {
   const session = await getSession();

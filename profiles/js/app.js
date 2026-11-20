@@ -4,16 +4,16 @@ import {
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
-  listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, listTeamAccess, setCrmAccess,
+  listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611201720";
+} from "./api.js?v=202611201724";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611201720";
-import { SUPABASE_URL } from "./config.js?v=202611201720";
+} from "./outputs.js?v=202611201724";
+import { SUPABASE_URL } from "./config.js?v=202611201724";
 
 const app = document.getElementById("app");
 
@@ -1978,26 +1978,68 @@ async function renderAnalytics(seq) {
 // ============================================================
 // ACCOUNT
 // ============================================================
+const ACCESS_LEVELS = [
+  ["admin", "Admin", "CRM and Profiles, can delete records and manage users"],
+  ["full", "Full access", "CRM and Profiles"],
+  ["profiles", "Profiles only", "Applicants, Inquiries and Analytics. No CRM (for clients)"],
+];
+const levelOf = (p) => (p.is_admin ? "admin" : p.crm_access === false ? "profiles" : "full");
+const levelOptions = (sel) => ACCESS_LEVELS.map(([v, l]) => `<option value="${v}" ${v === sel ? "selected" : ""}>${l}</option>`).join("");
+
 async function paintTeamAccess(box) {
   let people;
   try { people = await listTeamAccess(); } catch (e) { box.className = ""; box.innerHTML = `<p class="muted">Couldn't load the team.</p>`; return; }
   box.className = "";
-  if (people.length && !("crm_access" in people[0])) { box.innerHTML = `<p class="muted">Run the CRM ACCESS block of crm_schema.sql in Supabase to turn this on.</p>`; return; }
-  box.innerHTML = `<div class="team-access">${people.map((p) => {
-    const me = p.id === currentProfile.id;
-    return `<div class="ta-row"><div class="ta-who"><b>${escapeHtml(p.full_name || p.email || "")}</b>${p.is_admin ? ` <span class="admin-tag">Admin</span>` : ""}<div class="muted">${escapeHtml(p.email || "")}</div></div>
-      <label class="ta-switch ${p.crm_access ? "on" : ""} ${me ? "locked" : ""}" title="${me ? "You can't remove your own CRM access" : ""}"><input type="checkbox" data-uid="${p.id}" ${p.crm_access ? "checked" : ""} ${me ? "disabled" : ""}><span class="ta-track"><span class="ta-knob"></span></span><span class="ta-lbl">${p.crm_access ? "CRM and Profiles" : "Profiles only"}</span></label></div>`;
-  }).join("")}</div>`;
-  box.querySelectorAll("input[data-uid]").forEach((cb) => cb.addEventListener("change", async () => {
-    const lab = cb.closest(".ta-switch"), on = cb.checked;
-    cb.disabled = true;
+  if (people.length && !("crm_access" in people[0])) { box.innerHTML = `<p class="muted">Run crm-access.sql in Supabase to turn this on.</p>`; return; }
+  const tempPw = () => { const c = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"; const a = new Uint32Array(12); crypto.getRandomValues(a); return Array.from(a, (n) => c[n % c.length]).join(""); };
+  box.innerHTML = `
+    <div class="ta-legend">${ACCESS_LEVELS.map(([, l, d]) => `<div><b>${l}</b><span class="muted">${d}</span></div>`).join("")}</div>
+    <div class="team-access">${people.map((p) => {
+      const me = p.id === currentProfile.id;
+      return `<div class="ta-row"><div class="ta-who"><b>${escapeHtml(p.full_name || p.email || "")}</b>${me ? ` <span class="muted">(you)</span>` : ""}<div class="muted">${escapeHtml(p.email || "")}</div></div>
+        <select class="ta-level lvl-${levelOf(p)}" data-uid="${p.id}" ${me ? `disabled title="You can't change your own access"` : ""}>${levelOptions(levelOf(p))}</select></div>`;
+    }).join("")}</div>
+    <div class="ta-add-wrap">
+      <button type="button" class="btn" id="ta-add-open">${I.plus}Add a user</button>
+      <form id="ta-add" class="ta-add" hidden autocomplete="off">
+        <div class="form-grid">
+          <div class="form-field"><label>Full name</label><input type="text" id="ta-name" maxlength="120" required></div>
+          <div class="form-field"><label>Email</label><input type="email" id="ta-email" maxlength="160" required></div>
+          <div class="form-field"><label>Temporary password <span class="hint">(they can change it under Account)</span></label><div class="ta-pw"><input type="text" id="ta-pw" minlength="8" maxlength="72" required><button type="button" class="btn btn-sm" id="ta-pw-new">New</button></div></div>
+          <div class="form-field"><label>Access</label><select id="ta-level">${levelOptions("full")}</select></div>
+        </div>
+        <div class="ta-add-actions"><button type="submit" class="btn btn-primary">${I.plus}Create login</button><button type="button" class="btn" id="ta-add-cancel">Cancel</button></div>
+      </form>
+      <div id="ta-made"></div>
+    </div>`;
+  box.querySelectorAll("select.ta-level").forEach((sel) => {
+    let was = sel.value;
+    sel.addEventListener("change", async () => {
+      const lvl = sel.value; sel.disabled = true;
+      try {
+        await setUserAccess(sel.dataset.uid, lvl);
+        sel.className = `ta-level lvl-${lvl}`; was = lvl;
+        toast(`Access changed to ${ACCESS_LEVELS.find((x) => x[0] === lvl)[1]}`);
+      } catch (e) { sel.value = was; toast(e.message || "Couldn't change access"); }
+      sel.disabled = false;
+    });
+  });
+  const form = box.querySelector("#ta-add"), open = box.querySelector("#ta-add-open");
+  open.addEventListener("click", () => { form.hidden = false; open.hidden = true; box.querySelector("#ta-made").innerHTML = ""; box.querySelector("#ta-pw").value = tempPw(); box.querySelector("#ta-name").focus(); });
+  box.querySelector("#ta-add-cancel").addEventListener("click", () => { form.hidden = true; open.hidden = false; });
+  box.querySelector("#ta-pw-new").addEventListener("click", () => { box.querySelector("#ta-pw").value = tempPw(); });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector("button[type=submit]");
+    const v = { full_name: box.querySelector("#ta-name").value.trim(), email: box.querySelector("#ta-email").value.trim().toLowerCase(), password: box.querySelector("#ta-pw").value, level: box.querySelector("#ta-level").value };
+    btn.disabled = true;
     try {
-      await setCrmAccess(cb.dataset.uid, on);
-      lab.classList.toggle("on", on); lab.querySelector(".ta-lbl").textContent = on ? "CRM and Profiles" : "Profiles only";
-      toast(on ? "CRM access turned on" : "Now Profiles only");
-    } catch (e) { cb.checked = !on; toast(e.message || "Couldn't change access", "error"); }
-    cb.disabled = false;
-  }));
+      await createUserLogin(v);
+      await paintTeamAccess(box);
+      box.querySelector("#ta-made").innerHTML = `<div class="banner ta-made">${I.check}<div><b>Login created for ${escapeHtml(v.full_name)}</b> (${escapeHtml(ACCESS_LEVELS.find((x) => x[0] === v.level)[1])}). Send them these sign in details:<div class="ta-creds">Site: ${escapeHtml(window.location.origin + "/")}<br>Email: ${escapeHtml(v.email)}<br>Temporary password: ${escapeHtml(v.password)}</div></div><button type="button" class="btn btn-sm" id="ta-copy">Copy</button></div>`;
+      box.querySelector("#ta-copy").addEventListener("click", () => { navigator.clipboard?.writeText(`Site: ${window.location.origin}/\nEmail: ${v.email}\nTemporary password: ${v.password}`); toast("Copied"); });
+    } catch (err) { toast(err.message || "Couldn't create the login"); btn.disabled = false; }
+  });
 }
 
 async function renderAccount(seq) {
@@ -2016,7 +2058,7 @@ async function renderAccount(seq) {
         <div class="form-field"><label>New password (8+ characters)</label><input type="text" id="acc-pw" style="-webkit-text-security:disc" autocomplete="new-password"></div>
         <button class="btn btn-primary" id="acc-pw-save" style="margin-top:12px">Change password</button>
       </div>
-      ${currentProfile?.is_admin ? `<div class="form-section" style="grid-column:1/-1"><header><h2>Team access</h2><span class="muted">Turn off CRM access for logins that should only see Applicant Profiles</span></header><div id="team-access" class="loading">Loading…</div></div>` : ""}
+      ${currentProfile?.is_admin ? `<div class="form-section" style="grid-column:1/-1"><header><h2>Team and access</h2><span class="muted">Add logins and choose what each person can see</span></header><div id="team-access" class="loading">Loading…</div></div>` : ""}
       ${currentProfile?.is_admin ? `<div class="form-section" style="grid-column:1/-1"><header><h2>${I.trash}Trash</h2><span class="muted">Restore a profile, or delete it forever</span></header><div id="trash-list" class="loading">Loading…</div></div>` : ""}
     </div>`;
   if (currentProfile?.is_admin) paintTeamAccess(main.querySelector("#team-access"));
@@ -2346,7 +2388,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201720");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201724");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2546,7 +2588,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201720");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201724");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
