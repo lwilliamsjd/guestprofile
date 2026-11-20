@@ -683,3 +683,4 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .inq-form .form-field input:not([type=checkbox]):not([type=file]), .inq-form .form-field select { height: 43px; }
 .inq-form .inq-notify { max-width: none; margin: 4px 0 0; }
 .note-list:has(> .muted:only-child) { border-left: 0; margin-left: 0; }
+.inq-vip-cell { min-width: 150px; } .inq-vip-cell .inq-badges { margin-top: 0; }

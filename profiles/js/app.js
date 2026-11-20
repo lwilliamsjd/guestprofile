@@ -6,14 +6,14 @@ import {
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611201713";
+} from "./api.js?v=202611201714";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611201713";
-import { SUPABASE_URL } from "./config.js?v=202611201713";
+} from "./outputs.js?v=202611201714";
+import { SUPABASE_URL } from "./config.js?v=202611201714";
 
 const app = document.getElementById("app");
 
@@ -2095,7 +2095,6 @@ async function renderInquiries(seq) {
   const isNewForMe = (r) => r.notify_team && r.created_at > lastSeen && r.created_by !== currentProfile.id;
   const latestNote = new Map();
   notes.forEach((n) => { if (!latestNote.has(n.inquiry_id)) latestNote.set(n.inquiry_id, n); });
-  const noteCount = notes.reduce((m, n) => m.set(n.inquiry_id, (m.get(n.inquiry_id) || 0) + 1), new Map());
   const dups = duplicateMap(all);
   if (!seen.missing) { markInquiriesSeen(currentProfile.id).catch(() => {}); inqAlert = { count: 0, checked: true }; paintInquiryBadge(); }
 
@@ -2109,6 +2108,7 @@ async function renderInquiries(seq) {
     const sortVal = (r) => ({
       received_on: r.received_on || "", name: (r.name || "").toLowerCase(), method: r.method || "",
       location: [r.state, r.city].filter(Boolean).join(" ").toLowerCase() || "~", closest_dealer: (r.closest_dealer || "~").toLowerCase(), status: r.status || "",
+      vip: inqState.dir === "asc" ? (r.vip ? (r.ag_approved ? "0" : "1") : "2") : (r.vip ? (r.ag_approved ? "2" : "1") : "0"),
     }[inqState.sort] ?? "");
     const list = base.filter((r) => !q || [r.name, r.email, r.phone, fmtPhone(r.phone), r.city, r.state, r.zip, r.closest_dealer, latestNote.get(r.id)?.body, r.referred_by, r.handler].some((f) => (f || "").toLowerCase().includes(q)))
       .sort((a, b) => { const x = sortVal(a), y = sortVal(b); const c = x < y ? -1 : x > y ? 1 : (a.name || "").localeCompare(b.name || ""); return inqState.dir === "asc" ? c : -c; });
@@ -2141,22 +2141,19 @@ async function renderInquiries(seq) {
       </div>
       <div class="table-wrap">
         ${list.length ? `<table class="crm-table inq-table">
-          <thead><tr>${th("Received", "received_on")}${th("Guest", "name")}${th("Reached out by", "method")}${th("Location", "location")}${th("Closest dealer", "closest_dealer")}<th style="cursor:default">Latest note</th>${th("Status", "status")}</tr></thead>
+          <thead><tr>${th("Received", "received_on")}${th("Guest", "name")}${th("Reached out by", "method")}${th("Location", "location")}${th("Closest dealer", "closest_dealer")}${th("VIP", "vip")}${th("Status", "status")}</tr></thead>
           <tbody>${list.map((r) => {
-            const ln = latestNote.get(r.id), noteText = ln ? ln.body : r.notes || "", nc = noteCount.get(r.id) || 0;
             const dup = dups.get(r.id);
             return `
             <tr class="clickable-row ${r.status === "Moved" ? "inq-moved" : ""} ${r.vip ? "inq-is-vip" : ""}" data-id="${r.id}">
               <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}${isNewForMe(r) ? `<div><span class="pill inq-new">New</span></div>` : ""}</td>
               <td><div class="cell-name">${escapeHtml(r.name)}</div>
-                ${r.vip ? `<div class="inq-badges">${vipBadges(r)}</div>` : ""}
                 <div class="cell-sub muted">${escapeHtml([r.email, fmtPhone(r.phone)].filter(Boolean).join(" · "))}</div>
-                ${r.vip && r.handler ? `<div class="cell-sub muted">Handler: ${escapeHtml(r.handler)}</div>` : ""}
                 ${dup ? `<div class="inq-dup" title="Another inquiry has the same ${[...dup].join(", ")}">${I.warn}Possible duplicate (same ${[...dup].join(", ")})</div>` : ""}</td>
               <td><span class="pill pill-method">${escapeHtml(r.method || "Other")}</span>${r.method === "Referral" && r.referred_by ? `<div class="cell-sub muted">from ${escapeHtml(r.referred_by)}</div>` : ""}</td>
               <td>${escapeHtml(inqLocation(r))}</td>
               <td>${escapeHtml(r.closest_dealer || "")}${r.closest_dealer_miles != null && r.closest_dealer ? `<div class="cell-sub muted">${r.closest_dealer_miles < 1 ? "under 1 mi" : `about ${Math.round(r.closest_dealer_miles)} mi`}</div>` : ""}</td>
-              <td class="inq-notes">${escapeHtml(noteText.slice(0, 110))}${noteText.length > 110 ? "…" : ""}${ln ? `<div class="cell-sub muted">${escapeHtml(ln.author_name || "")} · ${fmtDate(ln.created_at)}${nc > 1 ? ` · ${nc} notes` : ""}</div>` : ""}</td>
+              <td class="inq-vip-cell">${r.vip ? `<div class="inq-badges">${vipBadges(r)}</div>${r.handler ? `<div class="cell-sub muted">Handler: ${escapeHtml(r.handler)}</div>` : ""}` : `<span class="muted">—</span>`}</td>
               <td>${r.status === "Moved" ? `<span class="pill pill-complete" title="Moved to profiles ${r.moved_at ? fmtDate(r.moved_at) : ""}">${I.check}Profile started</span>` : `<span class="pill pill-draft">Open</span>`}</td>
             </tr>`; }).join("")}</tbody></table>`
           : `<div class="empty-state">${all.length ? (q || inqState.show ? "No inquiries match these filters." : inqState.view === "moved" ? "No inquiries have been moved to profiles yet." : "No open inquiries.") : "No inquiries yet. Add one with <b>New Inquiry</b> when a guest reaches out on their own."}</div>`}
@@ -2325,7 +2322,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201713");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201714");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2525,7 +2522,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201713");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201714");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
