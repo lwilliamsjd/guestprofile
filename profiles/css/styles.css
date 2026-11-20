@@ -608,3 +608,9 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 @media (max-width: 700px) { .inq-kpis { grid-template-columns: repeat(2, 1fr); } .inq-loc { grid-template-columns: 1fr 1fr; } }
 .inq-moved-banner { border-color: var(--green); background: rgba(46,204,113,.08); justify-content: flex-start; }
 .form-field[hidden] { display: none; }
+
+/* possible duplicate flag (inquiries / new profile) */
+.match-flag { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0 12px; padding: 10px 12px; border: 1px solid var(--amber); border-radius: 8px; background: rgba(245,166,35,.08); font-size: 13px; line-height: 1.45; }
+.match-flag > svg { width: 16px; height: 16px; color: var(--amber); flex: none; margin-top: 2px; }
+.match-flag .match-row { margin: 3px 0; }
+.match-flag .muted { font-size: 12px; margin-top: 4px; }

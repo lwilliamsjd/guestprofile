@@ -5,14 +5,14 @@ import {
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations,
-} from "./api.js?v=202611191243";
+} from "./api.js?v=202611201515";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611191243";
-import { SUPABASE_URL } from "./config.js?v=202611191243";
+} from "./outputs.js?v=202611201515";
+import { SUPABASE_URL } from "./config.js?v=202611201515";
 
 const app = document.getElementById("app");
 
@@ -609,7 +609,7 @@ async function renderEditor(route, seq) {
     try { record = await getApplicant(route.id); } catch (e) { main.innerHTML = `<div class="banner error">Couldn't load this profile: ${escapeHtml(e.message)}</div>`; return; }
     if (seq !== renderSeq) return;
   }
-  const [team, others] = await Promise.all([listTeam(), listApplicants().catch(() => [])]);
+  const [team, others, inquiries] = await Promise.all([listTeam(), listApplicants().catch(() => []), listInquiries().catch(() => [])]);
   if (seq !== renderSeq) return;
   const changes = record ? await listChanges(record.id) : [];
   if (seq !== renderSeq) return;
@@ -817,7 +817,7 @@ async function renderEditor(route, seq) {
         <section class="form-section" id="sec-bio">
           <header><div><div class="sec-kicker">01</div><h2>${I.user}Bio</h2></div></header>
           <div class="form-grid">
-            ${field("name", "Name", { ph: "First and last name" })}
+            ${field("name", "Name", { ph: "First and last name", after: `<div id="inq-match"></div>` })}
             ${field("age_range", "Age Range", { type: "select", options: AGE_RANGES })}
             ${field("city", "City", { ph: "City only, no street address" })}
             ${field("state", "State", { type: "select", options: US_STATES })}
@@ -1108,6 +1108,7 @@ async function renderEditor(route, seq) {
       main.querySelector("#ed-name").textContent = a.name || "New applicant";
       main.querySelector("#ed-avatar").textContent = initials(a.name);
       e.target.classList.remove("invalid");
+      paintInquiryMatch();
     }
     if (k === "summary") main.querySelector("#bio-count").textContent = bioCount();
     if (k === "hpde_experience" || k === "race_experience") { const c = main.querySelector("#ms-count"); c.textContent = msCount(); c.classList.toggle("over", (a.hpde_experience || "").length + (a.race_experience || "").length > MS_FITS); }
@@ -1445,6 +1446,15 @@ async function renderEditor(route, seq) {
     navigate("#/");
   });
 
+  // Flag (never block) when the name matches a direct inquiry, so the two can be checked.
+  function paintInquiryMatch() {
+    const box = main.querySelector("#inq-match");
+    if (!box) return;
+    const n = normName(a.name);
+    const hits = n.length > 2 ? inquiries.filter((q) => normName(q.name) === n && (!record?.id || q.applicant_id !== record.id)) : [];
+    box.innerHTML = inquiryMatchHtml(hits.map((q) => `<a href="#/inquiries/${q.id}" target="_blank" rel="noopener">${escapeHtml(q.name)}</a> · inquiry ${q.received_on ? fmtDate(q.received_on) : ""}${q.email ? " · " + escapeHtml(q.email) : ""}${q.phone ? " · " + escapeHtml(fmtPhone(q.phone)) : ""}${inqLocation(q) ? " · " + escapeHtml(inqLocation(q)) : ""} <span class="muted">(${q.status === "Moved" ? "profile already started" : "open"})</span>`), "This name matches a direct inquiry");
+  }
+  paintInquiryMatch();
   if (isNew && !draftIsNewer) main.querySelector('[data-f="name"]').focus();
 }
 
@@ -2025,6 +2035,20 @@ async function dealerLocations() {
   if (!dealerCache) dealerCache = await listDealerLocations().catch(() => []);
   return dealerCache;
 }
+// (555) 555-5555 for any 10 digit US number (a leading 1 is dropped); anything else is left as typed.
+function fmtPhone(v) {
+  const raw = String(v || "").trim();
+  let d = raw.replace(/\D/g, "");
+  if (d.length === 11 && d[0] === "1") d = d.slice(1);
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : raw;
+}
+// Same person check: names compared without case, punctuation or extra spaces; emails without case.
+const normName = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+const normEmail = (s) => String(s || "").trim().toLowerCase();
+function inquiryMatchHtml(matches, intro) {
+  if (!matches.length) return "";
+  return `<div class="match-flag">${I.warn}<div><b>${intro}</b>${matches.map((m) => `<div class="match-row">${m}</div>`).join("")}<div class="muted">Check before continuing in case it's the same person. This won't stop you from saving.</div></div></div>`;
+}
 const inqLocation = (q) => [[q.city, q.state].filter(Boolean).join(", "), q.zip].filter(Boolean).join(" ");
 
 async function renderInquiries(seq) {
@@ -2070,7 +2094,7 @@ async function renderInquiries(seq) {
           <tbody>${list.map((r) => `
             <tr class="clickable-row ${r.status === "Moved" ? "inq-moved" : ""}" data-id="${r.id}">
               <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}</td>
-              <td><div class="cell-name">${escapeHtml(r.name)}</div><div class="cell-sub muted">${escapeHtml([r.email, r.phone].filter(Boolean).join(" · "))}</div></td>
+              <td><div class="cell-name">${escapeHtml(r.name)}</div><div class="cell-sub muted">${escapeHtml([r.email, fmtPhone(r.phone)].filter(Boolean).join(" · "))}</div></td>
               <td><span class="pill pill-method">${escapeHtml(r.method || "Other")}</span>${r.method === "Referral" && r.referred_by ? `<div class="cell-sub muted">from ${escapeHtml(r.referred_by)}</div>` : ""}</td>
               <td>${escapeHtml(inqLocation(r))}</td>
               <td>${escapeHtml(r.closest_dealer || "")}${r.closest_dealer_miles != null && r.closest_dealer ? `<div class="cell-sub muted">about ${Math.round(r.closest_dealer_miles)} mi</div>` : ""}</td>
@@ -2097,7 +2121,7 @@ async function renderInquiries(seq) {
 function exportInquiries(rows) {
   if (!window.XLSX) return alert("Excel library didn't load. Check your connection and try again.");
   const data = rows.map((r) => ({
-    Received: r.received_on || "", Name: r.name, Email: r.email || "", Phone: r.phone || "", "Reached Out By": r.method || "", "Referred By": r.referred_by || "",
+    Received: r.received_on || "", Name: r.name, Email: r.email || "", Phone: fmtPhone(r.phone), "Reached Out By": r.method || "", "Referred By": r.referred_by || "",
     ZIP: r.zip || "", City: r.city || "", State: r.state || "", "Closest Dealer": r.closest_dealer || "", "Miles (approx)": r.closest_dealer_miles ?? "",
     Notes: r.notes || "", Status: r.status === "Moved" ? "Moved to profiles" : "Open", "Moved On": r.moved_at ? fmtDate(r.moved_at) : "", "Added By": r.created_by_name || "",
   }));
@@ -2109,8 +2133,11 @@ function exportInquiries(rows) {
 async function renderInquiryForm(route, seq) {
   const isNew = !route.id;
   const main = shell("inquiries", `<div class="loading">Loading…</div>`);
-  let rec = null;
-  try { if (!isNew) rec = await getInquiry(route.id); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  let rec = null, others = [], profiles = [];
+  try {
+    [rec, others, profiles] = await Promise.all([isNew ? null : getInquiry(route.id), listInquiries().catch(() => []), listApplicants().catch(() => [])]);
+  } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  others = others.filter((o) => o.id !== route.id);
   if (seq !== renderSeq) return;
   const v = rec || { method: "Phone", received_on: todayISO() };
   const moved = rec && rec.status === "Moved";
@@ -2131,10 +2158,11 @@ async function renderInquiryForm(route, seq) {
         <div class="form-field"><label>Name</label><input type="text" id="i-name" required maxlength="120" value="${val("name")}" placeholder="First and last name"></div>
         <div class="form-field"><label>Received</label><input id="i-received" type="date" value="${val("received_on")}" max="${todayISO()}"></div>
         <div class="form-field"><label>Email</label><input id="i-email" type="email" maxlength="160" value="${val("email")}"></div>
-        <div class="form-field"><label>Phone</label><input id="i-phone" type="tel" maxlength="40" value="${val("phone")}"></div>
+        <div class="form-field"><label>Phone</label><input id="i-phone" type="tel" maxlength="40" value="${escapeHtml(fmtPhone(v.phone))}" placeholder="(555) 555-5555"></div>
         <div class="form-field"><label>How they reached out</label><select id="i-method">${INQ_METHODS.map((m) => `<option ${v.method === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
         <div class="form-field" id="i-ref-wrap" ${v.method === "Referral" ? "" : "hidden"}><label>Referred by</label><input type="text" id="i-ref" maxlength="120" value="${val("referred_by")}" placeholder="Who sent them our way"></div>
       </div>
+      <div id="i-match"></div>
       <div class="sec-kicker inq-kicker">Location</div>
       <div class="form-grid inq-loc">
         <div class="form-field"><label>ZIP</label><input type="text" id="i-zip" inputmode="numeric" maxlength="10" value="${val("zip")}" placeholder="5 digit ZIP"></div>
@@ -2156,6 +2184,25 @@ async function renderInquiryForm(route, seq) {
   const $ = (id) => main.querySelector("#" + id);
   let dealerMiles = rec?.closest_dealer_miles ?? null;
   $("i-method").addEventListener("change", (e) => { $("i-ref-wrap").hidden = e.target.value !== "Referral"; });
+  $("i-phone").addEventListener("blur", () => { $("i-phone").value = fmtPhone($("i-phone").value); });
+
+  // Flag (never block) when this looks like someone already on file: same name or same email on another
+  // inquiry, or same name on an applicant profile.
+  function paintMatches() {
+    const n = normName($("i-name").value), em = normEmail($("i-email").value);
+    const rows = [];
+    if (n.length > 2 || em) {
+      for (const o of others) {
+        const byName = n.length > 2 && normName(o.name) === n, byEmail = em && normEmail(o.email) === em;
+        if (byName || byEmail) rows.push(`<a href="#/inquiries/${o.id}">${escapeHtml(o.name)}</a> · inquiry ${o.received_on ? fmtDate(o.received_on) : ""}${o.email ? " · " + escapeHtml(o.email) : ""} <span class="muted">(same ${byName && byEmail ? "name and email" : byName ? "name" : "email"})</span>`);
+      }
+      if (n.length > 2) for (const p of profiles) if (normName(p.name) === n && p.id !== rec?.applicant_id) rows.push(`<a href="#/p/${p.id}">${escapeHtml(p.name)}</a> · applicant profile${p.preferred_dealer ? " · " + escapeHtml(p.preferred_dealer) : ""} <span class="muted">(same name)</span>`);
+    }
+    $("i-match").innerHTML = inquiryMatchHtml(rows, "Possible match already on file");
+  }
+  $("i-name").addEventListener("input", paintMatches);
+  $("i-email").addEventListener("input", paintMatches);
+  paintMatches();
   $("i-dealer").addEventListener("input", () => { dealerMiles = null; });
 
   let zipSeq = 0;
@@ -2166,7 +2213,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611191243");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201515");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2193,7 +2240,7 @@ async function renderInquiryForm(route, seq) {
     name: $("i-name").value.trim(),
     received_on: $("i-received").value || todayISO(),
     email: $("i-email").value.trim() || null,
-    phone: $("i-phone").value.trim() || null,
+    phone: fmtPhone($("i-phone").value) || null,
     method: $("i-method").value,
     referred_by: $("i-method").value === "Referral" ? $("i-ref").value.trim() || null : null,
     zip: $("i-zip").value.trim() || null,
@@ -2279,7 +2326,7 @@ async function openInquiryMap(inqs) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611191243");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201515");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "" });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
