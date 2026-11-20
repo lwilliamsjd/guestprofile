@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611201714";
+import { supabase } from "./supabase-client.js?v=202611201720";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -14,12 +14,22 @@ export async function getSession() {
 export function onAuthChange(cb) {
   return supabase.auth.onAuthStateChange((_event, session) => cb(session));
 }
+// Team list with CRM access, for the admin "Team access" box.
+export async function listTeamAccess() {
+  const { data, error } = await supabase.from("profiles").select("*").order("full_name");
+  if (error) throw error;
+  return data || [];
+}
+export async function setCrmAccess(userId, access) {
+  const { error } = await supabase.rpc("set_crm_access", { p_user: userId, p_access: access });
+  if (error) throw error;
+}
 export async function getCurrentProfile() {
   const session = await getSession();
   if (!session) return null;
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, email, is_admin, job_title")
+    .select("*")
     .eq("id", session.user.id)
     .single();
   if (error) return { id: session.user.id, full_name: session.user.email, email: session.user.email, is_admin: false, job_title: "" };
@@ -210,6 +220,8 @@ export async function deleteInquiry(id) {
 }
 // Participating dealerships (from the Concierge CRM) with a ZIP, for "closest dealer".
 export async function listDealerLocations() {
+  const r = await supabase.rpc("dealer_locations");
+  if (!r.error) return (r.data || []).map((d) => ({ dealership: d.dealership, zip: String(d.zip), city: d.city || "", state: d.state || "" }));
   const { data, error } = await supabase.from("meisters").select("*").is("deleted_at", null);
   if (error) return [];
   const seen = new Map();

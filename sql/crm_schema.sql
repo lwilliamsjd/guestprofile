@@ -707,3 +707,58 @@ $$;
 drop trigger if exists meisters_link_replacement on meisters;
 create trigger meisters_link_replacement after insert on meisters
   for each row execute procedure public.link_replacement_meister();
+
+-- ============================================================
+-- CRM ACCESS
+-- Some logins (e.g. our client at Toyota) use Applicant Profiles only.
+-- profiles.crm_access = false blocks every CRM table for that login,
+-- not just the CRM pages. Everyone who exists when this runs keeps
+-- access; accounts created afterwards start without it until an admin
+-- turns it on (Applicant Profiles → Account → Team access).
+-- Safe to run more than once.
+-- ============================================================
+alter table profiles add column if not exists crm_access boolean;
+update profiles set crm_access = true where crm_access is null;
+alter table profiles alter column crm_access set default false;
+alter table profiles alter column crm_access set not null;
+
+create or replace function public.has_crm_access()
+returns boolean language sql security definer stable set search_path = public as $$
+  select coalesce((select crm_access from public.profiles where id = auth.uid()), false);
+$$;
+
+-- A restrictive policy is ANDed with the existing ones, so CRM users keep
+-- exactly the rights they have today and everyone else gets nothing.
+do $$
+declare t text;
+begin
+  foreach t in array array['meisters','status_history','question_categories','interactions','guests','follow_ups','interaction_comments','notifications'] loop
+    if to_regclass('public.' || t) is not null then
+      execute format('drop policy if exists crm_access_only on public.%I', t);
+      execute format('create policy crm_access_only on public.%I as restrictive for all using (public.has_crm_access()) with check (public.has_crm_access())', t);
+    end if;
+  end loop;
+end $$;
+
+-- Applicant Profiles still needs dealer names and ZIPs for "closest dealer".
+-- This hands out just those columns, to any signed in user.
+create or replace function public.dealer_locations()
+returns table (dealership text, city text, state text, zip text)
+language sql security definer stable set search_path = public as $$
+  select distinct on (lower(trim(m.dealership))) trim(m.dealership), coalesce(m.city, ''), coalesce(m.state, ''), m.zip::text
+  from public.meisters m
+  where auth.uid() is not null and m.deleted_at is null and m.departed_at is null
+    and coalesce(trim(m.dealership), '') <> '' and coalesce(trim(m.zip::text), '') <> ''
+  order by lower(trim(m.dealership)), m.created_at;
+$$;
+
+create or replace function public.set_crm_access(p_user uuid, p_access boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Only admins can change CRM access'; end if;
+  if p_user = auth.uid() and not p_access then raise exception 'You can''t remove your own CRM access'; end if;
+  update public.profiles set crm_access = p_access where id = p_user;
+end $$;
+
+revoke execute on function public.dealer_locations() from anon;
+revoke execute on function public.set_crm_access(uuid, boolean) from anon;

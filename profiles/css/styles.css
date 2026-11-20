@@ -684,3 +684,16 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .inq-form .inq-notify { max-width: none; margin: 4px 0 0; }
 .note-list:has(> .muted:only-child) { border-left: 0; margin-left: 0; }
 .inq-vip-cell { min-width: 150px; } .inq-vip-cell .inq-badges { margin-top: 0; }
+.team-access { display: flex; flex-direction: column; }
+.ta-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.ta-row:last-child { border-bottom: 0; }
+.ta-who { min-width: 0; font-size: 14px; }
+.ta-who .muted { font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
+.ta-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; flex: none; }
+.ta-switch input { display: none; }
+.ta-track { width: 38px; height: 22px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--border-strong); position: relative; transition: background .15s, border-color .15s; }
+.ta-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--grey); transition: transform .15s, background .15s; }
+.ta-switch.on .ta-track { background: var(--red); border-color: var(--red); }
+.ta-switch.on .ta-knob { transform: translateX(16px); background: #fff; }
+.ta-switch.locked { opacity: .55; cursor: not-allowed; }
+.ta-lbl { font-size: 13px; color: var(--grey); width: 118px; }

@@ -4,16 +4,16 @@ import {
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
-  listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations,
+  listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, listTeamAccess, setCrmAccess,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611201714";
+} from "./api.js?v=202611201720";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611201714";
-import { SUPABASE_URL } from "./config.js?v=202611201714";
+} from "./outputs.js?v=202611201720";
+import { SUPABASE_URL } from "./config.js?v=202611201720";
 
 const app = document.getElementById("app");
 
@@ -367,7 +367,7 @@ function shell(active, inner) {
       <header class="topbar">
         <div class="tool-switch" role="tablist" aria-label="Switch tool">
           <span class="brand-dot"></span>
-          <a href="../crm/" class="ts-opt " data-tool="crm" role="tab" aria-selected="false"><span class="ts-long">Concierge </span>CRM</a>
+          ${currentProfile?.crm_access === false ? "" : `<a href="../crm/" class="ts-opt " data-tool="crm" role="tab" aria-selected="false"><span class="ts-long">Concierge </span>CRM</a>`}
           <a href="../profiles/" class="ts-opt on" data-tool="profiles" role="tab" aria-selected="true"><span class="ts-long">Applicant </span>Profiles</a>
         </div>
         <nav class="nav">
@@ -1978,6 +1978,28 @@ async function renderAnalytics(seq) {
 // ============================================================
 // ACCOUNT
 // ============================================================
+async function paintTeamAccess(box) {
+  let people;
+  try { people = await listTeamAccess(); } catch (e) { box.className = ""; box.innerHTML = `<p class="muted">Couldn't load the team.</p>`; return; }
+  box.className = "";
+  if (people.length && !("crm_access" in people[0])) { box.innerHTML = `<p class="muted">Run the CRM ACCESS block of crm_schema.sql in Supabase to turn this on.</p>`; return; }
+  box.innerHTML = `<div class="team-access">${people.map((p) => {
+    const me = p.id === currentProfile.id;
+    return `<div class="ta-row"><div class="ta-who"><b>${escapeHtml(p.full_name || p.email || "")}</b>${p.is_admin ? ` <span class="admin-tag">Admin</span>` : ""}<div class="muted">${escapeHtml(p.email || "")}</div></div>
+      <label class="ta-switch ${p.crm_access ? "on" : ""} ${me ? "locked" : ""}" title="${me ? "You can't remove your own CRM access" : ""}"><input type="checkbox" data-uid="${p.id}" ${p.crm_access ? "checked" : ""} ${me ? "disabled" : ""}><span class="ta-track"><span class="ta-knob"></span></span><span class="ta-lbl">${p.crm_access ? "CRM and Profiles" : "Profiles only"}</span></label></div>`;
+  }).join("")}</div>`;
+  box.querySelectorAll("input[data-uid]").forEach((cb) => cb.addEventListener("change", async () => {
+    const lab = cb.closest(".ta-switch"), on = cb.checked;
+    cb.disabled = true;
+    try {
+      await setCrmAccess(cb.dataset.uid, on);
+      lab.classList.toggle("on", on); lab.querySelector(".ta-lbl").textContent = on ? "CRM and Profiles" : "Profiles only";
+      toast(on ? "CRM access turned on" : "Now Profiles only");
+    } catch (e) { cb.checked = !on; toast(e.message || "Couldn't change access", "error"); }
+    cb.disabled = false;
+  }));
+}
+
 async function renderAccount(seq) {
   const main = shell("account", "");
   main.innerHTML = `
@@ -1994,8 +2016,10 @@ async function renderAccount(seq) {
         <div class="form-field"><label>New password (8+ characters)</label><input type="text" id="acc-pw" style="-webkit-text-security:disc" autocomplete="new-password"></div>
         <button class="btn btn-primary" id="acc-pw-save" style="margin-top:12px">Change password</button>
       </div>
+      ${currentProfile?.is_admin ? `<div class="form-section" style="grid-column:1/-1"><header><h2>Team access</h2><span class="muted">Turn off CRM access for logins that should only see Applicant Profiles</span></header><div id="team-access" class="loading">Loading…</div></div>` : ""}
       ${currentProfile?.is_admin ? `<div class="form-section" style="grid-column:1/-1"><header><h2>${I.trash}Trash</h2><span class="muted">Restore a profile, or delete it forever</span></header><div id="trash-list" class="loading">Loading…</div></div>` : ""}
     </div>`;
+  if (currentProfile?.is_admin) paintTeamAccess(main.querySelector("#team-access"));
   main.querySelector("#acc-name-save").addEventListener("click", async () => {
     const v = main.querySelector("#acc-name").value.trim();
     const title = main.querySelector("#acc-title").value.trim();
@@ -2322,7 +2346,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201714");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201720");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2522,7 +2546,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201714");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201720");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;

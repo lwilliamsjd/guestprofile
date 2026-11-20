@@ -58,9 +58,9 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611201714";
-import { exportToExcel } from "./export.js?v=202611201714";
-import { wireImport } from "./import-export.js?v=202611201714";
+} from "./api.js?v=202611201720";
+import { exportToExcel } from "./export.js?v=202611201720";
+import { wireImport } from "./import-export.js?v=202611201720";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -362,6 +362,11 @@ async function render() {
   if (!session && route.name !== "login") return void (window.location.hash = "#/login");
   if (session && route.name === "login") return void (window.location.hash = "#/dashboard");
   if (route.name === "login") return renderLogin();
+  // Logins without CRM access (e.g. our client) only get Applicant Profiles.
+  if (currentProfile && currentProfile.crm_access === false) {
+    try { localStorage.setItem("grc-last-tool", "profiles"); } catch {}
+    return void window.location.replace("../profiles/");
+  }
 
   if (route.key !== lastPaintedKey || !app.querySelector(".shell")) {
     renderShell(route, (c) => (c.innerHTML = `<div class="loading">Loading…</div>`));
@@ -1534,7 +1539,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611201714");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611201720");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;

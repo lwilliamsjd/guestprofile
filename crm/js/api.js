@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611201714";
+import { supabase } from "./supabase-client.js?v=202611201720";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -19,7 +19,7 @@ export async function getCurrentProfile() {
   if (!session) return null;
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, email, is_admin, concierge, notify_comments, notify_activity, last_export_at")
+    .select("*")
     .eq("id", session.user.id)
     .single();
   if (error) {
