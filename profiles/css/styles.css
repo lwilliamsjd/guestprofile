@@ -614,3 +614,49 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .match-flag > svg { width: 16px; height: 16px; color: var(--amber); flex: none; margin-top: 2px; }
 .match-flag .match-row { margin: 3px 0; }
 .match-flag .muted { font-size: 12px; margin-top: 4px; }
+
+/* ---------- Inquiries: VIP, notes log, files, alerts ---------- */
+.inq-vip { border-color: var(--gold) !important; background: rgba(212,169,74,.12); }
+.inq-vip svg, .inq-ag svg { width: 11px; height: 11px; }
+.inq-ag { color: var(--green); border-color: var(--green); background: rgba(46,204,113,.1); }
+.inq-badges { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 2px; }
+.inq-table tr.inq-is-vip td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+.inq-new { color: var(--red); border-color: var(--red); font-weight: 700; }
+.inq-new-banner { display: flex; align-items: center; justify-content: flex-start; gap: 10px; border-color: var(--red); background: rgba(224,38,63,.08); }
+.inq-new-banner svg { width: 16px; height: 16px; color: var(--red); flex: none; }
+.inq-dup { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 11.5px; color: var(--amber); }
+.inq-dup svg { width: 12px; height: 12px; }
+.inq-show { padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; color-scheme: dark; }
+.inq-vip-grid { align-items: start; }
+.inq-vip-extra { display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: end; }
+.inq-vip-extra[hidden] { display: none; }
+.inq-vip-extra .form-field { margin-bottom: 0 !important; }
+[data-tgl="i-vip"].on { border-color: var(--gold); background: rgba(212,169,74,.1); }
+[data-tgl="i-vip"].on .tc-box { background: var(--gold); border-color: var(--gold); }
+.inq-notify { max-width: 520px; margin: 4px 0 14px; }
+.inq-log, .inq-files { margin-top: 18px; }
+.note-add { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin: 8px 0 16px; }
+.note-add textarea { width: 100%; padding: 10px 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; font-size: 14px; resize: vertical; color-scheme: dark; }
+.note-list { display: flex; flex-direction: column; border-left: 2px solid var(--border); margin-left: 4px; }
+.note-item { padding: 10px 0 12px 16px; position: relative; }
+.note-item::before { content: ""; position: absolute; left: -6px; top: 15px; width: 10px; height: 10px; border-radius: 50%; background: var(--panel); border: 2px solid var(--red); }
+.note-head { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 4px; }
+.note-head .link-btn { margin-left: auto; }
+.note-body { white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
+.file-drop { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border: 1.5px dashed var(--border-strong); border-radius: 9px; cursor: pointer; font-size: 13px; margin: 8px 0 12px; }
+.file-drop:hover { border-color: var(--red); }
+.file-drop input { display: none; }
+.file-drop svg { width: 16px; height: 16px; color: var(--red); }
+.file-drop.busy { opacity: .6; pointer-events: none; }
+.file-drop.busy::after { content: "Uploading…"; margin-left: auto; color: var(--grey); }
+.file-list { display: flex; flex-direction: column; gap: 6px; }
+.file-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); font-size: 13px; flex-wrap: wrap; }
+.file-row .file-ic svg { width: 16px; height: 16px; color: var(--grey); }
+.file-row .file-name { flex: 1; min-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--text); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.link-btn.danger { color: var(--red); font-size: 12px; }
+.nav-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; }
+.inq-map-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.inq-map-row select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; color-scheme: dark; }
+.inq-stat.vip b { color: var(--gold); }
+@media (max-width: 700px) { .inq-vip-extra { grid-template-columns: 1fr; } }

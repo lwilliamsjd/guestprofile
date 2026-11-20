@@ -310,3 +310,76 @@ create policy "inquiries_delete_admin" on inquiries for delete using (public.is_
 
 drop trigger if exists inquiries_touch on inquiries;
 create trigger inquiries_touch before update on inquiries for each row execute procedure touch_updated_at();
+
+-- ============================================================
+-- INQUIRIES 2 (Nov 2026): VIP / AG Approved / Handler, team alert,
+-- a running notes log, and file attachments. Safe to run more than once.
+-- ============================================================
+alter table inquiries add column if not exists vip boolean not null default false;
+alter table inquiries add column if not exists ag_approved boolean not null default false;
+alter table inquiries add column if not exists handler text;
+alter table inquiries add column if not exists notify_team boolean not null default false;
+
+-- Notes log: one row per note, newest shown first.
+create table if not exists inquiry_notes (
+  id uuid primary key default gen_random_uuid(),
+  inquiry_id uuid not null references inquiries(id) on delete cascade,
+  body text not null check (length(trim(body)) > 0),
+  author_id uuid references auth.users(id),
+  author_name text,
+  created_at timestamptz not null default now()
+);
+create index if not exists inquiry_notes_inq_idx on inquiry_notes (inquiry_id, created_at desc);
+alter table inquiry_notes enable row level security;
+drop policy if exists "inquiry_notes_select" on inquiry_notes;
+drop policy if exists "inquiry_notes_insert" on inquiry_notes;
+drop policy if exists "inquiry_notes_delete" on inquiry_notes;
+create policy "inquiry_notes_select" on inquiry_notes for select using (auth.role() = 'authenticated');
+create policy "inquiry_notes_insert" on inquiry_notes for insert with check (auth.role() = 'authenticated' and author_id = auth.uid());
+create policy "inquiry_notes_delete" on inquiry_notes for delete using (author_id = auth.uid() or public.is_admin());
+
+-- Notes typed into the old single notes box become the first log entry.
+insert into inquiry_notes (inquiry_id, body, author_id, author_name, created_at)
+select i.id, i.notes, i.created_by, i.created_by_name, i.created_at from inquiries i
+where coalesce(trim(i.notes), '') <> '' and not exists (select 1 from inquiry_notes n where n.inquiry_id = i.id);
+
+-- Attachments: files live in a private storage bucket; this table lists them.
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('inquiry-files', 'inquiry-files', false, 26214400)
+on conflict (id) do update set public = false, file_size_limit = 26214400;
+
+create table if not exists inquiry_files (
+  id uuid primary key default gen_random_uuid(),
+  inquiry_id uuid not null references inquiries(id) on delete cascade,
+  path text not null unique,
+  file_name text not null,
+  size_bytes bigint,
+  content_type text,
+  uploaded_by uuid references auth.users(id),
+  uploaded_by_name text,
+  created_at timestamptz not null default now()
+);
+create index if not exists inquiry_files_inq_idx on inquiry_files (inquiry_id, created_at desc);
+alter table inquiry_files enable row level security;
+drop policy if exists "inquiry_files_select" on inquiry_files;
+drop policy if exists "inquiry_files_insert" on inquiry_files;
+drop policy if exists "inquiry_files_delete" on inquiry_files;
+create policy "inquiry_files_select" on inquiry_files for select using (auth.role() = 'authenticated');
+create policy "inquiry_files_insert" on inquiry_files for insert with check (auth.role() = 'authenticated' and uploaded_by = auth.uid());
+create policy "inquiry_files_delete" on inquiry_files for delete using (uploaded_by = auth.uid() or public.is_admin());
+
+drop policy if exists "inquiry_files_read" on storage.objects;
+drop policy if exists "inquiry_files_upload" on storage.objects;
+drop policy if exists "inquiry_files_remove" on storage.objects;
+create policy "inquiry_files_read" on storage.objects for select using (bucket_id = 'inquiry-files' and auth.role() = 'authenticated');
+create policy "inquiry_files_upload" on storage.objects for insert with check (bucket_id = 'inquiry-files' and auth.role() = 'authenticated');
+create policy "inquiry_files_remove" on storage.objects for delete using (bucket_id = 'inquiry-files' and (owner = auth.uid() or public.is_admin()));
+
+-- "Notify the team": each person's last look at the Inquiries page, so new flagged entries show on login.
+create table if not exists inquiry_seen (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  seen_at timestamptz not null default now()
+);
+alter table inquiry_seen enable row level security;
+drop policy if exists "inquiry_seen_own" on inquiry_seen;
+create policy "inquiry_seen_own" on inquiry_seen for all using (user_id = auth.uid()) with check (user_id = auth.uid());

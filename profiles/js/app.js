@@ -5,14 +5,15 @@ import {
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations,
-} from "./api.js?v=202611201515";
+  listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
+} from "./api.js?v=202611201658";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611201515";
-import { SUPABASE_URL } from "./config.js?v=202611201515";
+} from "./outputs.js?v=202611201658";
+import { SUPABASE_URL } from "./config.js?v=202611201658";
 
 const app = document.getElementById("app");
 
@@ -314,12 +315,13 @@ async function render() {
   if (!session && route.name !== "login") return navigate("#/login");
   if (session && route.name === "login") return navigate("#/");
   if (route.name === "login") return renderLogin();
-  if (!currentProfile) currentProfile = await getCurrentProfile();
+  if (!currentProfile) { currentProfile = await getCurrentProfile(); if (currentProfile) refreshInquiryAlert(); }
   if (!unsubscribeLive) {
     unsubscribeLive = subscribeApplicants((p) => liveRefresh && liveRefresh(p), realtimeStatus);
     joinPresence(currentProfile, (state) => { editingMap = buildEditingMap(state); if (presenceRefresh) presenceRefresh(); });
   }
   if (route.name !== "editor") setEditing(null);
+  setTimeout(paintInquiryBadge, 0);
   if (route.name === "list") return renderList(seq);
   if (route.name === "editor") return renderEditor(route, seq);
   if (route.name === "outputs") return renderOutputs(route, seq);
@@ -1928,7 +1930,7 @@ async function renderAnalytics(seq) {
             </a>`).join("")}</div>` : ""}
       </aside>`;
 
-    main.querySelector("#inq-map-btn")?.addEventListener("click", () => openInquiryMap(inqs));
+    main.querySelector("#inq-map-btn")?.addEventListener("click", () => openInquiryMap(inqs, main.querySelector("#inq-map-show")?.value === "vip"));
     main.querySelector("#an-print").addEventListener("click", () => {
       const t = document.title;
       document.title = `GR GT Applicant Analytics ${todayISO()}`;
@@ -2029,7 +2031,7 @@ render();
 // INQUIRIES: guests who reach out to us directly (not through a dealer)
 // ============================================================
 const INQ_METHODS = ["Phone", "Email", "Referral", "Other"];
-const inqState = Object.assign({ view: "open", q: "", sort: "received_on", dir: "desc" }, store.get("gtap-inq") || {});
+const inqState = Object.assign({ view: "open", q: "", sort: "received_on", dir: "desc", show: "" }, store.get("gtap-inq") || {});
 let dealerCache = null; // participating dealers with a ZIP, from the CRM
 async function dealerLocations() {
   if (!dealerCache) dealerCache = await listDealerLocations().catch(() => []);
@@ -2051,26 +2053,69 @@ function inquiryMatchHtml(matches, intro) {
 }
 const inqLocation = (q) => [[q.city, q.state].filter(Boolean).join(", "), q.zip].filter(Boolean).join(" ");
 
+// Count of new inquiries someone flagged "notify the team" since this person last opened Inquiries.
+let inqAlert = { count: 0, checked: false };
+async function refreshInquiryAlert() {
+  try {
+    const [seen, all] = await Promise.all([getInquirySeen(currentProfile.id), listInquiries()]);
+    if (seen.missing) { inqAlert = { count: 0, checked: true }; return; }
+    const since = seen.seen_at || new Date(Date.now() - 14 * 86400000).toISOString();
+    inqAlert = { count: all.filter((r) => r.notify_team && r.created_at > since && r.created_by !== currentProfile.id).length, checked: true };
+  } catch { inqAlert = { count: 0, checked: true }; }
+  paintInquiryBadge();
+}
+function paintInquiryBadge() {
+  const a = document.querySelector('.nav a[href="#/inquiries"]');
+  if (!a) return;
+  a.querySelector(".nav-badge")?.remove();
+  if (inqAlert.count) a.insertAdjacentHTML("beforeend", `<span class="nav-badge" title="New inquiries since your last visit">${inqAlert.count}</span>`);
+}
+const normPhone = (s) => { let d = String(s || "").replace(/\D/g, ""); if (d.length === 11 && d[0] === "1") d = d.slice(1); return d.length >= 7 ? d : ""; };
+// Possible duplicates inside the list: same name, same email or same phone as another inquiry.
+function duplicateMap(rows) {
+  const keyed = new Map();
+  const add = (k, r) => { if (!k) return; if (!keyed.has(k)) keyed.set(k, []); keyed.get(k).push(r); };
+  rows.forEach((r) => { const n = normName(r.name); add(n.length > 2 && "n:" + n, r); add(normEmail(r.email) && "e:" + normEmail(r.email), r); add(normPhone(r.phone) && "p:" + normPhone(r.phone), r); });
+  const out = new Map();
+  for (const [k, group] of keyed) {
+    if (group.length < 2) continue;
+    const why = k[0] === "n" ? "name" : k[0] === "e" ? "email" : "phone";
+    group.forEach((r) => { const cur = out.get(r.id) || new Set(); cur.add(why); out.set(r.id, cur); });
+  }
+  return out;
+}
+const vipBadges = (r) => (r.vip ? `<span class="pill pill-vip inq-vip">${I.star}VIP</span>${r.ag_approved ? `<span class="pill inq-ag">${I.check}AG Approved</span>` : ""}` : "");
+
 async function renderInquiries(seq) {
   const main = shell("inquiries", `<div class="loading">Loading inquiries…</div>`);
-  let all;
-  try { all = await listInquiries(); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  let all, notes = [], seen = { seen_at: null };
+  try { [all, notes, seen] = await Promise.all([listInquiries(), listInquiryNotes(), getInquirySeen(currentProfile.id)]); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
   if (seq !== renderSeq) return;
+  const lastSeen = seen.seen_at || new Date(Date.now() - 14 * 86400000).toISOString();
+  const isNewForMe = (r) => r.notify_team && r.created_at > lastSeen && r.created_by !== currentProfile.id;
+  const latestNote = new Map();
+  notes.forEach((n) => { if (!latestNote.has(n.inquiry_id)) latestNote.set(n.inquiry_id, n); });
+  const noteCount = notes.reduce((m, n) => m.set(n.inquiry_id, (m.get(n.inquiry_id) || 0) + 1), new Map());
+  const dups = duplicateMap(all);
+  if (!seen.missing) { markInquiriesSeen(currentProfile.id).catch(() => {}); inqAlert = { count: 0, checked: true }; paintInquiryBadge(); }
 
   function draw() {
     store.set("gtap-inq", inqState);
     const q = inqState.q.trim().toLowerCase();
     const open = all.filter((r) => r.status !== "Moved"), moved = all.filter((r) => r.status === "Moved");
-    const base = inqState.view === "moved" ? moved : inqState.view === "all" ? all : open;
+    let base = inqState.view === "moved" ? moved : inqState.view === "all" ? all : open;
+    if (inqState.show === "vip") base = base.filter((r) => r.vip);
+    if (inqState.show === "dups") base = base.filter((r) => dups.has(r.id));
     const sortVal = (r) => ({
       received_on: r.received_on || "", name: (r.name || "").toLowerCase(), method: r.method || "",
       location: [r.state, r.city].filter(Boolean).join(" ").toLowerCase() || "~", closest_dealer: (r.closest_dealer || "~").toLowerCase(), status: r.status || "",
     }[inqState.sort] ?? "");
-    const list = base.filter((r) => !q || [r.name, r.email, r.phone, r.city, r.state, r.zip, r.closest_dealer, r.notes, r.referred_by].some((f) => (f || "").toLowerCase().includes(q)))
+    const list = base.filter((r) => !q || [r.name, r.email, r.phone, fmtPhone(r.phone), r.city, r.state, r.zip, r.closest_dealer, latestNote.get(r.id)?.body, r.referred_by, r.handler].some((f) => (f || "").toLowerCase().includes(q)))
       .sort((a, b) => { const x = sortVal(a), y = sortVal(b); const c = x < y ? -1 : x > y ? 1 : (a.name || "").localeCompare(b.name || ""); return inqState.dir === "asc" ? c : -c; });
     const th = (label, key) => { const on = inqState.sort === key; return `<th data-sort="${key}">${label}<span class="sort-ic ${on ? "on" : ""}">${on ? (inqState.dir === "asc" ? "▲" : "▼") : "▼"}</span></th>`; };
     const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const tab = (k, label, n) => `<button class="kpi ${inqState.view === k ? "active" : ""}" data-view="${k}"><span class="kpi-num">${n}</span><span class="kpi-label">${label}</span></button>`;
+    const newCount = all.filter(isNewForMe).length;
     main.innerHTML = `
       <div class="page-header">
         <div><h1>Inquiries</h1><p class="muted">Guests who reached out to us directly, not through a dealer</p></div>
@@ -2079,6 +2124,7 @@ async function renderInquiries(seq) {
           <a href="#/inquiries/new" class="btn btn-primary">${I.plus}New Inquiry</a>
         </div>
       </div>
+      ${newCount ? `<div class="banner inq-new-banner">${I.warn}<span><b>${newCount} new ${newCount === 1 ? "inquiry was" : "inquiries were"} added</b> since your last visit. They're marked <span class="pill inq-new">New</span> below.</span></div>` : ""}
       <div class="kpi-strip inq-kpis">
         ${tab("open", "Open", open.length)}
         ${tab("moved", "Moved to profiles", moved.length)}
@@ -2086,25 +2132,38 @@ async function renderInquiries(seq) {
         <div class="kpi static"><span class="kpi-num">${all.filter((r) => (r.received_on || "") >= since).length}</span><span class="kpi-label">Last 30 days</span></div>
       </div>
       <div class="filters">
-        <label class="search-box">${I.search}<input id="inq-q" placeholder="Search name, email, phone, city, dealer, notes…" value="${escapeHtml(inqState.q)}"></label>
+        <label class="search-box">${I.search}<input id="inq-q" placeholder="Search name, email, phone, city, dealer, handler, notes…" value="${escapeHtml(inqState.q)}"></label>
+        <select id="inq-show" class="inq-show">
+          <option value="">All guests</option>
+          <option value="vip" ${inqState.show === "vip" ? "selected" : ""}>VIP only (${all.filter((r) => r.vip).length})</option>
+          <option value="dups" ${inqState.show === "dups" ? "selected" : ""}>Possible duplicates (${dups.size})</option>
+        </select>
       </div>
       <div class="table-wrap">
         ${list.length ? `<table class="crm-table inq-table">
-          <thead><tr>${th("Received", "received_on")}${th("Guest", "name")}${th("Reached out by", "method")}${th("Location", "location")}${th("Closest dealer", "closest_dealer")}<th style="cursor:default">Notes</th>${th("Status", "status")}</tr></thead>
-          <tbody>${list.map((r) => `
-            <tr class="clickable-row ${r.status === "Moved" ? "inq-moved" : ""}" data-id="${r.id}">
-              <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}</td>
-              <td><div class="cell-name">${escapeHtml(r.name)}</div><div class="cell-sub muted">${escapeHtml([r.email, fmtPhone(r.phone)].filter(Boolean).join(" · "))}</div></td>
+          <thead><tr>${th("Received", "received_on")}${th("Guest", "name")}${th("Reached out by", "method")}${th("Location", "location")}${th("Closest dealer", "closest_dealer")}<th style="cursor:default">Latest note</th>${th("Status", "status")}</tr></thead>
+          <tbody>${list.map((r) => {
+            const ln = latestNote.get(r.id), noteText = ln ? ln.body : r.notes || "", nc = noteCount.get(r.id) || 0;
+            const dup = dups.get(r.id);
+            return `
+            <tr class="clickable-row ${r.status === "Moved" ? "inq-moved" : ""} ${r.vip ? "inq-is-vip" : ""}" data-id="${r.id}">
+              <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}${isNewForMe(r) ? `<div><span class="pill inq-new">New</span></div>` : ""}</td>
+              <td><div class="cell-name">${escapeHtml(r.name)}</div>
+                ${r.vip ? `<div class="inq-badges">${vipBadges(r)}</div>` : ""}
+                <div class="cell-sub muted">${escapeHtml([r.email, fmtPhone(r.phone)].filter(Boolean).join(" · "))}</div>
+                ${r.vip && r.handler ? `<div class="cell-sub muted">Handler: ${escapeHtml(r.handler)}</div>` : ""}
+                ${dup ? `<div class="inq-dup" title="Another inquiry has the same ${[...dup].join(", ")}">${I.warn}Possible duplicate (same ${[...dup].join(", ")})</div>` : ""}</td>
               <td><span class="pill pill-method">${escapeHtml(r.method || "Other")}</span>${r.method === "Referral" && r.referred_by ? `<div class="cell-sub muted">from ${escapeHtml(r.referred_by)}</div>` : ""}</td>
               <td>${escapeHtml(inqLocation(r))}</td>
-              <td>${escapeHtml(r.closest_dealer || "")}${r.closest_dealer_miles != null && r.closest_dealer ? `<div class="cell-sub muted">about ${Math.round(r.closest_dealer_miles)} mi</div>` : ""}</td>
-              <td class="inq-notes">${escapeHtml((r.notes || "").slice(0, 110))}${(r.notes || "").length > 110 ? "…" : ""}</td>
+              <td>${escapeHtml(r.closest_dealer || "")}${r.closest_dealer_miles != null && r.closest_dealer ? `<div class="cell-sub muted">${r.closest_dealer_miles < 1 ? "under 1 mi" : `about ${Math.round(r.closest_dealer_miles)} mi`}</div>` : ""}</td>
+              <td class="inq-notes">${escapeHtml(noteText.slice(0, 110))}${noteText.length > 110 ? "…" : ""}${ln ? `<div class="cell-sub muted">${escapeHtml(ln.author_name || "")} · ${fmtDate(ln.created_at)}${nc > 1 ? ` · ${nc} notes` : ""}</div>` : ""}</td>
               <td>${r.status === "Moved" ? `<span class="pill pill-complete" title="Moved to profiles ${r.moved_at ? fmtDate(r.moved_at) : ""}">${I.check}Profile started</span>` : `<span class="pill pill-draft">Open</span>`}</td>
-            </tr>`).join("")}</tbody></table>`
-          : `<div class="empty-state">${all.length ? (q ? "No inquiries match that search." : inqState.view === "moved" ? "No inquiries have been moved to profiles yet." : "No open inquiries.") : "No inquiries yet. Add one with <b>New Inquiry</b> when a guest reaches out on their own."}</div>`}
+            </tr>`; }).join("")}</tbody></table>`
+          : `<div class="empty-state">${all.length ? (q || inqState.show ? "No inquiries match these filters." : inqState.view === "moved" ? "No inquiries have been moved to profiles yet." : "No open inquiries.") : "No inquiries yet. Add one with <b>New Inquiry</b> when a guest reaches out on their own."}</div>`}
       </div>`;
     const qi = main.querySelector("#inq-q");
     qi.addEventListener("input", () => { inqState.q = qi.value; const pos = qi.selectionStart; draw(); const n = main.querySelector("#inq-q"); n.focus(); n.setSelectionRange(pos, pos); });
+    main.querySelector("#inq-show").addEventListener("change", (e) => { inqState.show = e.target.value; draw(); });
     main.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { inqState.view = b.dataset.view; draw(); }));
     main.querySelectorAll("th[data-sort]").forEach((t) => t.addEventListener("click", () => {
       const k = t.dataset.sort;
@@ -2113,40 +2172,54 @@ async function renderInquiries(seq) {
       draw();
     }));
     main.querySelectorAll(".clickable-row").forEach((tr) => tr.addEventListener("click", () => navigate(`#/inquiries/${tr.dataset.id}`)));
-    main.querySelector("#inq-export").addEventListener("click", () => exportInquiries(all));
+    main.querySelector("#inq-export").addEventListener("click", () => exportInquiries(all, notes));
   }
   draw();
 }
 
-function exportInquiries(rows) {
+function exportInquiries(rows, notes = []) {
   if (!window.XLSX) return alert("Excel library didn't load. Check your connection and try again.");
+  const byInq = new Map();
+  notes.slice().reverse().forEach((n) => { if (!byInq.has(n.inquiry_id)) byInq.set(n.inquiry_id, []); byInq.get(n.inquiry_id).push(`${fmtDate(n.created_at)} ${n.author_name || ""}: ${n.body}`); });
   const data = rows.map((r) => ({
-    Received: r.received_on || "", Name: r.name, Email: r.email || "", Phone: fmtPhone(r.phone), "Reached Out By": r.method || "", "Referred By": r.referred_by || "",
+    Received: r.received_on || "", Name: r.name, VIP: r.vip ? "Yes" : "", "AG Approved": r.vip && r.ag_approved ? "Yes" : "", Handler: r.vip ? r.handler || "" : "",
+    Email: r.email || "", Phone: fmtPhone(r.phone), "Reached Out By": r.method || "", "Referred By": r.referred_by || "",
     ZIP: r.zip || "", City: r.city || "", State: r.state || "", "Closest Dealer": r.closest_dealer || "", "Miles (approx)": r.closest_dealer_miles ?? "",
-    Notes: r.notes || "", Status: r.status === "Moved" ? "Moved to profiles" : "Open", "Moved On": r.moved_at ? fmtDate(r.moved_at) : "", "Added By": r.created_by_name || "",
+    Notes: (byInq.get(r.id) || (r.notes ? [r.notes] : [])).join("\n"), Status: r.status === "Moved" ? "Moved to profiles" : "Open", "Moved On": r.moved_at ? fmtDate(r.moved_at) : "", "Added By": r.created_by_name || "",
   }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Inquiries");
   XLSX.writeFile(wb, `GR GT Inquiries ${todayISO()}.xlsx`);
 }
 
+const FILE_ACCEPT = ".pdf,.eml,.msg,.txt,.doc,.docx,.xls,.xlsx,.csv,image/*,application/pdf";
+const MAX_FILE = 25 * 1024 * 1024;
+const fmtSize = (b) => (b == null ? "" : b < 1024 ? `${b} B` : b < 1048576 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1)} MB`);
+const fileIcon = (f) => (/^image\//.test(f.content_type || "") ? I.image : I.doc);
+const fmtWhen = (iso) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+
 async function renderInquiryForm(route, seq) {
   const isNew = !route.id;
   const main = shell("inquiries", `<div class="loading">Loading…</div>`);
-  let rec = null, others = [], profiles = [];
+  let rec = null, others = [], profiles = [], notes = [], files = [];
   try {
-    [rec, others, profiles] = await Promise.all([isNew ? null : getInquiry(route.id), listInquiries().catch(() => []), listApplicants().catch(() => [])]);
+    [rec, others, profiles, notes, files] = await Promise.all([
+      isNew ? null : getInquiry(route.id), listInquiries().catch(() => []), listApplicants().catch(() => []),
+      isNew ? [] : listInquiryNotes(route.id), isNew ? [] : listInquiryFiles(route.id),
+    ]);
   } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
   others = others.filter((o) => o.id !== route.id);
   if (seq !== renderSeq) return;
   const v = rec || { method: "Phone", received_on: todayISO() };
   const moved = rec && rec.status === "Moved";
   const val = (k) => escapeHtml(v[k] ?? "");
+  let queued = []; // files picked on a new inquiry, uploaded right after it saves
+  const tgl = (id, on, label, sub, extra = "") => `<label class="toggle-card ${on ? "on" : ""} ${extra}" data-tgl="${id}"><input type="checkbox" id="${id}" ${on ? "checked" : ""}><span class="tc-box">${I.check}</span><span><div class="tc-label">${label}</div><div class="tc-sub">${sub}</div></span></label>`;
 
   main.innerHTML = `
     <a href="#/inquiries" class="back-link">${I.back}Inquiries</a>
     <div class="page-header">
-      <div><h1>${isNew ? "New Inquiry" : escapeHtml(rec.name)}</h1><p class="muted">${isNew ? "A guest who reached out to us directly" : `Added ${fmtDate(rec.created_at)}${rec.created_by_name ? ` by ${escapeHtml(rec.created_by_name)}` : ""}`}</p></div>
+      <div><h1>${isNew ? "New Inquiry" : escapeHtml(rec.name)}${rec?.vip ? ` <span class="pill pill-vip inq-vip">${I.star}VIP</span>` : ""}</h1><p class="muted">${isNew ? "A guest who reached out to us directly" : `Added ${fmtDate(rec.created_at)}${rec.created_by_name ? ` by ${escapeHtml(rec.created_by_name)}` : ""}`}</p></div>
       <div class="page-actions">
         ${!isNew && !moved ? `<button class="btn btn-primary" id="inq-move" type="button">${I.doc}Start a profile</button>` : ""}
         ${!isNew && currentProfile?.is_admin ? `<button class="btn btn-danger" id="inq-delete" type="button">${I.trash}Delete</button>` : ""}
@@ -2163,6 +2236,16 @@ async function renderInquiryForm(route, seq) {
         <div class="form-field" id="i-ref-wrap" ${v.method === "Referral" ? "" : "hidden"}><label>Referred by</label><input type="text" id="i-ref" maxlength="120" value="${val("referred_by")}" placeholder="Who sent them our way"></div>
       </div>
       <div id="i-match"></div>
+
+      <div class="sec-kicker inq-kicker">VIP</div>
+      <div class="form-grid inq-vip-grid">
+        ${tgl("i-vip", !!v.vip, "VIP", "Shows a gold VIP badge on the list and the map")}
+        <div id="i-vip-extra" class="inq-vip-extra" ${v.vip ? "" : "hidden"}>
+          ${tgl("i-ag", !!v.ag_approved, "AG Approved", "Only for VIPs")}
+          <div class="form-field"><label>Handler <span class="hint">(their Toyota contact who named them a VIP)</span></label><input type="text" id="i-handler" maxlength="120" value="${val("handler")}" placeholder="Name"></div>
+        </div>
+      </div>
+
       <div class="sec-kicker inq-kicker">Location</div>
       <div class="form-grid inq-loc">
         <div class="form-field"><label>ZIP</label><input type="text" id="i-zip" inputmode="numeric" maxlength="10" value="${val("zip")}" placeholder="5 digit ZIP"></div>
@@ -2174,30 +2257,55 @@ async function renderInquiryForm(route, seq) {
         <input type="text" id="i-dealer" maxlength="120" value="${val("closest_dealer")}" placeholder="Enter a ZIP to see suggestions">
         <div id="i-dealer-sugg" class="dealer-sugg"></div>
       </div>
-      <div class="form-field"><label>Notes</label><textarea id="i-notes" rows="6" maxlength="4000" placeholder="What they asked about, timing, anything to follow up on">${val("notes")}</textarea></div>
+
+      ${isNew ? `
+      <div class="form-field"><label>Notes</label><textarea id="i-notes" rows="4" maxlength="4000" placeholder="What they asked about, timing, anything to follow up on. Becomes the first entry in the notes log."></textarea></div>
+      <div class="form-field"><label>Attachments <span class="hint">(email threads, PDFs or images, up to 25 MB each)</span></label>
+        <label class="file-drop"><input type="file" id="i-files" multiple accept="${FILE_ACCEPT}">${I.plus}<span>Choose files</span></label>
+        <div id="i-queued" class="file-list"></div>
+      </div>
+      ${tgl("i-notify", true, "Notify the team", "Everyone sees this as a new inquiry the next time they log in", "inq-notify")}` : ""}
+
       <div class="inq-actions">
         <button type="submit" class="btn btn-primary">${I.save}${isNew ? "Save Inquiry" : "Save Changes"}</button>
         <a href="#/inquiries" class="btn">Cancel</a>
       </div>
-    </form>`;
+    </form>
+
+    ${isNew ? "" : `
+    <section class="form-section inq-form inq-log">
+      <div class="sec-kicker">Notes</div>
+      <div class="note-add">
+        <textarea id="n-body" rows="3" maxlength="4000" placeholder="Add a note. It's saved with your name and the time."></textarea>
+        <button type="button" class="btn btn-primary" id="n-add">${I.plus}Add note</button>
+      </div>
+      <div id="n-list" class="note-list"></div>
+    </section>
+    <section class="form-section inq-form inq-files">
+      <div class="sec-kicker">Attachments</div>
+      <label class="file-drop"><input type="file" id="f-pick" multiple accept="${FILE_ACCEPT}">${I.plus}<span>Add files</span><span class="muted">Email threads, PDFs or images, up to 25 MB each</span></label>
+      <div id="f-list" class="file-list"></div>
+    </section>`}`;
 
   const $ = (id) => main.querySelector("#" + id);
   let dealerMiles = rec?.closest_dealer_miles ?? null;
+  main.querySelectorAll("[data-tgl]").forEach((lab) => lab.querySelector("input").addEventListener("change", (e) => {
+    lab.classList.toggle("on", e.target.checked);
+    if (lab.dataset.tgl === "i-vip") $("i-vip-extra").hidden = !e.target.checked;
+  }));
   $("i-method").addEventListener("change", (e) => { $("i-ref-wrap").hidden = e.target.value !== "Referral"; });
-  $("i-phone").addEventListener("blur", () => { $("i-phone").value = fmtPhone($("i-phone").value); });
+  $("i-phone").addEventListener("blur", () => { $("i-phone").value = fmtPhone($("i-phone").value); paintMatches(); });
 
-  // Flag (never block) when this looks like someone already on file: same name or same email on another
+  // Flag (never block) when this looks like someone already on file: same name, email or phone on another
   // inquiry, or same name on an applicant profile.
   function paintMatches() {
-    const n = normName($("i-name").value), em = normEmail($("i-email").value);
+    const n = normName($("i-name").value), em = normEmail($("i-email").value), ph = normPhone($("i-phone").value);
     const rows = [];
-    if (n.length > 2 || em) {
-      for (const o of others) {
-        const byName = n.length > 2 && normName(o.name) === n, byEmail = em && normEmail(o.email) === em;
-        if (byName || byEmail) rows.push(`<a href="#/inquiries/${o.id}">${escapeHtml(o.name)}</a> · inquiry ${o.received_on ? fmtDate(o.received_on) : ""}${o.email ? " · " + escapeHtml(o.email) : ""} <span class="muted">(same ${byName && byEmail ? "name and email" : byName ? "name" : "email"})</span>`);
-      }
-      if (n.length > 2) for (const p of profiles) if (normName(p.name) === n && p.id !== rec?.applicant_id) rows.push(`<a href="#/p/${p.id}">${escapeHtml(p.name)}</a> · applicant profile${p.preferred_dealer ? " · " + escapeHtml(p.preferred_dealer) : ""} <span class="muted">(same name)</span>`);
+    for (const o of others) {
+      const why = [n.length > 2 && normName(o.name) === n && "name", em && normEmail(o.email) === em && "email", ph && normPhone(o.phone) === ph && "phone"].filter(Boolean);
+      if (why.length) rows.push(`<a href="#/inquiries/${o.id}" target="_blank" rel="noopener">${escapeHtml(o.name)}</a> · inquiry ${o.received_on ? fmtDate(o.received_on) : ""}${o.email ? " · " + escapeHtml(o.email) : ""}${o.phone ? " · " + escapeHtml(fmtPhone(o.phone)) : ""} <span class="muted">(same ${why.join(" and ")})</span>`);
     }
+    if (n.length > 2) for (const p of profiles) if (normName(p.name) === n && p.id !== rec?.applicant_id) rows.push(`<a href="#/p/${p.id}" target="_blank" rel="noopener">${escapeHtml(p.name)}</a> · applicant profile${p.preferred_dealer ? " · " + escapeHtml(p.preferred_dealer) : ""} <span class="muted">(same name)</span>`);
     $("i-match").innerHTML = inquiryMatchHtml(rows, "Possible match already on file");
   }
   $("i-name").addEventListener("input", paintMatches);
@@ -2213,7 +2321,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201515");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201658");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2223,7 +2331,7 @@ async function renderInquiryForm(route, seq) {
       const near = await closestDealers(zip, await dealerLocations(), 3);
       if (my !== zipSeq) return;
       if (!near.length) { box.innerHTML = `<span class="muted">${here ? "No participating dealers with a ZIP in the CRM yet." : "ZIP not recognized."}</span>`; return; }
-      box.innerHTML = near.map((d, i) => `<button type="button" class="dealer-opt ${$("i-dealer").value.trim() === d.dealership ? "on" : ""}" data-name="${escapeHtml(d.dealership)}" data-mi="${d.miles}">${i === 0 ? `<span class="best">Closest</span>` : ""}<b>${escapeHtml(d.dealership)}</b><span class="muted">${escapeHtml([d.city, d.state].filter(Boolean).join(", "))} · about ${d.miles} mi</span></button>`).join("");
+      box.innerHTML = near.map((d, i) => `<button type="button" class="dealer-opt ${$("i-dealer").value.trim() === d.dealership ? "on" : ""}" data-name="${escapeHtml(d.dealership)}" data-mi="${d.miles}">${i === 0 ? `<span class="best">Closest</span>` : ""}<b>${escapeHtml(d.dealership)}</b><span class="muted">${escapeHtml([d.city, d.state].filter(Boolean).join(", "))} · ${d.miles < 1 ? "under 1 mi" : `about ${d.miles} mi`}</span></button>`).join("");
       box.querySelectorAll(".dealer-opt").forEach((b) => b.addEventListener("click", () => {
         $("i-dealer").value = b.dataset.name; dealerMiles = Number(b.dataset.mi);
         box.querySelectorAll(".dealer-opt").forEach((x) => x.classList.toggle("on", x === b));
@@ -2236,19 +2344,91 @@ async function renderInquiryForm(route, seq) {
   $("i-zip").addEventListener("input", () => onZip(true));
   if ((v.zip || "").replace(/\D/g, "").length === 5) onZip(false);
 
-  const collect = () => ({
-    name: $("i-name").value.trim(),
-    received_on: $("i-received").value || todayISO(),
-    email: $("i-email").value.trim() || null,
-    phone: fmtPhone($("i-phone").value) || null,
-    method: $("i-method").value,
-    referred_by: $("i-method").value === "Referral" ? $("i-ref").value.trim() || null : null,
-    zip: $("i-zip").value.trim() || null,
-    city: $("i-city").value.trim() || null,
-    state: $("i-state").value || null,
-    closest_dealer: $("i-dealer").value.trim() || null,
-    closest_dealer_miles: $("i-dealer").value.trim() ? dealerMiles : null,
-    notes: $("i-notes").value.trim() || null,
+  const collect = () => {
+    const vip = $("i-vip").checked;
+    return {
+      name: $("i-name").value.trim(),
+      received_on: $("i-received").value || todayISO(),
+      email: $("i-email").value.trim() || null,
+      phone: fmtPhone($("i-phone").value) || null,
+      method: $("i-method").value,
+      referred_by: $("i-method").value === "Referral" ? $("i-ref").value.trim() || null : null,
+      zip: $("i-zip").value.trim() || null,
+      city: $("i-city").value.trim() || null,
+      state: $("i-state").value || null,
+      closest_dealer: $("i-dealer").value.trim() || null,
+      closest_dealer_miles: $("i-dealer").value.trim() ? dealerMiles : null,
+      vip,
+      ag_approved: vip && $("i-ag").checked,
+      handler: vip ? $("i-handler").value.trim() || null : null,
+    };
+  };
+
+  // ---- attachments ----
+  const tooBig = (list) => list.filter((f) => f.size > MAX_FILE);
+  function paintQueued() {
+    $("i-queued").innerHTML = queued.map((f, i) => `<div class="file-row"><span class="file-ic">${fileIcon({ content_type: f.type })}</span><span class="file-name">${escapeHtml(f.name)}</span><span class="muted">${fmtSize(f.size)}</span><button type="button" class="link-btn" data-unq="${i}">Remove</button></div>`).join("");
+    $("i-queued").querySelectorAll("[data-unq]").forEach((b) => b.addEventListener("click", () => { queued.splice(+b.dataset.unq, 1); paintQueued(); }));
+  }
+  $("i-files")?.addEventListener("change", (e) => {
+    const picked = [...e.target.files];
+    const big = tooBig(picked);
+    if (big.length) alert(`Over 25 MB, skipped: ${big.map((f) => f.name).join(", ")}`);
+    queued.push(...picked.filter((f) => f.size <= MAX_FILE));
+    e.target.value = "";
+    paintQueued();
+  });
+  function paintFiles() {
+    const box = $("f-list");
+    if (!box) return;
+    box.innerHTML = files.length ? files.map((f) => `<div class="file-row"><span class="file-ic">${fileIcon(f)}</span><span class="file-name"><button type="button" class="link-btn" data-open="${f.id}">${escapeHtml(f.file_name)}</button></span><span class="muted">${fmtSize(f.size_bytes)} · ${escapeHtml(f.uploaded_by_name || "")} · ${fmtDate(f.created_at)}</span><button type="button" class="btn btn-sm" data-dl="${f.id}">${I.download}Download</button>${f.uploaded_by === currentProfile.id || currentProfile.is_admin ? `<button type="button" class="link-btn danger" data-rm="${f.id}">Delete</button>` : ""}</div>`).join("") : `<div class="muted">No files yet.</div>`;
+    const byId = (id) => files.find((x) => x.id === id);
+    box.querySelectorAll("[data-dl]").forEach((b) => b.addEventListener("click", async () => { try {
+      const f = byId(b.dataset.dl), link = document.createElement("a");
+      link.href = await inquiryFileUrl(f, true); link.download = f.file_name; link.rel = "noopener";
+      document.body.appendChild(link); link.click(); link.remove();
+    } catch (err) { alert("Couldn't download: " + err.message); } }));
+    box.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", async () => { const w = window.open("", "_blank"); try { w.location.href = await inquiryFileUrl(byId(b.dataset.open), false); } catch (err) { w?.close(); alert("Couldn't open: " + err.message); } }));
+    box.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", async () => {
+      const f = byId(b.dataset.rm);
+      if (!confirm(`Delete ${f.file_name}?`)) return;
+      try { await deleteInquiryFile(f); files = files.filter((x) => x.id !== f.id); paintFiles(); } catch (err) { alert("Couldn't delete: " + err.message); }
+    }));
+  }
+  paintFiles();
+  $("f-pick")?.addEventListener("change", async (e) => {
+    const picked = [...e.target.files];
+    e.target.value = "";
+    const big = tooBig(picked);
+    if (big.length) alert(`Over 25 MB, skipped: ${big.map((f) => f.name).join(", ")}`);
+    const drop = $("f-pick").closest(".file-drop");
+    drop.classList.add("busy");
+    for (const file of picked.filter((f) => f.size <= MAX_FILE)) {
+      try { files.unshift(await uploadInquiryFile(rec.id, file, currentProfile)); paintFiles(); } catch (err) { alert(`Couldn't upload ${file.name}: ${err.message}`); }
+    }
+    drop.classList.remove("busy");
+  });
+
+  // ---- notes log ----
+  function paintNotes() {
+    const box = $("n-list");
+    if (!box) return;
+    const legacy = !notes.length && rec?.notes ? [{ id: "", body: rec.notes, author_name: rec.created_by_name, created_at: rec.created_at, legacy: true }] : [];
+    const list = notes.length ? notes : legacy;
+    box.innerHTML = list.length ? list.map((n) => `<div class="note-item"><div class="note-head"><b>${escapeHtml(n.author_name || "Someone")}</b><span class="muted">${fmtWhen(n.created_at)}</span>${!n.legacy && (n.author_id === currentProfile.id || currentProfile.is_admin) ? `<button type="button" class="link-btn danger" data-nrm="${n.id}">Delete</button>` : ""}</div><div class="note-body">${escapeHtml(n.body)}</div></div>`).join("") : `<div class="muted">No notes yet.</div>`;
+    box.querySelectorAll("[data-nrm]").forEach((b) => b.addEventListener("click", async () => {
+      if (!confirm("Delete this note?")) return;
+      try { await deleteInquiryNote(b.dataset.nrm); notes = notes.filter((x) => x.id !== b.dataset.nrm); paintNotes(); } catch (err) { alert("Couldn't delete: " + err.message); }
+    }));
+  }
+  paintNotes();
+  $("n-add")?.addEventListener("click", async () => {
+    const body = $("n-body").value.trim();
+    if (!body) return $("n-body").focus();
+    const btn = $("n-add"); btn.disabled = true;
+    try { notes.unshift(await addInquiryNote(rec.id, body, currentProfile)); $("n-body").value = ""; paintNotes(); toast("Note added"); }
+    catch (err) { alert("Couldn't add the note: " + err.message); }
+    btn.disabled = false;
   });
 
   $("inq-form").addEventListener("submit", async (e) => {
@@ -2258,8 +2438,13 @@ async function renderInquiryForm(route, seq) {
     const btn = e.target.querySelector("button[type=submit]");
     btn.disabled = true;
     try {
-      if (isNew) { await createInquiry(f, currentProfile); toast("Inquiry saved"); }
-      else { await updateInquiry(rec.id, f, currentProfile); toast("Changes saved"); }
+      if (isNew) {
+        const created = await createInquiry({ ...f, notify_team: $("i-notify").checked }, currentProfile);
+        const first = $("i-notes").value.trim();
+        if (first) await addInquiryNote(created.id, first, currentProfile).catch((err) => alert("Saved, but the note didn't: " + err.message));
+        for (const file of queued) await uploadInquiryFile(created.id, file, currentProfile).catch((err) => alert(`Saved, but ${file.name} didn't upload: ${err.message}`));
+        toast("Inquiry saved");
+      } else { await updateInquiry(rec.id, f, currentProfile); toast("Changes saved"); }
       navigate("#/inquiries");
     } catch (err) { alert("Couldn't save: " + err.message); btn.disabled = false; }
   });
@@ -2271,12 +2456,14 @@ async function renderInquiryForm(route, seq) {
     const btn = $("inq-move");
     btn.disabled = true;
     try {
-      // Profiles only keep name, city and state (no contact details). Notes go into Call Notes.
-      const fromLine = `From a direct inquiry received ${fmtDate(f.received_on)} by ${f.method.toLowerCase()}${f.referred_by ? ` (referred by ${f.referred_by})` : ""}.`;
+      // Profiles only keep name, city and state (no contact details). The notes log goes into Call Notes.
+      const fromLine = `From a direct inquiry received ${fmtDate(f.received_on)} by ${f.method.toLowerCase()}${f.referred_by ? ` (referred by ${f.referred_by})` : ""}${f.vip ? `. VIP${f.ag_approved ? ", AG Approved" : ""}${f.handler ? `, handler ${f.handler}` : ""}` : ""}.`;
+      const log = (notes.length ? notes.slice().reverse() : rec.notes ? [{ body: rec.notes, author_name: rec.created_by_name, created_at: rec.created_at }] : [])
+        .map((n) => `${fmtDate(n.created_at)} ${n.author_name || ""}: ${n.body}`);
       const applicant = await createApplicant({
-        status: "Draft",
+        status: "Draft", vip: f.vip,
         name: f.name, city: f.city || "", state: f.state || "", preferred_dealer: f.closest_dealer || "",
-        call_notes: [fromLine, f.notes].filter(Boolean).join("\n\n"),
+        call_notes: [fromLine, ...log].filter(Boolean).join("\n\n"),
         interviewed_by: currentProfile.full_name, interview_date: todayISO(),
       }, currentProfile);
       await addChange(applicant.id, [{ field: "Profile", note: "created from a direct inquiry" }], currentProfile);
@@ -2287,8 +2474,11 @@ async function renderInquiryForm(route, seq) {
   });
 
   $("inq-delete")?.addEventListener("click", async () => {
-    if (!confirm(`Delete the inquiry from ${rec.name}? This can't be undone.${moved ? " The profile that was started stays." : ""}`)) return;
-    try { await deleteInquiry(rec.id); toast("Inquiry deleted"); navigate("#/inquiries"); } catch (err) { alert(err.message); }
+    if (!confirm(`Delete the inquiry from ${rec.name}? Its notes and files are deleted too. This can't be undone.${moved ? " The profile that was started stays." : ""}`)) return;
+    try {
+      for (const f of files) await deleteInquiryFile(f).catch(() => {});
+      await deleteInquiry(rec.id); toast("Inquiry deleted"); navigate("#/inquiries");
+    } catch (err) { alert(err.message); }
   });
 }
 
@@ -2313,21 +2503,26 @@ function inquiryAnalyticsHtml(inqs) {
             <a href="#/inquiries" class="inq-stat"><b>${open}</b><span>Open</span></a>
             <a href="#/inquiries" class="inq-stat"><b>${moved}</b><span>Moved to profiles</span></a>
             <div class="inq-stat"><b>${inqs.filter((r) => (r.received_on || "") >= since).length}</b><span>Last 30 days</span></div>
+            <a href="#/inquiries" class="inq-stat vip"><b>${inqs.filter((r) => r.vip).length}</b><span>VIP</span></a>
+            <a href="#/inquiries" class="inq-stat"><b>${inqs.filter((r) => r.vip && r.ag_approved).length}</b><span>AG Approved</span></a>
           </div>
-          <button class="btn btn-primary no-print" id="inq-map-btn" type="button" ${total ? "" : "disabled"}>${I.doc}Map report (PDF)</button>
+          <div class="inq-map-row no-print">
+            <select id="inq-map-show"><option value="">All inquiries</option><option value="vip">VIP only (${inqs.filter((r) => r.vip).length})</option></select>
+            <button class="btn btn-primary" id="inq-map-btn" type="button" ${total ? "" : "disabled"}>${I.doc}Map report (PDF)</button>
+          </div>
         </div>
         <div class="an-card span-4"><div class="an-head"><h2>By region</h2></div>${total ? `<div class="hbars">${regions.map((x) => bar(x.r, x.n, rMax)).join("")}</div>` : `<div class="an-empty">Nothing recorded yet</div>`}</div>
         <div class="an-card span-4"><div class="an-head"><h2>How they reached out</h2></div>${total ? `<div class="hbars">${methods.map((x) => bar(x.m, x.n, mMax)).join("")}</div>` : `<div class="an-empty">Nothing recorded yet</div>`}</div>
       </div>`;
 }
 
-async function openInquiryMap(inqs) {
+async function openInquiryMap(inqs, vipOnly = false) {
   const win = window.open("", "_blank");
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201515");
-    const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "" });
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201658");
+    const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
     setTimeout(() => URL.revokeObjectURL(url), 60000);

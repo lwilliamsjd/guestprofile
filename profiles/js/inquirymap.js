@@ -26,7 +26,9 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
     atlas: "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json",
     ...(opts.libs || {}),
   };
-  const list = inquiries.map(locate);
+  const vipOnly = !!opts.vipOnly;
+  const list = inquiries.filter((q) => !vipOnly || q.vip).map(locate);
+  const vipTotal = list.filter((q) => q.vip).length;
   const total = list.length;
   const open = list.filter((q) => q.status !== "Moved").length;
   const moved = total - open;
@@ -39,8 +41,8 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
   list.forEach((q) => {
     if (!q._pt) { unmapped.push(q); return; }
     const key = (q._city + "|" + q._state).toLowerCase();
-    if (!cities.has(key)) cities.set(key, { city: q._city, state: q._state, latSum: 0, lngSum: 0, guests: 0 });
-    const c = cities.get(key); c.guests++; c.latSum += q._pt.lat; c.lngSum += q._pt.lng;
+    if (!cities.has(key)) cities.set(key, { city: q._city, state: q._state, latSum: 0, lngSum: 0, guests: 0, vip: 0 });
+    const c = cities.get(key); c.guests++; c.latSum += q._pt.lat; c.lngSum += q._pt.lng; if (q.vip) c.vip++;
   });
   const cityList = [...cities.values()].map((c) => ({ ...c, lat: c.latSum / c.guests, lng: c.lngSum / c.guests })).sort((a, b) => b.guests - a.guests);
 
@@ -68,23 +70,23 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
 
   const page1 = `
   <section class="page">
-    <header class="hd"><div><div class="eyebrow">GR GT CONCIERGE · DIRECT INQUIRIES</div><h1>Where direct inquiries come from</h1></div>
+    <header class="hd"><div><div class="eyebrow">GR GT CONCIERGE · DIRECT INQUIRIES${vipOnly ? " · VIP ONLY" : ""}</div><h1>Where ${vipOnly ? "VIP inquiries" : "direct inquiries"} come from</h1></div>
       <div class="meta">Guests who reached out to us directly, not through a dealer<br>Generated ${esc(generated)}${opts.by ? ` by ${esc(opts.by)}` : ""}</div></header>
     <div class="kpis">
-      ${kpi(total, "Total inquiries")}
+      ${kpi(total, vipOnly ? "VIP inquiries" : "Total inquiries")}
+      ${vipOnly ? kpi(list.filter((q) => q.ag_approved).length, "AG Approved") : `<div class="k vipk"><b>${vipTotal}</b><span>VIP</span></div>`}
       ${kpi(open, "Open")}
       ${kpi(moved, "Moved to profiles")}
-      ${kpi(last30, "Last 30 days")}
       ${kpi(topState ? esc(topState.st) : "—", `Top state${topState ? ` · ${topState.n}` : ""}`)}
       ${kpi(topRegion && topRegion.n ? esc(topRegion.r) : "—", `Top region${topRegion && topRegion.n ? ` · ${pct(topRegion.share)}` : ""}`)}
     </div>
     <div class="maprow">
       <div class="mapbox"><svg id="map" viewBox="0 0 975 610" preserveAspectRatio="xMidYMin meet"></svg>
-        <div class="legend"><span>Inquiries by state</span><span class="lo">0</span><i class="ramp"></i><span class="hi">${maxState}</span><span class="dot"></span><span>Bubble = inquiries from that city</span></div>
+        <div class="legend"><span>Inquiries by state</span><span class="lo">0</span><i class="ramp"></i><span class="hi">${maxState}</span>${vipOnly ? "" : `<span class="dot"></span><span>Inquiries from that city</span>`}${vipTotal ? `<span class="dot gold"></span><span>VIP${vipOnly ? " inquiries from that city" : ""}</span>` : ""}</div>
       </div>
       <aside class="side">
         <h3>Top cities</h3>
-        <ol class="areas">${cityList.slice(0, 6).map((c) => `<li><b>${esc(c.city)}, ${esc(c.state)}</b><span>${esc(STATE_NAMES[c.state] || "")}</span><em>${c.guests}</em></li>`).join("") || `<li class="none">No ZIP codes yet</li>`}</ol>
+        <ol class="areas">${cityList.slice(0, 6).map((c) => `<li><b>${esc(c.city)}, ${esc(c.state)}</b><span>${esc(STATE_NAMES[c.state] || "")}${c.vip && !vipOnly ? ` · <i class="vipt">${c.vip} VIP</i>` : ""}</span><em>${c.guests}</em></li>`).join("") || `<li class="none">No ZIP codes yet</li>`}</ol>
         <h3>How they reached out</h3>
         <div class="meth">${byMethod.map((x) => `<div><span>${x.m}</span><span class="bar"><i style="width:${total ? (x.n / Math.max(1, ...byMethod.map((y) => y.n))) * 100 : 0}%"></i></span><b>${x.n}</b></div>`).join("")}</div>
         ${unmapped.length ? `<p class="mut small">${unmapped.length} inquir${unmapped.length === 1 ? "y has" : "ies have"} no ZIP and ${unmapped.length === 1 ? "is" : "are"} not on the map.</p>` : ""}
@@ -115,7 +117,7 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
         <h2>Top cities</h2>
         <table class="t compact">
           <thead><tr><th>City</th><th>Inquiries</th></tr></thead>
-          <tbody>${cityList.slice(0, 8).map((c) => `<tr><td><b>${esc(c.city)}, ${esc(c.state)}</b></td><td><b>${c.guests}</b></td></tr>`).join("") || `<tr><td colspan="2" class="mut">No ZIP codes yet</td></tr>`}</tbody>
+          <tbody>${cityList.slice(0, 8).map((c) => `<tr><td><b>${esc(c.city)}, ${esc(c.state)}</b></td><td><b>${c.guests}</b>${c.vip && !vipOnly ? ` <span class="vipt">(${c.vip} VIP)</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="2" class="mut">No ZIP codes yet</td></tr>`}</tbody>
         </table>
         <h2>Closest participating dealer</h2>
         <table class="t compact">
@@ -185,9 +187,13 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
 @media print { .tb { display: none; } }
 
 .meth div { display: grid; grid-template-columns: 62px 1fr 24px; align-items: center; gap: 8px; font-size: 11.5px; padding: 4px 0; }
-.meth b { text-align: right; } .meth .bar { width: 100%; margin: 0; }
+.meth b { text-align: right; }
+#map .bub.vip { fill: #d4a94a; fill-opacity: .9; stroke: #8a6a1c; stroke-width: 1.2; }
+.legend .dot.gold { background: rgba(212,169,74,.9); border-color: #8a6a1c; margin-left: 6px; }
+.vipt { color: #a37a1f; font-style: normal; font-weight: 700; }
+.k.vipk b { color: #a37a1f; } .meth .bar { width: 100%; margin: 0; }
 `;
-  const data = { areas: cityList.map(({ lat, lng, guests, city, state }) => ({ lat, lng, guests, city, state })), stateTotals, maxState, maxArea, FIPS };
+  const data = { areas: cityList.map(({ lat, lng, guests, vip, city, state }) => ({ lat, lng, guests, vip, city, state })), stateTotals, maxState, maxArea, FIPS, vipOnly };
   const script = `
 (async function () {
   const D = ${JSON.stringify(data)};
@@ -199,12 +205,15 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
   let out = "";
   for (const f of states) {
     const st = D.FIPS[String(f.id).padStart(2, "0")]; const v = D.stateTotals[st] || 0;
-    out += '<path class="st" d="' + path(f) + '" fill="' + (v ? ramp(Math.sqrt(v / D.maxState)) : "#f1f1f3") + '"><title>' + (st || "") + ": " + v + '" + (v === 1 ? " inquiry" : " inquiries") + "</title></path>';
+    out += '<path class="st" d="' + path(f) + '" fill="' + (v ? ramp(Math.sqrt(v / D.maxState)) : "#f1f1f3") + '"><title>' + (st || "") + ": " + v + (v === 1 ? " inquiry" : " inquiries") + '</title></path>';
   }
   const proj = d3.geoAlbersUsa().scale(1300).translate([487.5, 305]);
   const pts = D.areas.map((a) => ({ ...a, xy: proj([a.lng, a.lat]) })).filter((a) => a.xy);
   const rad = (g) => 4 + 22 * Math.sqrt(g / D.maxArea);
-  pts.slice().sort((a, b) => b.guests - a.guests).forEach((a) => { out += '<circle class="bub" cx="' + a.xy[0] + '" cy="' + a.xy[1] + '" r="' + rad(a.guests) + '"><title>' + a.city + ", " + a.state + ": " + a.guests + '</title></circle>'; });
+  pts.slice().sort((a, b) => b.guests - a.guests).forEach((a) => {
+    if (!D.vipOnly) out += '<circle class="bub" cx="' + a.xy[0] + '" cy="' + a.xy[1] + '" r="' + rad(a.guests) + '"><title>' + a.city + ", " + a.state + ": " + a.guests + '</title></circle>';
+    if (a.vip) out += '<circle class="bub vip" cx="' + a.xy[0] + '" cy="' + a.xy[1] + '" r="' + rad(a.vip) + '"><title>' + a.city + ", " + a.state + ": " + a.vip + ' VIP</title></circle>';
+  });
   const placed = [];
   const hits = (b) => placed.some((p) => b.x < p.x + p.w && b.x + b.w > p.x && b.y < p.y + p.h && b.y + b.h > p.y);
   pts.forEach((a) => {
@@ -225,5 +234,5 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>${css}</style>
 <script src="${libs.d3array}"></script><script src="${libs.d3geo}"></script><script src="${libs.topojson}"></script>
-</head><body><div class="tb"><span>Direct Inquiries Map · 2 pages, landscape</span><button id="pdf-btn" disabled>Loading map…</button></div>${page1}${page2}<script>${script}</script></body></html>`;
+</head><body><div class="tb"><span>Direct Inquiries Map${vipOnly ? " · VIP only" : ""} · 2 pages, landscape</span><button id="pdf-btn" disabled>Loading map…</button></div>${page1}${page2}<script>${script}</script></body></html>`;
 }

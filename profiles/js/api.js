@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611201515";
+import { supabase } from "./supabase-client.js?v=202611201658";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -219,4 +219,58 @@ export async function listDealerLocations() {
     if (!seen.has(key)) seen.set(key, { dealership: m.dealership.trim(), zip: String(m.zip), city: m.city || "", state: m.state || "" });
   }
   return [...seen.values()];
+}
+
+// ---------- inquiry notes log, attachments, team alerts ----------
+export async function listInquiryNotes(inquiryId = null) {
+  let q = supabase.from("inquiry_notes").select("*").order("created_at", { ascending: false });
+  if (inquiryId) q = q.eq("inquiry_id", inquiryId);
+  const { data, error } = await q;
+  if (error) return [];
+  return data;
+}
+export async function addInquiryNote(inquiryId, body, profile) {
+  const { data, error } = await supabase.from("inquiry_notes")
+    .insert({ inquiry_id: inquiryId, body, author_id: profile.id, author_name: profile.full_name }).select().single();
+  if (error) throw inqErr(error);
+  return data;
+}
+export async function deleteInquiryNote(id) {
+  const { error } = await supabase.from("inquiry_notes").delete().eq("id", id);
+  if (error) throw error;
+}
+const BUCKET = "inquiry-files";
+export async function listInquiryFiles(inquiryId) {
+  const { data, error } = await supabase.from("inquiry_files").select("*").eq("inquiry_id", inquiryId).order("created_at", { ascending: false });
+  if (error) return [];
+  return data;
+}
+export async function uploadInquiryFile(inquiryId, file, profile) {
+  const safe = file.name.replace(/[^\w.\- ]+/g, "_").slice(-120);
+  const path = `${inquiryId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`;
+  const up = await supabase.storage.from(BUCKET).upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
+  if (up.error) throw up.error;
+  const { data, error } = await supabase.from("inquiry_files").insert({
+    inquiry_id: inquiryId, path, file_name: file.name, size_bytes: file.size, content_type: file.type || null, uploaded_by: profile.id, uploaded_by_name: profile.full_name,
+  }).select().single();
+  if (error) { await supabase.storage.from(BUCKET).remove([path]); throw error; }
+  return data;
+}
+export async function inquiryFileUrl(f, download = true) {
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(f.path, 120, download ? { download: f.file_name } : undefined);
+  if (error) throw error;
+  return data.signedUrl;
+}
+export async function deleteInquiryFile(f) {
+  const { error } = await supabase.from("inquiry_files").delete().eq("id", f.id);
+  if (error) throw error;
+  await supabase.storage.from(BUCKET).remove([f.path]);
+}
+export async function getInquirySeen(userId) {
+  const { data, error } = await supabase.from("inquiry_seen").select("seen_at").eq("user_id", userId).maybeSingle();
+  if (error) return { missing: true };
+  return { seen_at: data?.seen_at || null };
+}
+export async function markInquiriesSeen(userId) {
+  await supabase.from("inquiry_seen").upsert({ user_id: userId, seen_at: new Date().toISOString() });
 }
