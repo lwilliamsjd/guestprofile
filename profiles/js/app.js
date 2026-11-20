@@ -6,14 +6,14 @@ import {
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611201658";
+} from "./api.js?v=202611201713";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611201658";
-import { SUPABASE_URL } from "./config.js?v=202611201658";
+} from "./outputs.js?v=202611201713";
+import { SUPABASE_URL } from "./config.js?v=202611201713";
 
 const app = document.getElementById("app");
 
@@ -2227,6 +2227,7 @@ async function renderInquiryForm(route, seq) {
     </div>
     ${moved ? `<div class="banner inq-moved-banner">${I.check}<span><b>Profile started</b> ${rec.moved_at ? fmtDate(rec.moved_at) : ""}${rec.moved_by_name ? ` by ${escapeHtml(rec.moved_by_name)}` : ""}. This inquiry stays here for the record.</span>${rec.applicant_id ? `<a class="btn btn-sm" href="#/p/${rec.applicant_id}">Open profile</a>` : ""}</div>` : ""}
     <form id="inq-form" class="form-section inq-form" autocomplete="off">
+      <div class="sec-kicker inq-kicker inq-kicker-first">Contact</div>
       <div class="form-grid">
         <div class="form-field"><label>Name</label><input type="text" id="i-name" required maxlength="120" value="${val("name")}" placeholder="First and last name"></div>
         <div class="form-field"><label>Received</label><input id="i-received" type="date" value="${val("received_on")}" max="${todayISO()}"></div>
@@ -2237,12 +2238,14 @@ async function renderInquiryForm(route, seq) {
       </div>
       <div id="i-match"></div>
 
-      <div class="sec-kicker inq-kicker">VIP</div>
-      <div class="form-grid inq-vip-grid">
-        ${tgl("i-vip", !!v.vip, "VIP", "Shows a gold VIP badge on the list and the map")}
+      <div class="sec-kicker inq-kicker">VIP status</div>
+      <div class="inq-vip-panel ${v.vip ? "on" : ""}" id="i-vip-panel">
+        ${tgl("i-vip", !!v.vip, "VIP guest", "Shows a gold VIP badge on the list and the map", "inq-vip-tgl")}
         <div id="i-vip-extra" class="inq-vip-extra" ${v.vip ? "" : "hidden"}>
-          ${tgl("i-ag", !!v.ag_approved, "AG Approved", "Only for VIPs")}
-          <div class="form-field"><label>Handler <span class="hint">(their Toyota contact who named them a VIP)</span></label><input type="text" id="i-handler" maxlength="120" value="${val("handler")}" placeholder="Name"></div>
+          <div class="form-field"><label>AG approval</label>
+            <label class="inq-check ${v.ag_approved ? "on" : ""}" data-tgl="i-ag"><input type="checkbox" id="i-ag" ${v.ag_approved ? "checked" : ""}><span class="tc-box">${I.check}</span><span>AG Approved</span></label>
+          </div>
+          <div class="form-field"><label>Handler <span class="hint">(Toyota contact who named them a VIP)</span></label><input type="text" id="i-handler" maxlength="120" value="${val("handler")}" placeholder="Name"></div>
         </div>
       </div>
 
@@ -2259,6 +2262,7 @@ async function renderInquiryForm(route, seq) {
       </div>
 
       ${isNew ? `
+      <div class="sec-kicker inq-kicker">Notes and files</div>
       <div class="form-field"><label>Notes</label><textarea id="i-notes" rows="4" maxlength="4000" placeholder="What they asked about, timing, anything to follow up on. Becomes the first entry in the notes log."></textarea></div>
       <div class="form-field"><label>Attachments <span class="hint">(email threads, PDFs or images, up to 25 MB each)</span></label>
         <label class="file-drop"><input type="file" id="i-files" multiple accept="${FILE_ACCEPT}">${I.plus}<span>Choose files</span></label>
@@ -2291,7 +2295,7 @@ async function renderInquiryForm(route, seq) {
   let dealerMiles = rec?.closest_dealer_miles ?? null;
   main.querySelectorAll("[data-tgl]").forEach((lab) => lab.querySelector("input").addEventListener("change", (e) => {
     lab.classList.toggle("on", e.target.checked);
-    if (lab.dataset.tgl === "i-vip") $("i-vip-extra").hidden = !e.target.checked;
+    if (lab.dataset.tgl === "i-vip") { $("i-vip-extra").hidden = !e.target.checked; $("i-vip-panel").classList.toggle("on", e.target.checked); }
   }));
   $("i-method").addEventListener("change", (e) => { $("i-ref-wrap").hidden = e.target.value !== "Referral"; });
   $("i-phone").addEventListener("blur", () => { $("i-phone").value = fmtPhone($("i-phone").value); paintMatches(); });
@@ -2321,7 +2325,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201658");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201713");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2521,7 +2525,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201658");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201713");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
