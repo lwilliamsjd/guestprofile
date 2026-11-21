@@ -383,3 +383,9 @@ create table if not exists inquiry_seen (
 alter table inquiry_seen enable row level security;
 drop policy if exists "inquiry_seen_own" on inquiry_seen;
 create policy "inquiry_seen_own" on inquiry_seen for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- ============================================================
+-- INQUIRIES: DO NOT CONTACT (VIPs only; track and profile, but no outreach)
+-- Safe to run more than once.
+-- ============================================================
+alter table inquiries add column if not exists do_not_contact boolean not null default false;

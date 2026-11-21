@@ -706,3 +706,13 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .ta-made > div { flex: 1; font-size: 13.5px; }
 .ta-creds { margin-top: 8px; padding: 10px 12px; border-radius: 7px; background: var(--panel-2); font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.6; user-select: all; }
 @media (max-width: 700px) { .ta-legend { grid-template-columns: 1fr; } .ta-row { flex-direction: column; align-items: stretch; } }
+.inq-vip-extra { grid-template-columns: 190px 190px minmax(0, 1fr); }
+.inq-dnc { color: var(--red); border-color: var(--red); background: rgba(224,38,63,.1); }
+.inq-dnc svg { width: 11px; height: 11px; }
+.inq-check-dnc.on { border-color: var(--red); background: rgba(224,38,63,.12); }
+.inq-check-dnc.on .tc-box { background: var(--red); border-color: var(--red); }
+.inq-dnc-banner { display: flex; align-items: center; justify-content: flex-start; gap: 10px; border-color: var(--red); background: rgba(224,38,63,.08); }
+.inq-dnc-banner svg { width: 16px; height: 16px; color: var(--red); flex: none; }
+.inq-stat.dnc b { color: var(--red); }
+@media (max-width: 760px) { .inq-vip-extra { grid-template-columns: 1fr 1fr; } .inq-vip-extra > .form-field:last-child { grid-column: 1 / -1; } }
+@media (max-width: 480px) { .inq-vip-extra { grid-template-columns: 1fr; } }

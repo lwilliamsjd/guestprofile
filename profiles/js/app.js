@@ -6,14 +6,14 @@ import {
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611201724";
+} from "./api.js?v=202611201803";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611201724";
-import { SUPABASE_URL } from "./config.js?v=202611201724";
+} from "./outputs.js?v=202611201803";
+import { SUPABASE_URL } from "./config.js?v=202611201803";
 
 const app = document.getElementById("app");
 
@@ -37,6 +37,7 @@ const I = {
   star: svg('<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>'),
   excel: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m8 8 8 8m0-8-8 8"/>'),
   warn: svg('<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>'),
+  ban: svg('<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>'),
   notes: svg('<path d="M5 3h10l4 4v14H5z"/><path d="M8 10h8M8 14h8M8 18h5"/>'),
   phone: svg('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'),
   save: svg('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/>'),
@@ -2150,7 +2151,7 @@ function duplicateMap(rows) {
   }
   return out;
 }
-const vipBadges = (r) => (r.vip ? `<span class="pill pill-vip inq-vip">${I.star}VIP</span>${r.ag_approved ? `<span class="pill inq-ag">${I.check}AG Approved</span>` : ""}` : "");
+const vipBadges = (r) => (r.vip ? `<span class="pill pill-vip inq-vip">${I.star}VIP</span>${r.ag_approved ? `<span class="pill inq-ag">${I.check}AG Approved</span>` : ""}${r.do_not_contact ? `<span class="pill inq-dnc">${I.ban}Do Not Contact</span>` : ""}` : "");
 
 async function renderInquiries(seq) {
   const main = shell("inquiries", `<div class="loading">Loading inquiries…</div>`);
@@ -2170,6 +2171,7 @@ async function renderInquiries(seq) {
     const open = all.filter((r) => r.status !== "Moved"), moved = all.filter((r) => r.status === "Moved");
     let base = inqState.view === "moved" ? moved : inqState.view === "all" ? all : open;
     if (inqState.show === "vip") base = base.filter((r) => r.vip);
+    if (inqState.show === "dnc") base = base.filter((r) => r.vip && r.do_not_contact);
     if (inqState.show === "dups") base = base.filter((r) => dups.has(r.id));
     const sortVal = (r) => ({
       received_on: r.received_on || "", name: (r.name || "").toLowerCase(), method: r.method || "",
@@ -2202,6 +2204,7 @@ async function renderInquiries(seq) {
         <select id="inq-show" class="inq-show">
           <option value="">All guests</option>
           <option value="vip" ${inqState.show === "vip" ? "selected" : ""}>VIP only (${all.filter((r) => r.vip).length})</option>
+          <option value="dnc" ${inqState.show === "dnc" ? "selected" : ""}>Do Not Contact (${all.filter((r) => r.vip && r.do_not_contact).length})</option>
           <option value="dups" ${inqState.show === "dups" ? "selected" : ""}>Possible duplicates (${dups.size})</option>
         </select>
       </div>
@@ -2245,7 +2248,7 @@ function exportInquiries(rows, notes = []) {
   const byInq = new Map();
   notes.slice().reverse().forEach((n) => { if (!byInq.has(n.inquiry_id)) byInq.set(n.inquiry_id, []); byInq.get(n.inquiry_id).push(`${fmtDate(n.created_at)} ${n.author_name || ""}: ${n.body}`); });
   const data = rows.map((r) => ({
-    Received: r.received_on || "", Name: r.name, VIP: r.vip ? "Yes" : "", "AG Approved": r.vip && r.ag_approved ? "Yes" : "", Handler: r.vip ? r.handler || "" : "",
+    Received: r.received_on || "", Name: r.name, VIP: r.vip ? "Yes" : "", "AG Approved": r.vip && r.ag_approved ? "Yes" : "", "Do Not Contact": r.vip && r.do_not_contact ? "Yes" : "", Handler: r.vip ? r.handler || "" : "",
     Email: r.email || "", Phone: fmtPhone(r.phone), "Reached Out By": r.method || "", "Referred By": r.referred_by || "",
     ZIP: r.zip || "", City: r.city || "", State: r.state || "", "Closest Dealer": r.closest_dealer || "", "Miles (approx)": r.closest_dealer_miles ?? "",
     Notes: (byInq.get(r.id) || (r.notes ? [r.notes] : [])).join("\n"), Status: r.status === "Moved" ? "Moved to profiles" : "Open", "Moved On": r.moved_at ? fmtDate(r.moved_at) : "", "Added By": r.created_by_name || "",
@@ -2288,6 +2291,7 @@ async function renderInquiryForm(route, seq) {
         ${!isNew && currentProfile?.is_admin ? `<button class="btn btn-danger" id="inq-delete" type="button">${I.trash}Delete</button>` : ""}
       </div>
     </div>
+    ${rec?.vip && rec?.do_not_contact ? `<div class="banner inq-dnc-banner">${I.ban}<span><b>Do Not Contact.</b> High profile VIP: keep tracking and build the profile, but don't reach out.</span></div>` : ""}
     ${moved ? `<div class="banner inq-moved-banner">${I.check}<span><b>Profile started</b> ${rec.moved_at ? fmtDate(rec.moved_at) : ""}${rec.moved_by_name ? ` by ${escapeHtml(rec.moved_by_name)}` : ""}. This inquiry stays here for the record.</span>${rec.applicant_id ? `<a class="btn btn-sm" href="#/p/${rec.applicant_id}">Open profile</a>` : ""}</div>` : ""}
     <form id="inq-form" class="form-section inq-form" autocomplete="off">
       <div class="sec-kicker inq-kicker inq-kicker-first">Contact</div>
@@ -2307,6 +2311,9 @@ async function renderInquiryForm(route, seq) {
         <div id="i-vip-extra" class="inq-vip-extra" ${v.vip ? "" : "hidden"}>
           <div class="form-field"><label>AG approval</label>
             <label class="inq-check ${v.ag_approved ? "on" : ""}" data-tgl="i-ag"><input type="checkbox" id="i-ag" ${v.ag_approved ? "checked" : ""}><span class="tc-box">${I.check}</span><span>AG Approved</span></label>
+          </div>
+          <div class="form-field"><label>Outreach</label>
+            <label class="inq-check inq-check-dnc ${v.do_not_contact ? "on" : ""}" data-tgl="i-dnc" title="High profile: track and build a profile, but don't reach out"><input type="checkbox" id="i-dnc" ${v.do_not_contact ? "checked" : ""}><span class="tc-box">${I.check}</span><span>Do Not Contact</span></label>
           </div>
           <div class="form-field"><label>Handler <span class="hint">(Toyota contact who named them a VIP)</span></label><input type="text" id="i-handler" maxlength="120" value="${val("handler")}" placeholder="Name"></div>
         </div>
@@ -2388,7 +2395,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201724");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611201803");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2427,6 +2434,7 @@ async function renderInquiryForm(route, seq) {
       closest_dealer_miles: $("i-dealer").value.trim() ? dealerMiles : null,
       vip,
       ag_approved: vip && $("i-ag").checked,
+      do_not_contact: vip && $("i-dnc").checked,
       handler: vip ? $("i-handler").value.trim() || null : null,
     };
   };
@@ -2524,7 +2532,7 @@ async function renderInquiryForm(route, seq) {
     btn.disabled = true;
     try {
       // Profiles only keep name, city and state (no contact details). The notes log goes into Call Notes.
-      const fromLine = `From a direct inquiry received ${fmtDate(f.received_on)} by ${f.method.toLowerCase()}${f.referred_by ? ` (referred by ${f.referred_by})` : ""}${f.vip ? `. VIP${f.ag_approved ? ", AG Approved" : ""}${f.handler ? `, handler ${f.handler}` : ""}` : ""}.`;
+      const fromLine = `${f.vip && f.do_not_contact ? "DO NOT CONTACT (high profile VIP, track only). " : ""}From a direct inquiry received ${fmtDate(f.received_on)} by ${f.method.toLowerCase()}${f.referred_by ? ` (referred by ${f.referred_by})` : ""}${f.vip ? `. VIP${f.ag_approved ? ", AG Approved" : ""}${f.handler ? `, handler ${f.handler}` : ""}` : ""}.`;
       const log = (notes.length ? notes.slice().reverse() : rec.notes ? [{ body: rec.notes, author_name: rec.created_by_name, created_at: rec.created_at }] : [])
         .map((n) => `${fmtDate(n.created_at)} ${n.author_name || ""}: ${n.body}`);
       const applicant = await createApplicant({
@@ -2572,6 +2580,7 @@ function inquiryAnalyticsHtml(inqs) {
             <div class="inq-stat"><b>${inqs.filter((r) => (r.received_on || "") >= since).length}</b><span>Last 30 days</span></div>
             <a href="#/inquiries" class="inq-stat vip"><b>${inqs.filter((r) => r.vip).length}</b><span>VIP</span></a>
             <a href="#/inquiries" class="inq-stat"><b>${inqs.filter((r) => r.vip && r.ag_approved).length}</b><span>AG Approved</span></a>
+            <a href="#/inquiries" class="inq-stat dnc"><b>${inqs.filter((r) => r.vip && r.do_not_contact).length}</b><span>Do Not Contact</span></a>
           </div>
           <div class="inq-map-row no-print">
             <select id="inq-map-show"><option value="">All inquiries</option><option value="vip">VIP only (${inqs.filter((r) => r.vip).length})</option></select>
@@ -2588,7 +2597,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201724");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611201803");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
