@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611231347";
+import { supabase } from "./supabase-client.js?v=202611231409";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -511,6 +511,12 @@ export async function deleteInteraction(id) {
 }
 
 // ---------- guests ----------
+// Every guest on every active Meister (name, status, Meister), for spotting the same guest nominated twice.
+export async function listAllGuestNames() {
+  const { data, error } = await supabase.from("guests").select("id, guest_name, guest_status, meister_id, meisters!inner(name, dealership, deleted_at)").is("meisters.deleted_at", null);
+  return error ? [] : data || [];
+}
+
 export async function listGuests(meisterId) {
   const { data, error } = await supabase
     .from("guests")

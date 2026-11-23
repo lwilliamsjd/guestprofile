@@ -33,7 +33,7 @@ import {
   setInteractionCategory,
   setInteractionDetails,
   fetchAnalyticsData,
-  listGuests, listGuestHistory, searchApplicants, getApplicantsByIds, uploadGuestPdf, removeGuestPdf, guestPdfUrl,
+  listGuests, listAllGuestNames, listGuestHistory, searchApplicants, getApplicantsByIds, uploadGuestPdf, removeGuestPdf, guestPdfUrl,
   addGuest,
   updateGuest,
   deleteGuest,
@@ -58,10 +58,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611231347";
-import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611231347";
-import { exportToExcel } from "./export.js?v=202611231347";
-import { wireImport } from "./import-export.js?v=202611231347";
+} from "./api.js?v=202611231409";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611231409";
+import { exportToExcel } from "./export.js?v=202611231409";
+import { wireImport } from "./import-export.js?v=202611231409";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1544,7 +1544,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611231347");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611231409");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -2669,7 +2669,7 @@ async function renderMeister(route, seq) {
   const isNew = route.mode === "new";
   let meister = null, interactions = [], guests = [], followUps = [], comments = [], history = [], dealerships = [];
   let source = null, sourceGuests = [], prevMeister = null, nextMeister = null; // departed-Meister links
-  let guestHistory = [], guestApplicants = [];
+  let guestHistory = [], guestApplicants = [], allGuestNames = [];
 
   try {
     if (!isNew) {
@@ -2682,8 +2682,9 @@ async function renderMeister(route, seq) {
         listDealerships().catch(() => []),
       ]);
       comments = await listCommentsForInteractions(interactions.map((i) => i.id));
-      [guestHistory, guestApplicants] = await Promise.all([
+      [guestHistory, allGuestNames, guestApplicants] = await Promise.all([
         listGuestHistory(guests.map((g) => g.id)).catch(() => []),
+        listAllGuestNames().catch(() => []),
         getApplicantsByIds([...new Set(guests.map((g) => g.applicant_id).filter(Boolean))]).catch(() => []),
       ]);
       [prevMeister, nextMeister] = await Promise.all([
@@ -2820,7 +2821,7 @@ async function renderMeister(route, seq) {
         </div>
 
         ${!isNew ? renderActivityTab(meister, interactions, followUps, comments, history, guests) : ""}
-        ${!isNew ? renderGuestsTab(guests, guestHistory, guestApplicants) : ""}
+        ${!isNew ? renderGuestsTab(guests, guestHistory, guestApplicants, allGuestNames) : ""}
       </div>
     </div>
   `;
@@ -2923,7 +2924,7 @@ async function renderMeister(route, seq) {
     });
     wireQuickActions();
     wireActivityTab(container, meister);
-    wireGuestsTab(meister, guests, guestApplicants);
+    wireGuestsTab(meister, guests, guestApplicants, allGuestNames);
 
     if (uiState.focusId) {
       const el = document.getElementById(uiState.focusId);
@@ -3470,6 +3471,21 @@ function wireActivityTab(container, meister) {
 
 // ---------- guests tab ----------
 // ---------- Guests tab: everyone a Meister nominates, from Submitted to Delivered ----------
+const guestKey = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+// the same guest (by first and last name) on other Meisters' Guests tabs
+function otherNominations(name, meisterId, all) {
+  const k = guestKey(name);
+  if (k.split(" ").length < 2) return [];
+  return all.filter((x) => x.meister_id !== meisterId && guestKey(x.guest_name) === k);
+}
+function otherNominationsHtml(list, full = false) {
+  if (!list.length) return "";
+  const items = list.map((x) => `<a href="#/meister/${x.meister_id}">${escapeHtml(x.meisters?.name || "another Meister")}</a>${x.meisters?.dealership ? ` <span class="muted">(${escapeHtml(x.meisters.dealership)})</span>` : ""} · ${escapeHtml(guestStatus(x))}`).join("; ");
+  return full
+    ? `<div class="g-dup-box">${I.alert || ""}<div><b>Also nominated by ${list.length === 1 ? "another Meister" : `${list.length} other Meisters`}</b><div>${items}</div><div class="muted">Same first and last name. Check it's the same person; this won't stop you from saving.</div></div></div>`
+    : `<div class="g-dup">Also nominated by ${items}</div>`;
+}
+
 let guestEdit = {}; // unsaved build, profile link and PDF picks for open guest forms, keyed by form prefix
 
 function guestBuildHtml(g) {
@@ -3501,7 +3517,7 @@ function guestProfileHtml(g, app) {
   return bits.length ? bits.join("") : `<span class="muted">No profile yet</span>`;
 }
 
-function renderGuestsTab(guests, hist = [], apps = []) {
+function renderGuestsTab(guests, hist = [], apps = [], allNames = []) {
   const appById = new Map(apps.map((a) => [a.id, a]));
   const histOf = (id) => hist.filter((h) => h.guest_id === id);
   const counts = GUEST_STATUSES.map((st) => [st, guests.filter((g) => guestStatus(g) === st).length]).filter(([, n]) => n);
@@ -3527,6 +3543,7 @@ function renderGuestsTab(guests, hist = [], apps = []) {
                 ${isAdmin() ? `<button class="icon-btn danger delete-guest-btn" data-id="${g.id}" title="Delete">${I.trash}</button>` : ""}
               </div>
             </header>
+            ${otherNominationsHtml(otherNominations(g.guest_name, g.meister_id, allNames))}
             ${guestJourneyHtml(g, histOf(g.id))}
             <dl class="g-facts">
               <div><dt>Order Date</dt><dd>${g.purchase_date ? fmtDate(g.purchase_date) : "—"}</dd></div>
@@ -3581,6 +3598,7 @@ function guestFormHtml(existing, app) {
         <div class="form-field g-disabled" title="Future variants will be added here once they're public"><label>Variant <span class="muted">(coming later)</span></label><select disabled>${GUEST_VARIANTS.map((v) => `<option>${v}</option>`).join("")}</select></div>
       </div>
 
+      <div id="${p}dup">${otherNominationsHtml(otherNominations(dv(`${p}name`, existing?.guest_name), existing?.meister_id || guestFormMeister, guestAllNames), true)}</div>
       <div class="g-sec">Profile</div>
       <div class="g-profile">
         <div class="form-field"><label>Applicant Profile <span class="muted">(links the PDF straight from the Profiles tool)</span></label>
@@ -3608,7 +3626,9 @@ function guestFormHtml(existing, app) {
     </form>`;
 }
 
-function wireGuestsTab(meister, guests = [], apps = []) {
+let guestAllNames = [], guestFormMeister = null; // set when the Guests tab is wired, used by the name check in the form
+function wireGuestsTab(meister, guests = [], apps = [], allNames = []) {
+  guestAllNames = allNames; guestFormMeister = meister.id;
   document.getElementById("add-guest-btn")?.addEventListener("click", () => {
     delete guestEdit["g-"]; clearDrafts("g-");
     uiState.guestFormOpen = true;
@@ -3632,6 +3652,11 @@ function wireGuestsTab(meister, guests = [], apps = []) {
     const st = guestEdit[prefix];
     const existing = editId ? guests.find((x) => x.id === editId) : null;
     // redraw just this form (a full render would reload the whole Meister)
+    const nameEl = document.getElementById(`${prefix}name`);
+    nameEl?.addEventListener("input", () => {
+      const box = document.getElementById(`${prefix}dup`);
+      if (box) box.innerHTML = otherNominationsHtml(otherNominations(nameEl.value, meister.id, allNames), true);
+    });
     const redraw = () => {
       captureDrafts();
       const y = window.scrollY;
