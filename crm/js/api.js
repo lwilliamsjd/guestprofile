@@ -553,7 +553,7 @@ export async function listGuestHistory(guestIds) {
 
 // Applicant Profiles a guest can be linked to.
 export async function searchApplicants(q) {
-  let req = supabase.from("applicants").select("id, name, city, state, vip, spec_tags, launch_edition, interview_date, deleted_at").is("deleted_at", null).order("name").limit(8);
+  let req = supabase.from("applicants").select("id, name, city, state, vip, interview_date, deleted_at").is("deleted_at", null).order("name").limit(8);
   if (q) req = req.ilike("name", `%${q.replace(/[%_,()]/g, " ").trim()}%`);
   const { data, error } = await req;
   if (error) throw error;
@@ -561,7 +561,7 @@ export async function searchApplicants(q) {
 }
 export async function getApplicantsByIds(ids) {
   if (!ids.length) return [];
-  const { data, error } = await supabase.from("applicants").select("id, name, city, state, vip, spec_tags, launch_edition, deleted_at").in("id", ids);
+  const { data, error } = await supabase.from("applicants").select("id, name, city, state, vip, deleted_at").in("id", ids);
   return error ? [] : data || [];
 }
 

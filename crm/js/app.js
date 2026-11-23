@@ -3594,8 +3594,8 @@ function guestFormHtml(existing, app) {
         </div>
       </div>
 
-      <div class="g-sec g-sec-row">Build <span class="muted">One choice per category. Accessories can have several.</span>
-        <span class="g-sec-actions">${st.applicant?.spec_tags ? `<button type="button" class="btn btn-sm" data-gcopy>Copy from profile</button>` : ""}<label class="g-le ${st.launch_edition ? "on" : ""}"><input type="checkbox" data-gle ${st.launch_edition ? "checked" : ""} hidden /><span class="g-le-box">${I.check}</span>Launch Edition</label></span></div>
+      <div class="g-sec g-sec-row">Build <span class="muted">Their actual order spec. One choice per category, accessories can have several.</span>
+        <span class="g-sec-actions"><label class="g-le ${st.launch_edition ? "on" : ""}"><input type="checkbox" data-gle ${st.launch_edition ? "checked" : ""} hidden /><span class="g-le-box">${I.check}</span>Launch Edition</label></span></div>
       ${st.launch_edition ? `<p class="muted g-le-note">Launch Edition is spec locked. Anything picked below is kept in case it's turned off.</p>` : ""}
       ${guestBuildPicker(st)}
 
@@ -3606,19 +3606,6 @@ function guestFormHtml(existing, app) {
         <button type="submit" class="btn btn-primary">${existing ? "Save changes" : "Add Guest"}</button>
       </div>
     </form>`;
-}
-
-// copy a profile's spec considerations into a build: one pick per category (their starred choice wins), every accessory
-function buildFromProfile(app) {
-  const tags = (Array.isArray(app?.spec_tags) ? app.spec_tags : []).filter((t) => SPEC_LABELS.includes(t.label));
-  const out = [];
-  SPEC_OPTIONS.forEach(([cat]) => {
-    const mine = tags.filter((t) => t.label.startsWith(cat + ": "));
-    if (!mine.length) return;
-    if (cat === "Accessories") mine.forEach((t) => out.push({ label: t.label }));
-    else out.push({ label: (mine.find((t) => t.priority) || mine[0]).label });
-  });
-  return out;
 }
 
 function wireGuestsTab(meister, guests = [], apps = []) {
@@ -3658,7 +3645,6 @@ function wireGuestsTab(meister, guests = [], apps = []) {
 
     form.querySelector("[data-gvip]").addEventListener("click", () => { st.vip = !st.vip; redraw(); });
     form.querySelector("[data-gle]").addEventListener("change", (e) => { st.launch_edition = e.target.checked; redraw(); });
-    form.querySelector("[data-gcopy]")?.addEventListener("click", () => { st.spec_tags = buildFromProfile(st.applicant); toast("Build copied from the profile"); redraw(); });
     form.querySelectorAll(".gb-opt").forEach((b) => b.addEventListener("click", () => {
       const l = b.dataset.spec, cat = b.closest(".gb-cat").dataset.cat, at = st.spec_tags.findIndex((t) => t.label === l);
       if (at >= 0) st.spec_tags.splice(at, 1);
@@ -3691,7 +3677,6 @@ function wireGuestsTab(meister, guests = [], apps = []) {
         res.querySelectorAll("[data-aid]").forEach((b) => b.addEventListener("click", () => {
           const a = rows.find((x) => x.id === b.dataset.aid);
           st.applicant = a;
-          if (!st.spec_tags.length && !st.launch_edition) { st.spec_tags = buildFromProfile(a); st.launch_edition = !!a.launch_edition; }
           if (a.vip) st.vip = true;
           const nameEl = document.getElementById(`${prefix}name`);
           if (nameEl && !nameEl.value.trim()) nameEl.value = a.name || "";
