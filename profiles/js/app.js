@@ -6,14 +6,14 @@ import {
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611231507";
+} from "./api.js?v=202611231509";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611231507";
-import { SUPABASE_URL } from "./config.js?v=202611231507";
+} from "./outputs.js?v=202611231509";
+import { SUPABASE_URL } from "./config.js?v=202611231509";
 
 const app = document.getElementById("app");
 
@@ -2332,10 +2332,10 @@ async function renderInquiryForm(route, seq) {
             <div class="inq-multi-pop">${[1, 2, 3].map((n) => `<label><input type="checkbox" value="${n}" ${(v.gih_levels || []).includes(n) ? "checked" : ""}><span class="tc-box">${I.check}</span>Level ${n}</label>`).join("")}</div>
           </details></div>
         <div class="form-field"><label>Purchase timeframe</label>${(() => {
-          const tf = String(v.purchase_timeframe || ""), m = tf.match(/^(Q[1-4])?\s*(\d{4})?$/), und = tf === "Undecided";
-          const q = und ? "Undecided" : m?.[1] || "", y = und ? "" : m?.[2] || "";
+          const tf = String(v.purchase_timeframe || ""), m = tf.match(/^(Q[1-4])?\s*(\d{4})?$/), und = tf === "Undecided" || tf === "ASAP";
+          const q = und ? tf : m?.[1] || "", y = und ? "" : m?.[2] || "";
           const y0 = new Date().getFullYear(), years = [...new Set([...(y ? [Number(y)] : []), ...Array.from({ length: 2036 - y0 + 1 }, (_, i) => y0 + i)])].sort();
-          return `<div class="inq-tf"><select id="i-tf-q"><option value="">Quarter</option><option ${und ? "selected" : ""}>Undecided</option>${["Q1", "Q2", "Q3", "Q4"].map((x) => `<option ${q === x ? "selected" : ""}>${x}</option>`).join("")}</select><select id="i-tf-y" ${und ? "disabled" : ""}><option value="">Year</option>${years.map((x) => `<option ${y === String(x) ? "selected" : ""}>${x}</option>`).join("")}</select></div>`;
+          return `<div class="inq-tf"><select id="i-tf-q"><option value="">Quarter</option>${["ASAP", "Undecided"].map((x) => `<option ${q === x ? "selected" : ""}>${x}</option>`).join("")}${["Q1", "Q2", "Q3", "Q4"].map((x) => `<option ${q === x ? "selected" : ""}>${x}</option>`).join("")}</select><select id="i-tf-y" ${und ? "disabled" : ""}><option value="">Year</option>${years.map((x) => `<option ${y === String(x) ? "selected" : ""}>${x}</option>`).join("")}</select></div>`;
         })()}</div>
         <div class="form-field"><label>Existing Toyota/Lexus customer</label>
           <label class="inq-check ${v.existing_customer ? "on" : ""}" data-tgl="i-existing"><input type="checkbox" id="i-existing" ${v.existing_customer ? "checked" : ""}><span class="tc-box">${I.check}</span><span>Yes, existing customer</span></label></div>
@@ -2410,9 +2410,9 @@ async function renderInquiryForm(route, seq) {
     if (lab.dataset.tgl === "i-vip") { $("i-vip-extra").hidden = !e.target.checked; $("i-vip-panel").classList.toggle("on", e.target.checked); }
   }));
   $("i-method").addEventListener("change", (e) => { $("i-ref-wrap").hidden = e.target.value !== "Referral"; });
-  // purchase timeframe: Undecided turns the year off; picking a quarter fills in this year if none is set
+  // purchase timeframe: ASAP or Undecided turns the year off; picking a quarter fills in this year if none is set
   $("i-tf-q").addEventListener("change", (e) => {
-    const und = e.target.value === "Undecided";
+    const und = e.target.value === "Undecided" || e.target.value === "ASAP";
     $("i-tf-y").disabled = und;
     if (und) $("i-tf-y").value = "";
     else if (e.target.value && !$("i-tf-y").value) $("i-tf-y").value = String(new Date().getFullYear());
@@ -2461,7 +2461,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231507");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231509");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2505,7 +2505,7 @@ async function renderInquiryForm(route, seq) {
       preferred_name: $("i-pref").value.trim() || null,
       preferred_contact: $("i-pcontact").value || null,
       gih_levels: [...main.querySelectorAll("#i-gih input:checked")].map((c) => Number(c.value)),
-      purchase_timeframe: (() => { const q = $("i-tf-q").value, y = $("i-tf-y").value; return q === "Undecided" ? "Undecided" : [q, y].filter(Boolean).join(" ") || null; })(),
+      purchase_timeframe: (() => { const q = $("i-tf-q").value, y = $("i-tf-y").value; return q === "Undecided" || q === "ASAP" ? q : [q, y].filter(Boolean).join(" ") || null; })(),
       existing_customer: $("i-existing").checked,
       internal_status: vip ? $("i-istatus").value.trim() || null : null,
       contact_method: vip ? $("i-cmethod").value || null : null,
@@ -2672,7 +2672,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231507");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231509");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
