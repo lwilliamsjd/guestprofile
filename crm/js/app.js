@@ -58,10 +58,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611231629";
-import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611231629";
-import { exportToExcel } from "./export.js?v=202611231629";
-import { wireImport } from "./import-export.js?v=202611231629";
+} from "./api.js?v=202611231641";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611231641";
+import { exportToExcel } from "./export.js?v=202611231641";
+import { wireImport } from "./import-export.js?v=202611231641";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1350,6 +1350,23 @@ async function renderAnalyticsPage(route, seq) {
   const gTop = withCount.slice().sort((x, y) => y.guest_estimate - x.guest_estimate).slice(0, 5);
   const fmt1 = (n) => (n == null ? "—" : (Math.round(n * 10) / 10).toLocaleString());
 
+  // ---- Nominated guests (tracked on each Meister's Guests tab; Denied are counted but left off the map) ----
+  const mById = new Map(meisters.map((m) => [m.id, m]));
+  const tg = d.guests.filter((g) => mById.has(g.meister_id)).map((g) => ({ ...g, _st: guestStatus(g), _m: mById.get(g.meister_id) }));
+  const isAlloc = (g) => g._st === "Allocated" || g._st === "Delivered";
+  const tPerM = new Map();
+  tg.filter((g) => g._st !== "Denied").forEach((g) => tPerM.set(g.meister_id, (tPerM.get(g.meister_id) || 0) + 1));
+  const tCount = (st) => tg.filter((g) => g._st === st).length;
+  const tRegions = ["South", "Northeast", "West", "Midwest", "No state"].map((r) => {
+    const ms = meisters.filter((m) => regionOf(m) === r), ids = new Set(ms.map((m) => m.id));
+    const gs = tg.filter((g) => ids.has(g.meister_id));
+    return { key: r, meisters: ms.length, withGuests: ms.filter((m) => tPerM.get(m.id)).length, total: gs.filter((g) => g._st !== "Denied").length, allocated: gs.filter(isAlloc).length, items: gs };
+  }).filter((r) => r.key !== "No state" || r.meisters);
+  const tStatus = GUEST_STATUSES.map((st) => ({ key: st, items: tg.filter((g) => g._st === st) }));
+  const tTop = meisters.filter((m) => tPerM.get(m.id)).map((m) => ({ ...m, n: tPerM.get(m.id), alloc: tg.filter((g) => g.meister_id === m.id && isAlloc(g)).length }))
+    .sort((a, b) => b.n - a.n || b.alloc - a.alloc || a.name.localeCompare(b.name)).slice(0, 5);
+  const tMeistersWith = meisters.filter((m) => tPerM.get(m.id)).length;
+
   // ---- follow-up counters ----
   const now = new Date();
   const buckets = [
@@ -1484,39 +1501,39 @@ async function renderAnalyticsPage(route, seq) {
       </div>
 
       <div class="card ana-span-12">
-        <div class="card-head"><h3>${I.users || ""} Meister guest counts</h3><span class="gc-head-r"><span class="muted">from the Guest count on each Meister profile · ${withCount.length} of ${meisters.length} Meisters entered</span>${meisters.length ? `<button class="btn btn-sm" id="gc-map-btn" type="button">${I.download || ""} Map report (PDF)</button>` : ""}</span></div>
-        ${withCount.length ? `
+        <div class="card-head"><h3>${I.users || ""} Nominated guests</h3><span class="gc-head-r"><span class="muted">from the Guests tab on each Meister · ${tMeistersWith} of ${meisters.length} Meisters have guests</span><button class="link-btn gc-legacy" id="gc-legacy-btn" type="button" title="The original map from the Guest count number on each Meister profile">Legacy map</button>${meisters.length ? `<button class="btn btn-sm" id="gc-map-btn" type="button">${I.download || ""} Map report (PDF)</button>` : ""}</span></div>
+        ${tg.length ? `
         <div class="gc-kpis">
-          <div class="veh-kpi"><b>${gTotal.toLocaleString()}</b><span>Total guests</span></div>
-          <div class="veh-kpi"><b>${fmt1(gAvg)}</b><span>Average per Meister</span></div>
-          <div class="veh-kpi"><b>${fmt1(gMedian)}</b><span>Median (typical Meister)</span></div>
-          <button class="veh-kpi drill" data-drill="gmissing:1"><b>${meisters.length - withCount.length}</b><span>Meisters not entered yet</span></button>
+          <button class="veh-kpi drill" data-drill="tstatus:all"><b>${tg.length.toLocaleString()}</b><span>Guests tracked${tCount("Denied") ? ` · ${tCount("Denied")} denied` : ""}</span></button>
+          <button class="veh-kpi drill" data-drill="tstatus:Submitted"><b>${tCount("Submitted")}</b><span>Submitted</span></button>
+          <button class="veh-kpi drill" data-drill="tstatus:Nominated"><b>${tCount("Nominated")}</b><span>Nominated${tCount("Waitlist") ? ` · ${tCount("Waitlist")} waitlist` : ""}</span></button>
+          <button class="veh-kpi drill" data-drill="tstatus:alloc"><b>${tCount("Allocated") + tCount("Delivered")}</b><span>Allocated · ${tCount("Delivered")} delivered</span></button>
         </div>
         <div class="gc-grid">
           <div>
             <div class="gc-sub">By region</div>
             <table class="gc-table">
-              <thead><tr><th>Region</th><th>Meisters</th><th>Guests</th><th>Avg</th><th></th></tr></thead>
-              <tbody>${gRegions.map((r) => `<tr class="drill" data-drill="gregion:${escapeAttr(r.key)}">
-                <td><b>${escapeHtml(r.key)}</b></td><td>${r.reporting}<span class="muted"> / ${r.meisters}</span></td><td>${r.total.toLocaleString()}</td><td>${fmt1(r.avg)}</td>
-                <td class="gc-bar"><span style="width:${gTotal ? (r.total / Math.max(...gRegions.map((x) => x.total), 1)) * 100 : 0}%"></span></td></tr>`).join("")}</tbody>
+              <thead><tr><th>Region</th><th>Meisters</th><th>Guests</th><th>Alloc.</th><th></th></tr></thead>
+              <tbody>${tRegions.map((r) => `<tr class="drill" data-drill="tregion:${escapeAttr(r.key)}">
+                <td><b>${escapeHtml(r.key)}</b></td><td>${r.withGuests}<span class="muted"> / ${r.meisters}</span></td><td>${r.total.toLocaleString()}</td><td>${r.allocated}</td>
+                <td class="gc-bar"><span style="width:${(r.total / Math.max(1, ...tRegions.map((x) => x.total))) * 100}%"></span></td></tr>`).join("")}</tbody>
             </table>
           </div>
           <div>
-            <div class="gc-sub">How many guests each Meister has</div>
-            <div class="bar-chart">${gBuckets.map((b) => `
-              <button class="bar-row drill" data-drill="gbucket:${b.key}">
-                <span class="bar-label">${b.label}</span>
-                <span class="bar-track"><span class="bar-fill" style="width:${(b.items.length / Math.max(1, ...gBuckets.map((x) => x.items.length))) * 100}%"></span></span>
+            <div class="gc-sub">Where they stand</div>
+            <div class="bar-chart gc-status">${tStatus.map((b) => `
+              <button class="bar-row drill" data-drill="tstatus:${b.key}">
+                <span class="bar-label"><span class="gc-dot gs-${slug(b.key)}"></span>${b.key}</span>
+                <span class="bar-track"><span class="bar-fill" style="width:${(b.items.length / Math.max(1, ...tStatus.map((x) => x.items.length))) * 100}%"></span></span>
                 <span class="bar-val">${b.items.length}</span>
               </button>`).join("")}</div>
           </div>
           <div>
-            <div class="gc-sub">Most guests</div>
-            <div class="rank-list">${gTop.map((m, idx) => `
-              <a href="#/meister/${m.id}" class="rank-row"><span class="rank-num">${idx + 1}</span><span class="rank-body"><span class="rank-name">${escapeHtml(m.name)}</span><span class="muted">${escapeHtml(m.dealership || "")}${m.state ? " · " + escapeHtml(m.state) : ""}</span></span><span class="bar-val">${m.guest_estimate}</span></a>`).join("")}</div>
+            <div class="gc-sub">Most guests nominated</div>
+            <div class="rank-list">${tTop.map((m, idx) => `
+              <a href="#/meister/${m.id}" class="rank-row"><span class="rank-num">${idx + 1}</span><span class="rank-body"><span class="rank-name">${escapeHtml(m.name)}</span><span class="muted">${escapeHtml(m.dealership || "")}${m.state ? " · " + escapeHtml(m.state) : ""}${m.alloc ? ` · ${m.alloc} allocated` : ""}</span></span><span class="bar-val">${m.n}</span></a>`).join("")}</div>
           </div>
-        </div>` : `<div class="empty-state">No guest counts yet. Add a Guest count under Key facts on a Meister's Edit Profile tab.</div>`}
+        </div>` : `<div class="empty-state">No guests tracked yet. Add guests on the Guests tab of a Meister and they'll show up here.</div>`}
       </div>
 
       <div class="card ana-span-12 no-print">
@@ -1544,12 +1561,32 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611231629");
-      const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611231641");
+      const tracked = meisters.map((m) => ({ ...m, guest_estimate: tPerM.get(m.id) || null }));
+      const html = buildGuestMapReport(tracked, {
+        filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "",
+        text: { title: "Nominated Guest Map", eyebrow: "NOMINATED GUEST MAP", h1: "Where the nominated guests are", withCount: "Meisters with guests", withCountCol: "With guests",
+          bubble: "Bubble = guests nominated in that city", missing: "no guests nominated yet", none: "None yet",
+          footer: "From the Guests tab on each Meister. Counts every guest except Denied. No guest names." },
+        kpis: [[tg.filter((g) => g._st !== "Denied").length.toLocaleString(), "Guests on the map"], [String(tCount("Submitted")), "Submitted"], [String(tCount("Nominated")), "Nominated"],
+          [String(tCount("Waitlist")), "Waitlist"], [String(tCount("Allocated") + tCount("Delivered")), "Allocated"], [String(tCount("Delivered")), "Delivered"]],
+      });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (err) { win.close(); toast("Map report failed: " + err.message, "error"); }
+  });
+  document.getElementById("gc-legacy-btn")?.addEventListener("click", async () => {
+    const win = window.open("", "_blank");
+    if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
+    win.document.write("<p style='font-family:sans-serif;padding:24px'>Building legacy map…</p>");
+    try {
+      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611231641");
+      const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      win.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err) { win.close(); toast("Legacy map failed: " + err.message, "error"); }
   });
   document.getElementById("ana-print-btn").addEventListener("click", () => { anaState.drill = null; document.getElementById("drawer-root")?.replaceChildren(); window.print(); });
   saveState("ana", { ...anaState, drill: null });
@@ -1565,7 +1602,7 @@ async function renderAnalyticsPage(route, seq) {
 
   // ---- drawer (drill-down) ----
   const allGuests = d.guests.filter((g) => conciergeOk(concOf(g.meisters)));
-  const ctx = { gRegions, gBuckets, gMissing: meisters.filter((m) => m.guest_estimate == null), quiet, soldAll, deliveredAll, awaiting, ints, meisters, guests, allGuests, delivered, fus, series, salesSeries, deliverySeries, buckets, loggerName, byCat, history, heat };
+  const ctx = { tg, tRegions, isAlloc, gRegions, gBuckets, gMissing: meisters.filter((m) => m.guest_estimate == null), quiet, soldAll, deliveredAll, awaiting, ints, meisters, guests, allGuests, delivered, fus, series, salesSeries, deliverySeries, buckets, loggerName, byCat, history, heat };
   function renderDrawer() {
     let root = document.getElementById("drawer-root");
     if (!root) { root = document.createElement("div"); root.id = "drawer-root"; document.body.appendChild(root); }
@@ -1652,6 +1689,18 @@ function drillContent(key, ctx) {
         title: `Delivered — ${pt ? pt.label : ""}`, sub: `${rows.length} deliveries`,
         html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(guestStatus(g))} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtMonth(g.delivery_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No deliveries that month.</div>`,
         csv: { name: "delivered-month.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Status: guestStatus(g), "Delivery Date": g.delivery_date, Meister: g.meisters?.name || "" })) },
+      };
+    }
+    case "tregion": case "tstatus": {
+      const rows = kind === "tregion" ? (ctx.tRegions.find((r) => r.key === arg)?.items || [])
+        : arg === "all" ? ctx.tg : arg === "alloc" ? ctx.tg.filter(ctx.isAlloc) : ctx.tg.filter((g) => g._st === arg);
+      const title = kind === "tregion" ? `Nominated guests — ${arg}` : arg === "all" ? "All tracked guests" : arg === "alloc" ? "Allocated and delivered" : `${arg} guests`;
+      const order = { Delivered: 0, Allocated: 1, Nominated: 2, Waitlist: 3, Submitted: 4, Denied: 5 };
+      const sorted = rows.slice().sort((a, b) => order[a._st] - order[b._st] || String(a.guest_name).localeCompare(String(b.guest_name)));
+      return {
+        title, sub: `${rows.length} ${rows.length === 1 ? "guest" : "guests"}`,
+        html: rows.length ? `<div class="mini-list">${sorted.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}${g.vip ? ` <span class="guest-vip">${I.star}VIP</span>` : ""}<span class="muted"> · via ${escapeHtml(g._m?.name || "")}${g._m?.dealership ? ` (${escapeHtml(g._m.dealership)})` : ""}</span></span><span class="guest-pill gs-${slug(g._st)}">${escapeHtml(g._st)}</span></a>`).join("")}</div>` : `<div class="empty-state">No guests here.</div>`,
+        csv: { name: slug(title) + ".csv", rows: sorted.map((g) => ({ Guest: g.guest_name, VIP: g.vip ? "Yes" : "", Status: g._st, Meister: g._m?.name || "", Dealership: g._m?.dealership || "", State: g._m?.state || "", "Order Date": g.purchase_date || "", "Delivery Month": g.delivery_date ? String(g.delivery_date).slice(0, 7) : "" })) },
       };
     }
     case "gregion": case "gbucket": case "gmissing": {

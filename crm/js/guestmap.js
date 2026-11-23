@@ -1,7 +1,9 @@
-// Meister Guest Map report: a printable two page report (US heat map + breakdown by area)
-// built from the Guest count and ZIP on each Meister profile. No guest names are used.
-import { ZIP5 } from "./zip5.js?v=202611231629";
-import { ZIP3 } from "./zip3.js?v=202611231629";
+// Meister Guest Map report: a printable report (US heat map + breakdown by area + dealership list)
+// built from a number per Meister (m.guest_estimate) and each Meister's ZIP. No guest names are used.
+// CRM Analytics passes the guests tracked on each Meister's Guests tab; opts.text relabels the report.
+// The original Guest count version is frozen in guestmap-legacy.js.
+import { ZIP5 } from "./zip5.js?v=202611231641";
+import { ZIP3 } from "./zip3.js?v=202611231641";
 
 export const REGIONS = {
   Northeast: "CT ME MA NH RI VT NJ NY PA",
@@ -118,21 +120,26 @@ export function buildGuestMapReport(meisters, opts = {}) {
   const maxRegionShare = Math.max(0, ...byRegion.filter((x) => x.r !== "No location").map((x) => x.share || 0));
 
   const kpi = (v, l) => `<div class="k"><b>${v}</b><span>${l}</span></div>`;
+  const T = Object.assign({
+    title: "Meister Guest Map", eyebrow: "MEISTER GUEST MAP", h1: "Where the guests are", withCount: "Meisters with a count",
+    withCountCol: "With count", bubble: "Bubble = guests in that city", missing: "no guest count yet", none: "Not yet recorded",
+    footer: "Guest counts come from each Meister profile. Numbers only, no guest names.",
+  }, opts.text || {});
   const page1 = `
   <section class="page">
-    <header class="hd"><div><div class="eyebrow">GR GT CONCIERGE · MEISTER GUEST MAP</div><h1>Where the guests are</h1></div>
+    <header class="hd"><div><div class="eyebrow">GR GT CONCIERGE · ${esc(T.eyebrow)}</div><h1>${esc(T.h1)}</h1></div>
       <div class="meta">${esc(opts.filterLabel || "All concierges")}<br>Generated ${esc(generated)}${opts.by ? ` by ${esc(opts.by)}` : ""}</div></header>
     <div class="kpis">
-      ${kpi(nat.total.toLocaleString(), "Total guests")}
-      ${kpi(`${nat.reporting}<small> / ${nat.meisters}</small>`, "Meisters with a count")}
+      ${opts.kpis ? opts.kpis.map(([v, l]) => kpi(v, esc(l))).join("") : `${kpi(nat.total.toLocaleString(), "Total guests")}
+      ${kpi(`${nat.reporting}<small> / ${nat.meisters}</small>`, esc(T.withCount))}
       ${kpi(r1(nat.avg), "Average per Meister")}
       ${kpi(r1(nat.median), "Median per Meister")}
       ${kpi(String(dealerRows.length), "Dealerships")}
-      ${kpi(topState ? esc(topState.st) : "—", `Top state${topState ? ` · ${topState.total} guests` : ""}`)}
+      ${kpi(topState ? esc(topState.st) : "—", `Top state${topState ? ` · ${topState.total} guests` : ""}`)}`}
     </div>
     <div class="maprow">
       <div class="mapbox"><svg id="map" viewBox="0 0 975 610" preserveAspectRatio="xMidYMin meet"></svg>
-        <div class="legend"><span>State total</span><span class="lo">0</span><i class="ramp"></i><span class="hi">${maxState}</span><span class="dot"></span><span>Bubble = guests in that city</span></div>
+        <div class="legend"><span>State total</span><span class="lo">0</span><i class="ramp"></i><span class="hi">${maxState}</span><span class="dot"></span><span>${esc(T.bubble)}</span></div>
       </div>
       <aside class="side">
         <h3>Top cities</h3>
@@ -143,20 +150,20 @@ export function buildGuestMapReport(meisters, opts = {}) {
           ${byRegion.filter((x) => x.r !== "No location").sort((a, b) => b.total - a.total)[0] ? (() => { const t = byRegion.filter((x) => x.r !== "No location").sort((a, b) => b.total - a.total)[0]; return `<li>The <b>${t.r}</b> holds ${pct(t.share)} of guests across ${t.reporting} Meisters.</li>`; })() : ""}
           ${top20share != null ? `<li>The top 20% of Meisters (${topN}) account for <b>${pct(top20share)}</b> of guests.</li>` : ""}
           ${top5areasShare != null && areaList.length > 5 ? `<li>The top 5 cities hold <b>${pct(top5areasShare)}</b> of guests.</li>` : ""}
-          ${nat.meisters - nat.reporting ? `<li><b>${nat.meisters - nat.reporting}</b> Meister${nat.meisters - nat.reporting === 1 ? " has" : "s have"} no guest count yet.</li>` : ""}
+          ${nat.meisters - nat.reporting ? `<li><b>${nat.meisters - nat.reporting}</b> Meister${nat.meisters - nat.reporting === 1 ? " has" : "s have"} ${esc(T.missing)}.</li>` : ""}
           ${offMap.length ? `<li>${offMap.length} Meister${offMap.length === 1 ? "" : "s"} with a count but no valid ZIP ${offMap.length === 1 ? "is" : "are"} not on the map.</li>` : ""}
         </ul>
       </aside>
     </div>
-    <footer class="ft"><span>Guest counts come from each Meister profile. Numbers only, no guest names.</span><span>Page 1 / ${totalPages}</span></footer>
+    <footer class="ft"><span>${esc(T.footer)}</span><span>Page 1 / ${totalPages}</span></footer>
   </section>`;
 
   const page2 = `
   <section class="page">
-    <header class="hd small"><div><div class="eyebrow">MEISTER GUEST MAP · BREAKDOWN BY AREA</div></div><div class="meta">${esc(opts.filterLabel || "All concierges")} · ${esc(generated)}</div></header>
+    <header class="hd small"><div><div class="eyebrow">${esc(T.eyebrow)} · BREAKDOWN BY AREA</div></div><div class="meta">${esc(opts.filterLabel || "All concierges")} · ${esc(generated)}</div></header>
     <h2>By region</h2>
     <table class="t">
-      <thead><tr><th>Region</th><th>Meisters</th><th>With count</th><th>Guests</th><th>Share</th><th>Average</th><th>Median</th><th>Highest</th><th>Top state</th></tr></thead>
+      <thead><tr><th>Region</th><th>Meisters</th><th>${esc(T.withCountCol)}</th><th>Guests</th><th>Share</th><th>Average</th><th>Median</th><th>Highest</th><th>Top state</th></tr></thead>
       <tbody>${byRegion.map((x) => `<tr><td><b>${x.r}</b></td><td>${x.meisters}</td><td>${x.reporting} <span class="mut">(${pct(x.coverage)})</span></td><td><b>${x.total}</b></td><td><span class="bar"><i style="width:${maxRegionShare ? ((x.share || 0) / maxRegionShare) * 100 : 0}%"></i></span>${pct(x.share)}</td><td>${r1(x.avg)}</td><td>${r1(x.median)}</td><td>${x.max ?? "—"}</td><td>${esc(x.topState)}</td></tr>`).join("")}
       <tr class="tot"><td>All</td><td>${nat.meisters}</td><td>${nat.reporting}</td><td>${nat.total}</td><td>100%</td><td>${r1(nat.avg)}</td><td>${r1(nat.median)}</td><td>${nat.max ?? "—"}</td><td></td></tr></tbody>
     </table>
@@ -193,8 +200,8 @@ export function buildGuestMapReport(meisters, opts = {}) {
     const cols = [0, 1, 2].map((c) => chunk.slice(c * perCol, (c + 1) * perCol));
     return `
   <section class="page">
-    <header class="hd small"><div><div class="eyebrow">MEISTER GUEST MAP · GUESTS BY DEALERSHIP${dealerChunks.length > 1 ? ` (${ci + 1} of ${dealerChunks.length})` : ""}</div></div><div class="meta">${dealerRows.length} dealerships · ${recorded} recorded · ${dealerRows.length - recorded} not yet recorded</div></header>
-    <div class="dl" style="--rh:${rowH}px">${cols.map((col) => `<div class="dcol"><div class="dh"><span>Dealership</span><span>Guests</span></div>${col.map((d) => `<div class="dr"><span class="dn"><b>${esc(d.name)}</b>${d.city || d.state ? `<i>${esc([d.city, d.state].filter(Boolean).join(", "))}</i>` : ""}</span>${d.guests == null ? `<span class="nr">Not yet recorded</span>` : `<span class="dg">${d.guests}</span>`}</div>`).join("")}</div>`).join("")}</div>
+    <header class="hd small"><div><div class="eyebrow">${esc(T.eyebrow)} · GUESTS BY DEALERSHIP${dealerChunks.length > 1 ? ` (${ci + 1} of ${dealerChunks.length})` : ""}</div></div><div class="meta">${dealerRows.length} dealerships · ${recorded} ${opts.text ? "with guests" : "recorded"} · ${dealerRows.length - recorded} ${esc(T.none.toLowerCase())}</div></header>
+    <div class="dl" style="--rh:${rowH}px">${cols.map((col) => `<div class="dcol"><div class="dh"><span>Dealership</span><span>Guests</span></div>${col.map((d) => `<div class="dr"><span class="dn"><b>${esc(d.name)}</b>${d.city || d.state ? `<i>${esc([d.city, d.state].filter(Boolean).join(", "))}</i>` : ""}</span>${d.guests == null ? `<span class="nr">${esc(T.none)}</span>` : `<span class="dg">${d.guests}</span>`}</div>`).join("")}</div>`).join("")}</div>
     ${chunk.length ? "" : `<p class="mut">No dealerships yet.</p>`}
     <footer class="ft"><span>Sorted A to Z. Guests are summed when a dealership has more than one Meister.</span><span>Page ${3 + ci} / ${totalPages}</span></footer>
   </section>`;
@@ -292,9 +299,9 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
   const b = document.getElementById("pdf-btn"); b.disabled = false; b.textContent = "Save as PDF"; b.onclick = () => window.print();
 })();`;
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Meister Guest Map</title>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(T.title)}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>${css}</style>
 <script src="${libs.d3array}"></script><script src="${libs.d3geo}"></script><script src="${libs.topojson}"></script>
-</head><body><div class="tb"><span>Meister Guest Map · ${totalPages} pages, landscape</span><button id="pdf-btn" disabled>Loading map…</button></div>${page1}${page2}${dealerPages}<script>${script}</script></body></html>`;
+</head><body><div class="tb"><span>${esc(T.title)} · ${totalPages} pages, landscape</span><button id="pdf-btn" disabled>Loading map…</button></div>${page1}${page2}${dealerPages}<script>${script}</script></body></html>`;
 }

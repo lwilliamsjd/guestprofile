@@ -1445,3 +1445,9 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 .g-dup-box b { color: var(--amber); }
 .g-dup-box a { color: var(--text); text-decoration: underline; }
 .g-dup-box > div > div { margin-top: 3px; }
+/* Analytics: Nominated guests card */
+.gc-legacy { color: var(--grey-dim); font-size: 12px; margin-right: 4px; }
+.gc-legacy:hover { color: var(--text); }
+.gc-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; background: currentColor; vertical-align: 1px; padding: 0 !important; border: 0 !important; }
+.gc-status .bar-label { white-space: nowrap; }
+@media print { .gc-legacy { display: none; } }
