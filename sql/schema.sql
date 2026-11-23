@@ -410,3 +410,10 @@ alter table inquiries drop constraint if exists inquiries_customer_response_chec
 alter table inquiries add constraint inquiries_customer_response_check check (customer_response is null or customer_response in ('Interested','Not Interested','No Response'));
 alter table inquiries drop constraint if exists inquiries_gih_levels_check;
 alter table inquiries add constraint inquiries_gih_levels_check check (gih_levels <@ array[1,2,3]::smallint[]);
+
+-- ============================================================
+-- INQUIRIES: PREFERRED CONTACT METHOD (Phone, Text, Email). Safe to run more than once.
+-- ============================================================
+alter table inquiries add column if not exists preferred_contact text;
+alter table inquiries drop constraint if exists inquiries_preferred_contact_check;
+alter table inquiries add constraint inquiries_preferred_contact_check check (preferred_contact is null or preferred_contact in ('Phone','Text','Email'));

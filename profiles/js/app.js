@@ -6,14 +6,14 @@ import {
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611231440";
+} from "./api.js?v=202611231456";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611231440";
-import { SUPABASE_URL } from "./config.js?v=202611231440";
+} from "./outputs.js?v=202611231456";
+import { SUPABASE_URL } from "./config.js?v=202611231456";
 
 const app = document.getElementById("app");
 
@@ -2267,7 +2267,7 @@ function exportInquiries(rows, notes = []) {
   const data = rows.map((r) => ({
     Received: r.received_on || "", Name: r.name, "Preferred Name": r.preferred_name || "", "GIH Level": (r.gih_levels || []).slice().sort().join(", "), "Purchase Timeframe": r.purchase_timeframe || "", "Existing Toyota/Lexus Customer": r.existing_customer ? "Yes" : "", VIP: r.vip ? "Yes" : "", "AG Approved": r.vip && r.ag_approved ? "Yes" : "", "Do Not Contact": r.vip && r.do_not_contact ? "Yes" : "", Handler: r.vip ? r.handler || "" : "",
     "Internal Status": r.vip ? r.internal_status || "" : "", "Contact Method": r.vip ? r.contact_method || "" : "", "Customer Response": r.vip ? r.customer_response || "" : "", "Record Owner Notes": r.vip ? r.record_owner_notes || "" : "",
-    Email: r.email || "", Phone: fmtPhone(r.phone), "Reached Out By": r.method || "", "Referred By": r.referred_by || "",
+    Email: r.email || "", Phone: fmtPhone(r.phone), "Reached Out By": r.method || "", "Preferred Contact": r.preferred_contact || "", "Referred By": r.referred_by || "",
     ZIP: r.zip || "", City: r.city || "", State: r.state || "", "Closest Dealer": r.closest_dealer || "", "Miles (approx)": r.closest_dealer_miles ?? "",
     Notes: (byInq.get(r.id) || (r.notes ? [r.notes] : [])).join("\n"), Status: r.status === "Moved" ? "Moved to profiles" : "Open", "Moved On": r.moved_at ? fmtDate(r.moved_at) : "", "Added By": r.created_by_name || "",
   }));
@@ -2320,6 +2320,7 @@ async function renderInquiryForm(route, seq) {
         <div class="form-field"><label>Email</label><input id="i-email" type="email" maxlength="160" value="${val("email")}"></div>
         <div class="form-field"><label>Phone</label><input id="i-phone" type="tel" maxlength="40" value="${escapeHtml(fmtPhone(v.phone))}" placeholder="(555) 555-5555"></div>
         <div class="form-field"><label>How they reached out</label><select id="i-method">${INQ_METHODS.map((m) => `<option ${v.method === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
+        <div class="form-field"><label>Preferred contact method</label><select id="i-pcontact"><option value=""></option>${["Phone", "Text", "Email"].map((m) => `<option ${v.preferred_contact === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
         <div class="form-field" id="i-ref-wrap" ${v.method === "Referral" ? "" : "hidden"}><label>Referred by</label><input type="text" id="i-ref" maxlength="120" value="${val("referred_by")}" placeholder="Who sent them our way"></div>
       </div>
       <div id="i-match"></div>
@@ -2448,7 +2449,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231440");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231456");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2490,6 +2491,7 @@ async function renderInquiryForm(route, seq) {
       do_not_contact: vip && $("i-dnc").checked,
       handler: vip ? $("i-handler").value.trim() || null : null,
       preferred_name: $("i-pref").value.trim() || null,
+      preferred_contact: $("i-pcontact").value || null,
       gih_levels: [...main.querySelectorAll("#i-gih input:checked")].map((c) => Number(c.value)),
       purchase_timeframe: $("i-timeframe").value || null,
       existing_customer: $("i-existing").checked,
@@ -2658,7 +2660,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231440");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231456");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
