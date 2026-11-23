@@ -6,14 +6,14 @@ import {
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611231505";
+} from "./api.js?v=202611231507";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611231505";
-import { SUPABASE_URL } from "./config.js?v=202611231505";
+} from "./outputs.js?v=202611231507";
+import { SUPABASE_URL } from "./config.js?v=202611231507";
 
 const app = document.getElementById("app");
 
@@ -2245,7 +2245,7 @@ async function renderInquiries(seq) {
           : `<div class="empty-state">${all.length ? (q || inqState.show ? "No inquiries match these filters." : inqState.view === "moved" ? "No inquiries have been moved to profiles yet." : "No open inquiries.") : "No inquiries yet. Add one with <b>New Inquiry</b> when a guest reaches out on their own."}</div>`}
       </div>`;
     const qi = main.querySelector("#inq-q");
-    qi.addEventListener("input", () => { inqState.q = qi.value; const pos = qi.selectionStart; draw(); const n = main.querySelector("#inq-q"); n.focus(); n.setSelectionRange(pos, pos); });
+    qi.addEventListener("input", () => { inqState.q = qi.value; const pos = qi.selectionStart; draw(); const n = main.querySelector("#inq-q"); n.value = inqState.q; n.focus(); n.setSelectionRange(pos, pos); });
     main.querySelector("#inq-show").addEventListener("change", (e) => { inqState.show = e.target.value; draw(); });
     main.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { inqState.view = b.dataset.view; draw(); }));
     main.querySelectorAll("th[data-sort]").forEach((t) => t.addEventListener("click", () => {
@@ -2461,7 +2461,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231505");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231507");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2672,7 +2672,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231505");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231507");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
