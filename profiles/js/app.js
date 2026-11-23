@@ -6,14 +6,14 @@ import {
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611231409";
+} from "./api.js?v=202611231436";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611231409";
-import { SUPABASE_URL } from "./config.js?v=202611231409";
+} from "./outputs.js?v=202611231436";
+import { SUPABASE_URL } from "./config.js?v=202611231436";
 
 const app = document.getElementById("app");
 
@@ -2162,6 +2162,7 @@ function meisterGuestLine(ms, compact = false) {
   return crm ? ms.map((m) => `<a href="../crm/#/meister/${m.meister_id}" target="_blank" rel="noopener">${escapeHtml(m.guest_name)}</a> · on ${escapeHtml(m.meister_name || "a Meister")}'s Guests tab${m.dealership ? ` · ${escapeHtml(m.dealership)}` : ""}${m.guest_status ? ` · <b>${escapeHtml(m.guest_status)}</b>` : ""} <span class="muted">(same name)</span>`)
     : [`${escapeHtml(ms[0].guest_name)} · a Meister has already nominated a guest with this name <span class="muted">(same name)</span>`];
 }
+const gihText = (l) => (Array.isArray(l) && l.length ? `GIH ${[...l].sort().join(" · ")}` : "");
 const vipBadges = (r) => (r.vip ? `<span class="pill pill-vip inq-vip">${I.star}VIP</span>${r.ag_approved ? `<span class="pill inq-ag">${I.check}AG Approved</span>` : ""}${r.do_not_contact ? `<span class="pill inq-dnc">${I.ban}Do Not Contact</span>` : ""}` : "");
 
 async function renderInquiries(seq) {
@@ -2193,7 +2194,7 @@ async function renderInquiries(seq) {
       location: [r.state, r.city].filter(Boolean).join(" ").toLowerCase() || "~", closest_dealer: (r.closest_dealer || "~").toLowerCase(), status: r.status || "",
       vip: inqState.dir === "asc" ? (r.vip ? (r.ag_approved ? "0" : "1") : "2") : (r.vip ? (r.ag_approved ? "2" : "1") : "0"),
     }[inqState.sort] ?? "");
-    const list = base.filter((r) => !q || [r.name, r.email, r.phone, fmtPhone(r.phone), r.city, r.state, r.zip, r.closest_dealer, latestNote.get(r.id)?.body, r.referred_by, r.handler].some((f) => (f || "").toLowerCase().includes(q)))
+    const list = base.filter((r) => !q || [r.name, r.email, r.phone, fmtPhone(r.phone), r.city, r.state, r.zip, r.closest_dealer, latestNote.get(r.id)?.body, r.referred_by, r.handler, r.preferred_name, r.internal_status, r.record_owner_notes].some((f) => (f || "").toLowerCase().includes(q)))
       .sort((a, b) => { const x = sortVal(a), y = sortVal(b); const c = x < y ? -1 : x > y ? 1 : (a.name || "").localeCompare(b.name || ""); return inqState.dir === "asc" ? c : -c; });
     const th = (label, key) => { const on = inqState.sort === key; return `<th data-sort="${key}">${label}<span class="sort-ic ${on ? "on" : ""}">${on ? (inqState.dir === "asc" ? "▲" : "▼") : "▼"}</span></th>`; };
     const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -2232,7 +2233,7 @@ async function renderInquiries(seq) {
             return `
             <tr class="clickable-row ${r.status === "Moved" ? "inq-moved" : ""} ${r.vip ? "inq-is-vip" : ""}" data-id="${r.id}">
               <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}${isNewForMe(r) ? `<div><span class="pill inq-new">New</span></div>` : ""}</td>
-              <td><div class="cell-name">${escapeHtml(r.name)}</div>
+              <td><div class="cell-name">${escapeHtml(r.name)}${gihText(r.gih_levels) ? ` <span class="pill inq-gih">${gihText(r.gih_levels)}</span>` : ""}</div>
                 <div class="cell-sub muted">${escapeHtml([r.email, fmtPhone(r.phone)].filter(Boolean).join(" · "))}</div>
                 ${dup ? `<div class="inq-dup" title="Another inquiry has the same ${[...dup].join(", ")}">${I.warn}Possible duplicate (same ${[...dup].join(", ")})</div>` : ""}${meisterGuestLine(mgOf(r), true)}</td>
               <td><span class="pill pill-method">${escapeHtml(r.method || "Other")}</span>${r.method === "Referral" && r.referred_by ? `<div class="cell-sub muted">from ${escapeHtml(r.referred_by)}</div>` : ""}</td>
@@ -2264,7 +2265,8 @@ function exportInquiries(rows, notes = []) {
   const byInq = new Map();
   notes.slice().reverse().forEach((n) => { if (!byInq.has(n.inquiry_id)) byInq.set(n.inquiry_id, []); byInq.get(n.inquiry_id).push(`${fmtDate(n.created_at)} ${n.author_name || ""}: ${n.body}`); });
   const data = rows.map((r) => ({
-    Received: r.received_on || "", Name: r.name, VIP: r.vip ? "Yes" : "", "AG Approved": r.vip && r.ag_approved ? "Yes" : "", "Do Not Contact": r.vip && r.do_not_contact ? "Yes" : "", Handler: r.vip ? r.handler || "" : "",
+    Received: r.received_on || "", Name: r.name, "Preferred Name": r.preferred_name || "", "GIH Level": (r.gih_levels || []).slice().sort().join(", "), "Purchase Timeframe": r.purchase_timeframe || "", "Existing Toyota/Lexus Customer": r.existing_customer ? "Yes" : "", VIP: r.vip ? "Yes" : "", "AG Approved": r.vip && r.ag_approved ? "Yes" : "", "Do Not Contact": r.vip && r.do_not_contact ? "Yes" : "", Handler: r.vip ? r.handler || "" : "",
+    "Internal Status": r.vip ? r.internal_status || "" : "", "Contact Method": r.vip ? r.contact_method || "" : "", "Customer Response": r.vip ? r.customer_response || "" : "", "Record Owner Notes": r.vip ? r.record_owner_notes || "" : "",
     Email: r.email || "", Phone: fmtPhone(r.phone), "Reached Out By": r.method || "", "Referred By": r.referred_by || "",
     ZIP: r.zip || "", City: r.city || "", State: r.state || "", "Closest Dealer": r.closest_dealer || "", "Miles (approx)": r.closest_dealer_miles ?? "",
     Notes: (byInq.get(r.id) || (r.notes ? [r.notes] : [])).join("\n"), Status: r.status === "Moved" ? "Moved to profiles" : "Open", "Moved On": r.moved_at ? fmtDate(r.moved_at) : "", "Added By": r.created_by_name || "",
@@ -2313,6 +2315,7 @@ async function renderInquiryForm(route, seq) {
       <div class="sec-kicker inq-kicker inq-kicker-first">Contact</div>
       <div class="form-grid">
         <div class="form-field"><label>Name</label><input type="text" id="i-name" required maxlength="120" value="${val("name")}" placeholder="First and last name"></div>
+        <div class="form-field"><label>Preferred name <span class="hint">(if different from their first name)</span></label><input type="text" id="i-pref" maxlength="80" value="${val("preferred_name")}"></div>
         <div class="form-field"><label>Received</label><input id="i-received" type="date" value="${val("received_on")}" max="${todayISO()}"></div>
         <div class="form-field"><label>Email</label><input id="i-email" type="email" maxlength="160" value="${val("email")}"></div>
         <div class="form-field"><label>Phone</label><input id="i-phone" type="tel" maxlength="40" value="${escapeHtml(fmtPhone(v.phone))}" placeholder="(555) 555-5555"></div>
@@ -2320,6 +2323,17 @@ async function renderInquiryForm(route, seq) {
         <div class="form-field" id="i-ref-wrap" ${v.method === "Referral" ? "" : "hidden"}><label>Referred by</label><input type="text" id="i-ref" maxlength="120" value="${val("referred_by")}" placeholder="Who sent them our way"></div>
       </div>
       <div id="i-match"></div>
+
+      <div class="sec-kicker inq-kicker">Guest details</div>
+      <div class="form-grid inq-details">
+        <div class="form-field"><label>GIH Level <span class="hint">(pick any)</span></label>
+          <details class="inq-multi" id="i-gih"><summary><span id="i-gih-sum">${gihText(v.gih_levels) || `<span class="muted">Select</span>`}</span></summary>
+            <div class="inq-multi-pop">${[1, 2, 3].map((n) => `<label><input type="checkbox" value="${n}" ${(v.gih_levels || []).includes(n) ? "checked" : ""}><span class="tc-box">${I.check}</span>Level ${n}</label>`).join("")}</div>
+          </details></div>
+        <div class="form-field"><label>Purchase timeframe</label><select id="i-timeframe"><option value=""></option>${[...new Set([...(v.purchase_timeframe ? [v.purchase_timeframe] : []), ...quarterOptions()])].sort((a, b) => (quarterKey(a) ?? 0) - (quarterKey(b) ?? 0)).map((q) => `<option ${v.purchase_timeframe === q ? "selected" : ""}>${q}</option>`).join("")}</select></div>
+        <div class="form-field"><label>Existing Toyota/Lexus customer</label>
+          <label class="inq-check ${v.existing_customer ? "on" : ""}" data-tgl="i-existing"><input type="checkbox" id="i-existing" ${v.existing_customer ? "checked" : ""}><span class="tc-box">${I.check}</span><span>Yes, existing customer</span></label></div>
+      </div>
 
       <div class="sec-kicker inq-kicker">VIP status</div>
       <div class="inq-vip-panel ${v.vip ? "on" : ""}" id="i-vip-panel">
@@ -2332,6 +2346,12 @@ async function renderInquiryForm(route, seq) {
             <label class="inq-check inq-check-dnc ${v.do_not_contact ? "on" : ""}" data-tgl="i-dnc" title="High profile: track and build a profile, but don't reach out"><input type="checkbox" id="i-dnc" ${v.do_not_contact ? "checked" : ""}><span class="tc-box">${I.check}</span><span>Do Not Contact</span></label>
           </div>
           <div class="form-field"><label>Handler <span class="hint">(Toyota contact who named them a VIP)</span></label><input type="text" id="i-handler" maxlength="120" value="${val("handler")}" placeholder="Name"></div>
+          <div class="inq-vip-more">
+            <div class="form-field"><label>Internal status</label><input type="text" id="i-istatus" maxlength="120" value="${val("internal_status")}"></div>
+            <div class="form-field"><label>Contact method</label><select id="i-cmethod"><option value=""></option>${["In Person", "Email", "Phone"].map((m) => `<option ${v.contact_method === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
+            <div class="form-field"><label>Customer response</label><select id="i-response"><option value=""></option>${["Interested", "Not Interested", "No Response"].map((m) => `<option ${v.customer_response === m ? "selected" : ""}>${m}</option>`).join("")}</select></div>
+            <div class="form-field inq-span"><label>Record owner notes <span class="hint">(internal notes from Toyota)</span></label><textarea id="i-ronotes" rows="3" maxlength="4000">${val("record_owner_notes")}</textarea></div>
+          </div>
         </div>
       </div>
 
@@ -2384,6 +2404,10 @@ async function renderInquiryForm(route, seq) {
     if (lab.dataset.tgl === "i-vip") { $("i-vip-extra").hidden = !e.target.checked; $("i-vip-panel").classList.toggle("on", e.target.checked); }
   }));
   $("i-method").addEventListener("change", (e) => { $("i-ref-wrap").hidden = e.target.value !== "Referral"; });
+  // GIH level dropdown: show the picks in the closed box, close when clicking elsewhere
+  const gih = $("i-gih");
+  gih.addEventListener("change", () => { $("i-gih-sum").innerHTML = gihText([...gih.querySelectorAll("input:checked")].map((c) => Number(c.value))) || `<span class="muted">Select</span>`; });
+  document.addEventListener("click", (e) => { if (gih.open && !gih.contains(e.target)) gih.open = false; });
   $("i-phone").addEventListener("blur", () => { $("i-phone").value = fmtPhone($("i-phone").value); paintMatches(); });
 
   // Flag (never block) when this looks like someone already on file: same name, email or phone on another
@@ -2424,7 +2448,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231409");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231436");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2465,6 +2489,14 @@ async function renderInquiryForm(route, seq) {
       ag_approved: vip && $("i-ag").checked,
       do_not_contact: vip && $("i-dnc").checked,
       handler: vip ? $("i-handler").value.trim() || null : null,
+      preferred_name: $("i-pref").value.trim() || null,
+      gih_levels: [...main.querySelectorAll("#i-gih input:checked")].map((c) => Number(c.value)),
+      purchase_timeframe: $("i-timeframe").value || null,
+      existing_customer: $("i-existing").checked,
+      internal_status: vip ? $("i-istatus").value.trim() || null : null,
+      contact_method: vip ? $("i-cmethod").value || null : null,
+      customer_response: vip ? $("i-response").value || null : null,
+      record_owner_notes: vip ? $("i-ronotes").value.trim() || null : null,
     };
   };
 
@@ -2626,7 +2658,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231409");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231436");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;

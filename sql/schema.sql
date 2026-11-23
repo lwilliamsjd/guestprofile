@@ -389,3 +389,24 @@ create policy "inquiry_seen_own" on inquiry_seen for all using (user_id = auth.u
 -- Safe to run more than once.
 -- ============================================================
 alter table inquiries add column if not exists do_not_contact boolean not null default false;
+
+-- ============================================================
+-- INQUIRIES: MORE DETAILS
+-- GIH level (1, 2, 3; any combination), preferred name, purchase timeframe
+-- ("Q2 2027"), existing Toyota/Lexus customer, and VIP-only fields.
+-- Safe to run more than once.
+-- ============================================================
+alter table inquiries add column if not exists gih_levels smallint[] not null default '{}';
+alter table inquiries add column if not exists preferred_name text;
+alter table inquiries add column if not exists purchase_timeframe text;
+alter table inquiries add column if not exists existing_customer boolean not null default false;
+alter table inquiries add column if not exists internal_status text;
+alter table inquiries add column if not exists contact_method text;
+alter table inquiries add column if not exists record_owner_notes text;
+alter table inquiries add column if not exists customer_response text;
+alter table inquiries drop constraint if exists inquiries_contact_method_check;
+alter table inquiries add constraint inquiries_contact_method_check check (contact_method is null or contact_method in ('In Person','Email','Phone'));
+alter table inquiries drop constraint if exists inquiries_customer_response_check;
+alter table inquiries add constraint inquiries_customer_response_check check (customer_response is null or customer_response in ('Interested','Not Interested','No Response'));
+alter table inquiries drop constraint if exists inquiries_gih_levels_check;
+alter table inquiries add constraint inquiries_gih_levels_check check (gih_levels <@ array[1,2,3]::smallint[]);
