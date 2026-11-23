@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611231337";
+import { supabase } from "./supabase-client.js?v=202611231344";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -235,6 +235,14 @@ export async function deleteInquiry(id) {
   if (error) throw inqErr(error);
 }
 // Participating dealerships (from the Concierge CRM) with a ZIP, for "closest dealer".
+// Guests on a Meister's Guests tab whose name matches one of these names. CRM users get the Meister,
+// dealership and status; others only learn there is a match. Empty if the SQL isn't set up yet.
+export async function meisterGuestMatches(names) {
+  const list = [...new Set((names || []).filter((n) => String(n || "").trim().length > 2))];
+  if (!list.length) return [];
+  const { data, error } = await supabase.rpc("meister_guest_matches", { p_names: list });
+  return error ? [] : data || [];
+}
 export async function listDealerLocations() {
   const r = await supabase.rpc("dealer_locations");
   if (!r.error) return (r.data || []).map((d) => ({ dealership: d.dealership, zip: String(d.zip), city: d.city || "", state: d.state || "" }));

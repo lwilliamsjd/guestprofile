@@ -716,3 +716,5 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .inq-stat.dnc b { color: var(--red); }
 @media (max-width: 760px) { .inq-vip-extra { grid-template-columns: 1fr 1fr; } .inq-vip-extra > .form-field:last-child { grid-column: 1 / -1; } }
 @media (max-width: 480px) { .inq-vip-extra { grid-template-columns: 1fr; } }
+.inq-mg { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; font-weight: 600; color: #6fa3ff; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inq-mg svg { width: 13px; height: 13px; flex: none; }

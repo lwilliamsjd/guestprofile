@@ -4,16 +4,16 @@ import {
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
-  listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, listTeamAccess, setUserAccess, createUserLogin,
+  listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611231337";
+} from "./api.js?v=202611231344";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611231337";
-import { SUPABASE_URL } from "./config.js?v=202611231337";
+} from "./outputs.js?v=202611231344";
+import { SUPABASE_URL } from "./config.js?v=202611231344";
 
 const app = document.getElementById("app");
 
@@ -2151,12 +2151,26 @@ function duplicateMap(rows) {
   }
   return out;
 }
+// "On a Meister's guest list" line for an inquiry; Meister details only for CRM users.
+const guestMatchKey = (s) => normName(s);
+function meisterGuestLine(ms, compact = false) {
+  if (!ms?.length) return "";
+  const crm = ms.some((m) => m.meister_id);
+  const who = crm ? ms.map((m) => `${escapeHtml(m.meister_name || "a Meister")}${m.dealership ? ` (${escapeHtml(m.dealership)})` : ""}${m.guest_status ? ` · ${escapeHtml(m.guest_status)}` : ""}`).join("; ") : "";
+  const short = crm ? ms.map((m) => `${escapeHtml(m.meister_name || "a Meister")}${m.guest_status ? ` · ${escapeHtml(m.guest_status)}` : ""}`).join("; ") : "";
+  if (compact) return `<div class="inq-mg" title="${crm ? who.replace(/"/g, "&quot;") : "Same name as a guest a Meister nominated"}">${I.users}${crm ? `Meister guest: ${short}` : "On a Meister's guest list"}</div>`;
+  return crm ? ms.map((m) => `<a href="../crm/#/meister/${m.meister_id}" target="_blank" rel="noopener">${escapeHtml(m.guest_name)}</a> · on ${escapeHtml(m.meister_name || "a Meister")}'s Guests tab${m.dealership ? ` · ${escapeHtml(m.dealership)}` : ""}${m.guest_status ? ` · <b>${escapeHtml(m.guest_status)}</b>` : ""} <span class="muted">(same name)</span>`)
+    : [`${escapeHtml(ms[0].guest_name)} · a Meister has already nominated a guest with this name <span class="muted">(same name)</span>`];
+}
 const vipBadges = (r) => (r.vip ? `<span class="pill pill-vip inq-vip">${I.star}VIP</span>${r.ag_approved ? `<span class="pill inq-ag">${I.check}AG Approved</span>` : ""}${r.do_not_contact ? `<span class="pill inq-dnc">${I.ban}Do Not Contact</span>` : ""}` : "");
 
 async function renderInquiries(seq) {
   const main = shell("inquiries", `<div class="loading">Loading inquiries…</div>`);
   let all, notes = [], seen = { seen_at: null };
   try { [all, notes, seen] = await Promise.all([listInquiries(), listInquiryNotes(), getInquirySeen(currentProfile.id)]); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  const mgMap = new Map();
+  (await meisterGuestMatches(all.map((r) => r.name)).catch(() => [])).forEach((m) => { const k = m.name_key; if (!mgMap.has(k)) mgMap.set(k, []); mgMap.get(k).push(m); });
+  const mgOf = (r) => mgMap.get(guestMatchKey(r.name));
   if (seq !== renderSeq) return;
   const lastSeen = seen.seen_at || new Date(Date.now() - 14 * 86400000).toISOString();
   const isNewForMe = (r) => r.notify_team && r.created_at > lastSeen && r.created_by !== currentProfile.id;
@@ -2172,6 +2186,7 @@ async function renderInquiries(seq) {
     let base = inqState.view === "moved" ? moved : inqState.view === "all" ? all : open;
     if (inqState.show === "vip") base = base.filter((r) => r.vip);
     if (inqState.show === "dnc") base = base.filter((r) => r.vip && r.do_not_contact);
+    if (inqState.show === "mg") base = base.filter((r) => mgOf(r));
     if (inqState.show === "dups") base = base.filter((r) => dups.has(r.id));
     const sortVal = (r) => ({
       received_on: r.received_on || "", name: (r.name || "").toLowerCase(), method: r.method || "",
@@ -2205,6 +2220,7 @@ async function renderInquiries(seq) {
           <option value="">All guests</option>
           <option value="vip" ${inqState.show === "vip" ? "selected" : ""}>VIP only (${all.filter((r) => r.vip).length})</option>
           <option value="dnc" ${inqState.show === "dnc" ? "selected" : ""}>Do Not Contact (${all.filter((r) => r.vip && r.do_not_contact).length})</option>
+          <option value="mg" ${inqState.show === "mg" ? "selected" : ""}>On a Meister's guest list (${all.filter((r) => mgOf(r)).length})</option>
           <option value="dups" ${inqState.show === "dups" ? "selected" : ""}>Possible duplicates (${dups.size})</option>
         </select>
       </div>
@@ -2218,7 +2234,7 @@ async function renderInquiries(seq) {
               <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}${isNewForMe(r) ? `<div><span class="pill inq-new">New</span></div>` : ""}</td>
               <td><div class="cell-name">${escapeHtml(r.name)}</div>
                 <div class="cell-sub muted">${escapeHtml([r.email, fmtPhone(r.phone)].filter(Boolean).join(" · "))}</div>
-                ${dup ? `<div class="inq-dup" title="Another inquiry has the same ${[...dup].join(", ")}">${I.warn}Possible duplicate (same ${[...dup].join(", ")})</div>` : ""}</td>
+                ${dup ? `<div class="inq-dup" title="Another inquiry has the same ${[...dup].join(", ")}">${I.warn}Possible duplicate (same ${[...dup].join(", ")})</div>` : ""}${meisterGuestLine(mgOf(r), true)}</td>
               <td><span class="pill pill-method">${escapeHtml(r.method || "Other")}</span>${r.method === "Referral" && r.referred_by ? `<div class="cell-sub muted">from ${escapeHtml(r.referred_by)}</div>` : ""}</td>
               <td>${escapeHtml(inqLocation(r))}</td>
               <td>${escapeHtml(r.closest_dealer || "")}${r.closest_dealer_miles != null && r.closest_dealer ? `<div class="cell-sub muted">${r.closest_dealer_miles < 1 ? "under 1 mi" : `about ${Math.round(r.closest_dealer_miles)} mi`}</div>` : ""}</td>
@@ -2380,7 +2396,20 @@ async function renderInquiryForm(route, seq) {
       if (why.length) rows.push(`<a href="#/inquiries/${o.id}" target="_blank" rel="noopener">${escapeHtml(o.name)}</a> · inquiry ${o.received_on ? fmtDate(o.received_on) : ""}${o.email ? " · " + escapeHtml(o.email) : ""}${o.phone ? " · " + escapeHtml(fmtPhone(o.phone)) : ""} <span class="muted">(same ${why.join(" and ")})</span>`);
     }
     if (n.length > 2) for (const p of profiles) if (normName(p.name) === n && p.id !== rec?.applicant_id) rows.push(`<a href="#/p/${p.id}" target="_blank" rel="noopener">${escapeHtml(p.name)}</a> · applicant profile${p.preferred_dealer ? " · " + escapeHtml(p.preferred_dealer) : ""} <span class="muted">(same name)</span>`);
+    if (n.length > 2 && guestHits.key === n) rows.push(...meisterGuestLine(guestHits.rows));
     $("i-match").innerHTML = inquiryMatchHtml(rows, "Possible match already on file");
+    if (n.length > 2 && guestHits.key !== n) lookupGuests(n, $("i-name").value);
+  }
+  // names on Meisters' Guests tabs are looked up on the server (a short pause after typing)
+  let guestHits = { key: "", rows: [] }, guestTimer;
+  function lookupGuests(key, raw) {
+    clearTimeout(guestTimer);
+    guestTimer = setTimeout(async () => {
+      const rows = await meisterGuestMatches([raw]).catch(() => []);
+      if (normName($("i-name")?.value) !== key) return;
+      guestHits = { key, rows };
+      paintMatches();
+    }, 300);
   }
   $("i-name").addEventListener("input", paintMatches);
   $("i-email").addEventListener("input", paintMatches);
@@ -2395,7 +2424,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231337");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231344");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2597,7 +2626,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231337");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231344");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;

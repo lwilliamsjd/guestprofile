@@ -859,3 +859,35 @@ create policy guest_files_upload on storage.objects for insert to authenticated
 drop policy if exists guest_files_remove on storage.objects;
 create policy guest_files_remove on storage.objects for delete to authenticated
   using (bucket_id = 'guest-files' and public.has_crm_access());
+
+-- ============================================================
+-- INQUIRY ↔ MEISTER GUEST MATCH
+-- Inquiries flags a guest whose name matches someone on a Meister's Guests tab.
+-- Anyone signed in can ask about the names they already have; only CRM users
+-- get the Meister, dealership and status back (clients just see "a match").
+-- Safe to run more than once.
+-- ============================================================
+create or replace function public.norm_person_name(s text)
+returns text language sql immutable as $$
+  select trim(regexp_replace(regexp_replace(lower(coalesce(s, '')), '[^a-z0-9 ]', ' ', 'g'), '\s+', ' ', 'g'));
+$$;
+
+create or replace function public.meister_guest_matches(p_names text[])
+returns table (name_key text, guest_name text, guest_status text, meister_id uuid, meister_name text, dealership text)
+language sql security definer stable set search_path = public as $$
+  with keys as (
+    select distinct public.norm_person_name(n) as k from unnest(p_names) n
+    where length(public.norm_person_name(n)) > 2
+  )
+  select public.norm_person_name(g.guest_name),
+         g.guest_name,
+         case when public.has_crm_access() then g.guest_status end,
+         case when public.has_crm_access() then m.id end,
+         case when public.has_crm_access() then m.name end,
+         case when public.has_crm_access() then m.dealership end
+  from public.guests g
+  join public.meisters m on m.id = g.meister_id
+  join keys on keys.k = public.norm_person_name(g.guest_name)
+  where auth.uid() is not null and m.deleted_at is null;
+$$;
+revoke execute on function public.meister_guest_matches(text[]) from anon;
