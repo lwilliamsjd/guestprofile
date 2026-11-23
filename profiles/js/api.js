@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611201803";
+import { supabase } from "./supabase-client.js?v=202611230914";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -30,7 +30,11 @@ export async function createUserLogin({ full_name, email, password, level }) {
   if (error) {
     let msg = "";
     try { msg = (await error.context.json()).error; } catch {}
-    if (!msg && /Failed to send|not found|404/i.test(error.message || "")) msg = "The admin-users function isn't set up in Supabase yet.";
+    let status = 0;
+    try { status = error.context?.status || 0; } catch {}
+    if (!msg && status === 404) msg = "Supabase can't find a function named admin-users. Check the name on the Edge Functions page.";
+    if (!msg && /Failed to send/i.test(error.message || "")) msg = "Couldn't reach the admin-users function (blocked before it answered). Redeploy it with the latest code.";
+    if (!msg && status) msg = `The admin-users function answered with an error (${status}). Check its Logs tab in Supabase.`;
     throw new Error(msg || error.message || "Couldn't create the login");
   }
   if (data?.error) throw new Error(data.error);

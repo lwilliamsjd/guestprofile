@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611201803";
+import { supabase } from "./supabase-client.js?v=202611230914";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
