@@ -6,14 +6,14 @@ import {
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611231509";
+} from "./api.js?v=202611231522";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611231509";
-import { SUPABASE_URL } from "./config.js?v=202611231509";
+} from "./outputs.js?v=202611231522";
+import { SUPABASE_URL } from "./config.js?v=202611231522";
 
 const app = document.getElementById("app");
 
@@ -2162,6 +2162,7 @@ function meisterGuestLine(ms, compact = false) {
   return crm ? ms.map((m) => `<a href="../crm/#/meister/${m.meister_id}" target="_blank" rel="noopener">${escapeHtml(m.guest_name)}</a> · on ${escapeHtml(m.meister_name || "a Meister")}'s Guests tab${m.dealership ? ` · ${escapeHtml(m.dealership)}` : ""}${m.guest_status ? ` · <b>${escapeHtml(m.guest_status)}</b>` : ""} <span class="muted">(same name)</span>`)
     : [`${escapeHtml(ms[0].guest_name)} · a Meister has already nominated a guest with this name <span class="muted">(same name)</span>`];
 }
+const isL3 = (r) => Array.isArray(r.gih_levels) && r.gih_levels.includes(3);
 const gihText = (l) => (Array.isArray(l) && l.length ? `GIH ${[...l].sort().join(" · ")}` : "");
 const vipBadges = (r) => (r.vip ? `<span class="pill pill-vip inq-vip">${I.star}VIP</span>${r.ag_approved ? `<span class="pill inq-ag">${I.check}AG Approved</span>` : ""}${r.do_not_contact ? `<span class="pill inq-dnc">${I.ban}Do Not Contact</span>` : ""}` : "");
 
@@ -2188,6 +2189,8 @@ async function renderInquiries(seq) {
     if (inqState.show === "vip") base = base.filter((r) => r.vip);
     if (inqState.show === "dnc") base = base.filter((r) => r.vip && r.do_not_contact);
     if (inqState.show === "mg") base = base.filter((r) => mgOf(r));
+    if (inqState.show === "l3") base = base.filter(isL3);
+    if (inqState.show === "notl3") base = base.filter((r) => !isL3(r));
     if (inqState.show === "dups") base = base.filter((r) => dups.has(r.id));
     const sortVal = (r) => ({
       received_on: r.received_on || "", name: (r.name || "").toLowerCase(), method: r.method || "",
@@ -2221,6 +2224,8 @@ async function renderInquiries(seq) {
           <option value="">All guests</option>
           <option value="vip" ${inqState.show === "vip" ? "selected" : ""}>VIP only (${all.filter((r) => r.vip).length})</option>
           <option value="dnc" ${inqState.show === "dnc" ? "selected" : ""}>Do Not Contact (${all.filter((r) => r.vip && r.do_not_contact).length})</option>
+          <option value="l3" ${inqState.show === "l3" ? "selected" : ""}>GIH Level 3, ready (${all.filter(isL3).length})</option>
+          <option value="notl3" ${inqState.show === "notl3" ? "selected" : ""}>Not yet Level 3 (${all.filter((r) => !isL3(r)).length})</option>
           <option value="mg" ${inqState.show === "mg" ? "selected" : ""}>On a Meister's guest list (${all.filter((r) => mgOf(r)).length})</option>
           <option value="dups" ${inqState.show === "dups" ? "selected" : ""}>Possible duplicates (${dups.size})</option>
         </select>
@@ -2231,9 +2236,9 @@ async function renderInquiries(seq) {
           <tbody>${list.map((r) => {
             const dup = dups.get(r.id);
             return `
-            <tr class="clickable-row ${r.status === "Moved" ? "inq-moved" : ""} ${r.vip ? "inq-is-vip" : ""}" data-id="${r.id}">
+            <tr class="clickable-row ${r.status === "Moved" ? "inq-moved" : ""} ${r.vip ? "inq-is-vip" : ""} ${isL3(r) ? "inq-l3" : ""}" data-id="${r.id}">
               <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}${isNewForMe(r) ? `<div><span class="pill inq-new">New</span></div>` : ""}</td>
-              <td><div class="cell-name">${escapeHtml(r.name)}${gihText(r.gih_levels) ? ` <span class="pill inq-gih">${gihText(r.gih_levels)}</span>` : ""}</div>
+              <td><div class="cell-name">${escapeHtml(r.name)}${gihText(r.gih_levels) ? ` <span class="pill inq-gih ${isL3(r) ? "l3" : ""}" ${isL3(r) ? `title="Reached GIH Level 3: ready for next steps"` : ""}>${isL3(r) ? I.check : ""}${gihText(r.gih_levels)}</span>` : ""}</div>
                 <div class="cell-sub muted">${escapeHtml([r.email, fmtPhone(r.phone)].filter(Boolean).join(" · "))}</div>
                 ${dup ? `<div class="inq-dup" title="Another inquiry has the same ${[...dup].join(", ")}">${I.warn}Possible duplicate (same ${[...dup].join(", ")})</div>` : ""}${meisterGuestLine(mgOf(r), true)}</td>
               <td><span class="pill pill-method m-${(r.method || "Other").toLowerCase()}">${escapeHtml(r.method || "Other")}</span>${r.method === "Referral" && r.referred_by ? `<div class="cell-sub muted">from ${escapeHtml(r.referred_by)}</div>` : ""}</td>
@@ -2461,7 +2466,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231509");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231522");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2672,7 +2677,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231509");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231522");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;

@@ -743,3 +743,9 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .pill-method.m-other { color: var(--grey); border-color: var(--border-strong); }
 .inq-tf { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 .inq-tf select:disabled { opacity: .45; cursor: not-allowed; }
+/* GIH Level 3 = ready for next steps */
+.inq-table tr.inq-l3 td { background: rgba(61,220,132,.07); }
+.inq-table tr.inq-l3:hover td { background: rgba(61,220,132,.12); }
+.inq-table tr.inq-l3 td:last-child { box-shadow: inset -3px 0 0 var(--green); }
+.inq-gih.l3 { color: var(--green); border-color: rgba(61,220,132,.6); background: rgba(61,220,132,.1); display: inline-flex; align-items: center; gap: 4px; }
+.inq-gih.l3 svg { width: 10px; height: 10px; }
