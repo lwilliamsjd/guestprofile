@@ -749,3 +749,8 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .inq-table tr.inq-l3 td:last-child { box-shadow: inset -3px 0 0 var(--green); }
 .inq-gih.l3 { color: var(--green); border-color: rgba(61,220,132,.6); background: rgba(61,220,132,.1); display: inline-flex; align-items: center; gap: 4px; }
 .inq-gih.l3 svg { width: 10px; height: 10px; }
+/* Analytics section headers: larger, red, with a bolder divider */
+@media screen {
+  .an-section-title { font-size: 14px; font-weight: 800; letter-spacing: .12em; color: var(--red); margin: 36px 0 14px; gap: 14px; }
+  .an-section-title::after { height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(224,38,63,.75), rgba(224,38,63,.08)); }
+}
