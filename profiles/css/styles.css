@@ -741,3 +741,5 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .pill-method.m-phone { color: var(--green); border-color: rgba(61,220,132,.5); }
 .pill-method.m-email { color: var(--blue); border-color: rgba(77,139,255,.55); }
 .pill-method.m-other { color: var(--grey); border-color: var(--border-strong); }
+.inq-tf { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.inq-tf select:disabled { opacity: .45; cursor: not-allowed; }
