@@ -781,3 +781,81 @@ begin
    where id = p_user;
 end $$;
 revoke execute on function public.set_user_access(uuid, text) from anon;
+
+-- ============================================================
+-- NOMINATED GUESTS
+-- The Guests tab on a Meister tracks every guest the Meister nominates,
+-- from Submitted through Delivered (most won't be allocated).
+-- purchase_date is shown as "Order Date". vehicle_purchased is no longer used.
+-- Safe to run more than once.
+-- ============================================================
+alter table guests drop constraint if exists guests_guest_status_check;
+update guests set guest_status = 'Allocated' where guest_status = 'Ordered';
+alter table guests add constraint guests_guest_status_check
+  check (guest_status in ('Submitted','Nominated','Waitlist','Denied','Allocated','Delivered'));
+alter table guests alter column guest_status set default 'Submitted';
+
+alter table guests add column if not exists vip boolean not null default false;
+alter table guests add column if not exists variant text;
+alter table guests add column if not exists launch_edition boolean not null default false;
+alter table guests add column if not exists spec_tags jsonb not null default '[]'::jsonb;
+alter table guests add column if not exists applicant_id uuid references applicants(id) on delete set null;
+alter table guests add column if not exists pdf_path text;
+alter table guests add column if not exists pdf_name text;
+alter table guests add column if not exists updated_at timestamptz;
+
+-- every status change, so each guest's journey can be shown with dates
+create table if not exists guest_status_history (
+  id uuid primary key default gen_random_uuid(),
+  guest_id uuid not null references guests(id) on delete cascade,
+  status text not null,
+  changed_at timestamptz not null default now(),
+  changed_by uuid references auth.users(id),
+  changed_by_name text
+);
+create index if not exists guest_status_history_guest_idx on guest_status_history (guest_id, changed_at);
+alter table guest_status_history enable row level security;
+drop policy if exists gsh_select on guest_status_history;
+create policy gsh_select on guest_status_history for select to authenticated using (public.has_crm_access());
+drop policy if exists gsh_delete on guest_status_history;
+create policy gsh_delete on guest_status_history for delete to authenticated using (public.is_admin());
+
+create or replace function public.log_guest_status()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' or new.guest_status is distinct from old.guest_status then
+    insert into guest_status_history (guest_id, status, changed_by, changed_by_name)
+    values (new.id, new.guest_status, auth.uid(), (select full_name from profiles where id = auth.uid()));
+  end if;
+  return null;
+end $$;
+drop trigger if exists guests_status_log on guests;
+create trigger guests_status_log after insert or update of guest_status on guests
+  for each row execute function public.log_guest_status();
+
+create or replace function public.touch_guest()
+returns trigger language plpgsql as $$ begin new.updated_at := now(); return new; end $$;
+drop trigger if exists guests_touch on guests;
+create trigger guests_touch before update on guests for each row execute function public.touch_guest();
+
+-- starting history for guests that existed before this ran
+insert into guest_status_history (guest_id, status, changed_at, changed_by, changed_by_name)
+select g.id, g.guest_status, g.created_at, g.created_by, g.created_by_name
+from guests g where not exists (select 1 from guest_status_history h where h.guest_id = g.id);
+
+-- linked Applicant Profiles: CRM users look them up by name to link a guest
+-- (applicants are already readable by signed in users; nothing new needed)
+
+-- uploaded profile PDFs (or anything else) for a guest
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('guest-files', 'guest-files', false, 26214400)
+on conflict (id) do update set public = false, file_size_limit = 26214400;
+drop policy if exists guest_files_read on storage.objects;
+create policy guest_files_read on storage.objects for select to authenticated
+  using (bucket_id = 'guest-files' and public.has_crm_access());
+drop policy if exists guest_files_upload on storage.objects;
+create policy guest_files_upload on storage.objects for insert to authenticated
+  with check (bucket_id = 'guest-files' and public.has_crm_access());
+drop policy if exists guest_files_remove on storage.objects;
+create policy guest_files_remove on storage.objects for delete to authenticated
+  using (bucket_id = 'guest-files' and public.has_crm_access());

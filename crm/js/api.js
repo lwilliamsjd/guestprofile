@@ -538,8 +538,49 @@ export async function updateGuest(id, fields) {
 }
 
 export async function deleteGuest(id) {
+  const { data: g } = await supabase.from("guests").select("pdf_path").eq("id", id).maybeSingle();
   const { error } = await supabase.from("guests").delete().eq("id", id);
   if (error) throw error;
+  if (g?.pdf_path) await supabase.storage.from(GUEST_BUCKET).remove([g.pdf_path]).catch(() => {});
+}
+
+// Status changes for a Meister's guests, oldest first (empty if the table isn't set up yet).
+export async function listGuestHistory(guestIds) {
+  if (!guestIds.length) return [];
+  const { data, error } = await supabase.from("guest_status_history").select("*").in("guest_id", guestIds).order("changed_at", { ascending: true });
+  return error ? [] : data || [];
+}
+
+// Applicant Profiles a guest can be linked to.
+export async function searchApplicants(q) {
+  let req = supabase.from("applicants").select("id, name, city, state, vip, spec_tags, launch_edition, interview_date, deleted_at").is("deleted_at", null).order("name").limit(8);
+  if (q) req = req.ilike("name", `%${q.replace(/[%_,()]/g, " ").trim()}%`);
+  const { data, error } = await req;
+  if (error) throw error;
+  return data || [];
+}
+export async function getApplicantsByIds(ids) {
+  if (!ids.length) return [];
+  const { data, error } = await supabase.from("applicants").select("id, name, city, state, vip, spec_tags, launch_edition, deleted_at").in("id", ids);
+  return error ? [] : data || [];
+}
+
+// Uploaded profile PDFs live in the private "guest-files" bucket.
+const GUEST_BUCKET = "guest-files";
+export async function uploadGuestPdf(guestId, file) {
+  const safe = file.name.replace(/[^\w.\- ]+/g, "_").slice(-80);
+  const path = `${guestId}/${Date.now()}-${safe}`;
+  const { error } = await supabase.storage.from(GUEST_BUCKET).upload(path, file, { contentType: file.type || "application/pdf", upsert: false });
+  if (error) throw error;
+  return { pdf_path: path, pdf_name: file.name };
+}
+export async function removeGuestPdf(path) {
+  if (path) await supabase.storage.from(GUEST_BUCKET).remove([path]);
+}
+export async function guestPdfUrl(g, download = false) {
+  const { data, error } = await supabase.storage.from(GUEST_BUCKET).createSignedUrl(g.pdf_path, 120, download ? { download: g.pdf_name || "profile.pdf" } : undefined);
+  if (error) throw error;
+  return data.signedUrl;
 }
 
 // ---------- activity feed (recent across everything) ----------

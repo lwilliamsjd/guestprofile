@@ -33,7 +33,7 @@ import {
   setInteractionCategory,
   setInteractionDetails,
   fetchAnalyticsData,
-  listGuests,
+  listGuests, listGuestHistory, searchApplicants, getApplicantsByIds, uploadGuestPdf, removeGuestPdf, guestPdfUrl,
   addGuest,
   updateGuest,
   deleteGuest,
@@ -59,6 +59,7 @@ import {
   markAllNotificationsRead,
   markMeisterNotificationsRead,
 } from "./api.js?v=202611230914";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611230914";
 import { exportToExcel } from "./export.js?v=202611230914";
 import { wireImport } from "./import-export.js?v=202611230914";
 
@@ -81,7 +82,10 @@ const CONCIERGES = ["Freddie", "Logan"];
 const ASSIGNEES = ["Logan", "Freddie", "Rob"]; // who a follow-up can be assigned to
 const METHODS = ["Phone", "Text", "Email", "In Person", "Other"];
 const DIRECTIONS = ["Outbound", "Inbound"];
-const GUEST_STATUSES = ["Allocated", "Ordered", "Delivered"];
+const GUEST_STATUSES = ["Submitted", "Nominated", "Waitlist", "Denied", "Allocated", "Delivered"];
+const GUEST_PATH = ["Submitted", "Nominated", "Allocated", "Delivered"]; // the main journey; Waitlist and Denied branch off it
+const guestStatus = (g) => (GUEST_STATUSES.includes(g?.guest_status) ? g.guest_status : g?.guest_status === "Ordered" ? "Allocated" : "Submitted");
+const GUEST_VARIANTS = ["GR GT"]; // future variants get added here once public
 const STALE_DAYS = 60; // no contact for this long = "stale" on the dashboard
 let team = []; // [{id, full_name, concierge}] for @mentions
 let connState = "ok"; // ok | reconnecting | offline
@@ -98,6 +102,7 @@ const I = {
   other: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>`,
   plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
   search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`,
+  star: `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="m12 2.8 2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3L2.9 9.5l6.3-.9z"/></svg>`,
   edit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>`,
   trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>`,
   download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>`,
@@ -1462,7 +1467,7 @@ async function renderAnalyticsPage(route, seq) {
         </div>
         ${lineChartSvg(salesSeries, { drillPrefix: "salesmonth", second: deliverySeries, secondPrefix: "delivmonth" })}
         <div class="legend"><span class="legend-item"><span class="legend-dot" style="background:#e0263f"></span>Sold per month</span><span class="legend-item"><span class="legend-dot" style="background:#3ddc84"></span>Delivered per month</span></div>
-        ${recentSales.length ? `<div class="veh-recent"><div class="veh-recent-h">Latest orders</div>${recentSales.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.purchase_date)}${g.delivery_date ? " · delivered" : ""}</span></a>`).join("")}</div>` : ""}
+        ${recentSales.length ? `<div class="veh-recent"><div class="veh-recent-h">Latest orders</div>${recentSales.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(guestStatus(g))} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.purchase_date)}${g.delivery_date ? " · delivered" : ""}</span></a>`).join("")}</div>` : ""}
       </div>
 
       <div class="card ana-span-5 ana-engaged">
@@ -1615,8 +1620,8 @@ function drillContent(key, ctx) {
       const rows = ctx.guests;
       return {
         title: "Vehicles sold (guest purchases)", sub: `${rows.length} in range`,
-        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.purchase_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No purchases in this range.</div>`,
-        csv: { name: "vehicles-sold.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Vehicle: g.vehicle_purchased || "", "Purchase Date": g.purchase_date, Meister: g.meisters?.name || "", Notes: g.notes || "" })) },
+        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(guestStatus(g))} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.purchase_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No purchases in this range.</div>`,
+        csv: { name: "vehicles-sold.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Status: guestStatus(g), "Purchase Date": g.purchase_date, Meister: g.meisters?.name || "", Notes: g.notes || "" })) },
       };
     }
     case "salesmonth": {
@@ -1624,8 +1629,8 @@ function drillContent(key, ctx) {
       const rows = pt ? ctxGuestsInMonth(ctx, pt) : [];
       return {
         title: `Vehicles sold — ${pt ? pt.label : ""}`, sub: `${rows.length} purchases`,
-        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.purchase_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No purchases that month.</div>`,
-        csv: { name: "vehicles-sold-month.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Vehicle: g.vehicle_purchased || "", "Purchase Date": g.purchase_date, Meister: g.meisters?.name || "" })) },
+        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(guestStatus(g))} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtDate(g.purchase_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No purchases that month.</div>`,
+        csv: { name: "vehicles-sold-month.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Status: guestStatus(g), "Purchase Date": g.purchase_date, Meister: g.meisters?.name || "" })) },
       };
     }
     case "bucket": {
@@ -1645,8 +1650,8 @@ function drillContent(key, ctx) {
       const rows = pt ? ctx.allGuests.filter((g) => g.delivery_date && (() => { const t = new Date(g.delivery_date + "T12:00:00"); return t >= pt.start && t < pt.end; })()) : [];
       return {
         title: `Delivered — ${pt ? pt.label : ""}`, sub: `${rows.length} deliveries`,
-        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtMonth(g.delivery_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No deliveries that month.</div>`,
-        csv: { name: "delivered-month.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Vehicle: g.vehicle_purchased || "", "Delivery Date": g.delivery_date, Meister: g.meisters?.name || "" })) },
+        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(guestStatus(g))} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtMonth(g.delivery_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No deliveries that month.</div>`,
+        csv: { name: "delivered-month.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Status: guestStatus(g), "Delivery Date": g.delivery_date, Meister: g.meisters?.name || "" })) },
       };
     }
     case "gregion": case "gbucket": case "gmissing": {
@@ -1673,8 +1678,8 @@ function drillContent(key, ctx) {
       const title = arg === "delivered" ? "Delivered (all time)" : arg === "awaiting" ? "In production (sold, not yet delivered)" : "Vehicles sold (all time)";
       return {
         title, sub: `${rows.length} ${rows.length === 1 ? "guest" : "guests"}`,
-        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(g.vehicle_purchased || "—")} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${g.purchase_date ? fmtDate(g.purchase_date) : ""}${g.delivery_date ? " → " + fmtMonth(g.delivery_date) : ""}</span></a>`).join("")}</div>` : `<div class="empty-state">Nothing here.</div>`,
-        csv: { name: slug(title) + ".csv", rows: rows.map((g) => ({ Guest: g.guest_name, Vehicle: g.vehicle_purchased || "", "Purchase Date": g.purchase_date || "", "Delivery Date": g.delivery_date || "", Meister: g.meisters?.name || "" })) },
+        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(guestStatus(g))} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${g.purchase_date ? fmtDate(g.purchase_date) : ""}${g.delivery_date ? " → " + fmtMonth(g.delivery_date) : ""}</span></a>`).join("")}</div>` : `<div class="empty-state">Nothing here.</div>`,
+        csv: { name: slug(title) + ".csv", rows: rows.map((g) => ({ Guest: g.guest_name, Status: guestStatus(g), "Purchase Date": g.purchase_date || "", "Delivery Date": g.delivery_date || "", Meister: g.meisters?.name || "" })) },
       };
     }
     case "logger": return intsList(ctx.ints.filter((i) => ctx.loggerName(i) === arg), `Logged by ${arg}`);
@@ -2664,6 +2669,7 @@ async function renderMeister(route, seq) {
   const isNew = route.mode === "new";
   let meister = null, interactions = [], guests = [], followUps = [], comments = [], history = [], dealerships = [];
   let source = null, sourceGuests = [], prevMeister = null, nextMeister = null; // departed-Meister links
+  let guestHistory = [], guestApplicants = [];
 
   try {
     if (!isNew) {
@@ -2676,6 +2682,10 @@ async function renderMeister(route, seq) {
         listDealerships().catch(() => []),
       ]);
       comments = await listCommentsForInteractions(interactions.map((i) => i.id));
+      [guestHistory, guestApplicants] = await Promise.all([
+        listGuestHistory(guests.map((g) => g.id)).catch(() => []),
+        getApplicantsByIds([...new Set(guests.map((g) => g.applicant_id).filter(Boolean))]).catch(() => []),
+      ]);
       [prevMeister, nextMeister] = await Promise.all([
         meister.previous_meister_id ? getMeister(meister.previous_meister_id).catch(() => null) : null,
         meister.replaced_by_id ? getMeister(meister.replaced_by_id).catch(() => null) : null,
@@ -2810,7 +2820,7 @@ async function renderMeister(route, seq) {
         </div>
 
         ${!isNew ? renderActivityTab(meister, interactions, followUps, comments, history, guests) : ""}
-        ${!isNew ? renderGuestsTab(guests) : ""}
+        ${!isNew ? renderGuestsTab(guests, guestHistory, guestApplicants) : ""}
       </div>
     </div>
   `;
@@ -2913,7 +2923,7 @@ async function renderMeister(route, seq) {
     });
     wireQuickActions();
     wireActivityTab(container, meister);
-    wireGuestsTab(meister);
+    wireGuestsTab(meister, guests, guestApplicants);
 
     if (uiState.focusId) {
       const el = document.getElementById(uiState.focusId);
@@ -3060,7 +3070,7 @@ function guestCardHtml(g) {
     <div class="note-card sys-card">
       <div class="note-top">
         <span class="method-badge method-guest">${I.car} Guest</span>
-        <span class="sys-text">${escapeHtml(g.guest_name)}${g.vehicle_purchased ? ` <span class="muted">· ${escapeHtml(g.vehicle_purchased)}</span>` : ""} <span class="guest-pill gs-${slug(g.guest_status || "Allocated")}">${escapeHtml(g.guest_status || "Allocated")}</span></span>
+        <span class="sys-text">${escapeHtml(g.guest_name)}${g.vip ? ` <span class="guest-vip">${I.star}VIP</span>` : ""} <span class="guest-pill gs-${slug(guestStatus(g))}">${escapeHtml(guestStatus(g))}</span></span>
         <span class="muted">${escapeHtml(g.created_by_name || "someone")} &middot; ${fmtDateTime(g.created_at)}</span>
       </div>
       ${g.notes ? `<div class="note-text muted">${escapeHtml(g.notes)}</div>` : ""}
@@ -3459,69 +3469,138 @@ function wireActivityTab(container, meister) {
 }
 
 // ---------- guests tab ----------
-function renderGuestsTab(guests) {
+// ---------- Guests tab: everyone a Meister nominates, from Submitted to Delivered ----------
+let guestEdit = {}; // unsaved build, profile link and PDF picks for open guest forms, keyed by form prefix
+
+function guestBuildHtml(g) {
+  if (g.launch_edition) return `<span class="gb-le">Launch Edition</span> <span class="muted">spec locked</span>`;
+  const groups = specGroups(g);
+  return groups.length ? `<div class="gb-specs">${groups.map((x) => `<span class="gb-chip"><b>${escapeHtml(x.group)}</b>${escapeHtml(x.items.join(", "))}</span>`).join("")}</div>` : `<span class="muted">No build yet</span>`;
+}
+
+function guestJourneyHtml(g, hist) {
+  const st = guestStatus(g);
+  const when = (status) => { const h = hist.filter((x) => x.status === status).pop(); return h ? fmtDate(h.changed_at) : ""; };
+  const reached = new Set(hist.map((h) => h.status).concat(st));
+  const off = st === "Waitlist" || st === "Denied";
+  const curIdx = off ? Math.max(...GUEST_PATH.map((p, i) => (reached.has(p) ? i : -1))) : GUEST_PATH.indexOf(st);
+  const steps = GUEST_PATH.map((p, i) => {
+    const done = i <= curIdx, cur = !off && i === curIdx;
+    return `<li class="gj-step ${done ? "done" : ""} ${cur ? "cur" : ""}"><span class="gj-dot"></span><span class="gj-name">${p}</span><span class="gj-when">${done ? when(p) : ""}</span></li>`;
+  });
+  if (off) steps.splice(curIdx + 1, 0, `<li class="gj-step done cur gj-${st.toLowerCase()}"><span class="gj-dot"></span><span class="gj-name">${st === "Waitlist" ? "Waitlisted" : "Denied"}</span><span class="gj-when">${when(st)}</span></li>`);
+  return `<ol class="g-journey ${off ? "off" : ""}">${steps.join("")}</ol>`;
+}
+
+function guestProfileHtml(g, app) {
+  const bits = [];
+  if (g.applicant_id) bits.push(app && !app.deleted_at
+    ? `<a class="btn btn-sm" href="../profiles/#/p/${g.applicant_id}/outputs" target="_blank" rel="noopener">${I.link}Profile PDF</a><span class="muted">${escapeHtml(app.name)}${app.city || app.state ? ` · ${escapeHtml([app.city, app.state].filter(Boolean).join(", "))}` : ""}</span>`
+    : `<span class="muted">Linked profile was removed</span>`);
+  if (g.pdf_path) bits.push(`<button type="button" class="btn btn-sm g-pdf-dl" data-id="${g.id}">${I.download}${escapeHtml(g.pdf_name || "Uploaded PDF")}</button>`);
+  return bits.length ? bits.join("") : `<span class="muted">No profile yet</span>`;
+}
+
+function renderGuestsTab(guests, hist = [], apps = []) {
+  const appById = new Map(apps.map((a) => [a.id, a]));
+  const histOf = (id) => hist.filter((h) => h.guest_id === id);
+  const counts = GUEST_STATUSES.map((st) => [st, guests.filter((g) => guestStatus(g) === st).length]).filter(([, n]) => n);
+  const order = (g) => ({ Delivered: 0, Allocated: 1, Nominated: 2, Submitted: 3, Waitlist: 4, Denied: 5 })[guestStatus(g)];
+  const list = guests.slice().sort((a, b) => order(a) - order(b) || String(b.created_at).localeCompare(String(a.created_at)));
   return `
     <div id="tab-guests" class="tab-panel" style="${uiState.activeTab === "guests" ? "" : "display:none"}">
       <div class="toolbar">
-        <p class="muted" style="margin:0">Guests this Meister has referred or sold a vehicle to.</p>
+        <div>
+          <p class="muted" style="margin:0">Guests this Meister has nominated for an allocation.</p>
+          ${counts.length ? `<div class="g-counts">${counts.map(([st, n]) => `<span class="guest-pill gs-${slug(st)}">${n} ${st}</span>`).join("")}</div>` : ""}
+        </div>
         <button type="button" id="add-guest-btn" class="btn btn-primary">${I.plus} Add Guest</button>
       </div>
-
       ${uiState.guestFormOpen && !uiState.editingGuestId ? guestFormHtml(null) : ""}
-
-      <div class="table-wrap">
-        <table class="crm-table">
-          <thead><tr><th>Guest</th><th>Vehicle</th><th>Status</th><th>Purchase Date</th><th>Delivery</th><th>Notes</th><th></th></tr></thead>
-          <tbody>
-            ${
-              guests.length
-                ? guests
-                    .map((g) =>
-                      uiState.editingGuestId === g.id
-                        ? `<tr><td colspan="7" class="td-form">${guestFormHtml(g)}</td></tr>`
-                        : `<tr>
-                        <td class="cell-name">${escapeHtml(g.guest_name)}<div class="muted cell-sub">added by ${escapeHtml(g.created_by_name || "—")}</div></td>
-                        <td>${escapeHtml(g.vehicle_purchased || "—")}</td>
-                        <td><span class="guest-pill gs-${slug(g.guest_status || "Allocated")}">${escapeHtml(g.guest_status || "Allocated")}</span></td>
-                        <td>${g.purchase_date ? fmtDate(g.purchase_date) : "—"}</td>
-                        <td>${g.delivery_date ? fmtMonth(g.delivery_date) : "—"}</td>
-                        <td>${escapeHtml(g.notes || "—")}</td>
-                        <td class="td-actions">
-                          <button class="icon-btn edit-guest-btn" data-id="${g.id}" title="Edit">${I.edit}</button>
-                          ${isAdmin() ? `<button class="icon-btn danger delete-guest-btn" data-id="${g.id}" title="Delete">${I.trash}</button>` : ""}
-                        </td>
-                      </tr>`
-                    )
-                    .join("")
-                : `<tr><td colspan="7"><div class="empty-state">No guests logged yet.</div></td></tr>`
-            }
-          </tbody>
-        </table>
+      <div class="g-list">
+        ${list.length ? list.map((g) => uiState.editingGuestId === g.id ? guestFormHtml(g, appById.get(g.applicant_id)) : `
+          <article class="g-card gst-${slug(guestStatus(g))} ${g.vip ? "is-vip" : ""}">
+            <header class="g-head">
+              <div class="g-title"><b>${escapeHtml(g.guest_name)}</b>${g.vip ? `<span class="guest-vip">${I.star}VIP</span>` : ""}<span class="guest-pill gs-${slug(guestStatus(g))}">${escapeHtml(guestStatus(g))}</span></div>
+              <div class="td-actions">
+                <button class="icon-btn edit-guest-btn" data-id="${g.id}" title="Edit">${I.edit}</button>
+                ${isAdmin() ? `<button class="icon-btn danger delete-guest-btn" data-id="${g.id}" title="Delete">${I.trash}</button>` : ""}
+              </div>
+            </header>
+            ${guestJourneyHtml(g, histOf(g.id))}
+            <dl class="g-facts">
+              <div><dt>Order Date</dt><dd>${g.purchase_date ? fmtDate(g.purchase_date) : "—"}</dd></div>
+              <div><dt>Delivery</dt><dd>${g.delivery_date ? fmtMonth(g.delivery_date) : "—"}</dd></div>
+              <div><dt>Variant</dt><dd>${escapeHtml(g.variant || "GR GT")}</dd></div>
+              <div class="g-wide"><dt>Profile</dt><dd class="g-prof">${guestProfileHtml(g, appById.get(g.applicant_id))}</dd></div>
+              <div class="g-wide"><dt>Build</dt><dd>${guestBuildHtml(g)}</dd></div>
+              ${g.notes ? `<div class="g-wide"><dt>Notes</dt><dd class="g-notes">${escapeHtml(g.notes)}</dd></div>` : ""}
+            </dl>
+            <footer class="muted g-foot">Added by ${escapeHtml(g.created_by_name || "—")} · ${fmtDate(g.created_at)}</footer>
+          </article>`).join("") : `<div class="empty-state">No guests nominated yet.</div>`}
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
-function guestFormHtml(existing) {
+function guestState(prefix, existing, app) {
+  if (!guestEdit[prefix]) guestEdit[prefix] = {
+    spec_tags: (Array.isArray(existing?.spec_tags) ? existing.spec_tags : []).map((t) => ({ label: t.label })),
+    launch_edition: !!existing?.launch_edition,
+    applicant: existing?.applicant_id ? app || { id: existing.applicant_id, name: "Linked profile" } : null,
+    pdf_path: existing?.pdf_path || null, pdf_name: existing?.pdf_name || null, newPdf: null,
+    vip: !!existing?.vip,
+  };
+  return guestEdit[prefix];
+}
+
+function guestBuildPicker(st) {
+  const on = (l) => st.spec_tags.some((t) => t.label === l);
+  return `<div class="gb-grid ${st.launch_edition ? "locked" : ""}">${SPEC_OPTIONS.map(([cat, subs]) => `
+    <div class="gb-cat" data-cat="${escapeAttr(cat)}"><div class="gb-cat-h">${escapeHtml(cat)}${cat === "Accessories" ? ` <span class="muted">(any)</span>` : ""}</div>
+      ${subs.map(([sub, opts]) => `<div class="gb-sub">${sub ? `<span class="gb-sub-n">${escapeHtml(sub)}</span>` : ""}${opts.map((o) => { const l = specLabel(cat, sub, o); return `<button type="button" class="gb-opt ${on(l) ? "on" : ""}" data-spec="${escapeAttr(l)}">${escapeHtml(o)}</button>`; }).join("")}</div>`).join("")}
+    </div>`).join("")}</div>`;
+}
+
+function guestFormHtml(existing, app) {
   const p = existing ? `ge-${existing.id}-` : "g-";
+  const st = guestState(p, existing, app);
+  const cur = String(existing?.delivery_date || "");
+  const mm = dv(`${p}dmonth`, cur.slice(5, 7)), yy = dv(`${p}dyear`, cur.slice(0, 4));
+  const y0 = new Date().getFullYear() - 1;
+  const years = [...new Set([...Array.from({ length: 6 }, (_, i) => String(y0 + i)), ...(yy ? [yy] : [])])].sort();
+  const status = dv(`${p}status`, existing ? guestStatus(existing) : "Submitted");
   return `
-    <form class="form-card guest-form" data-edit-id="${existing ? existing.id : ""}" data-prefix="${p}">
-      <div class="form-grid">
+    <form class="form-card guest-form g-form" data-edit-id="${existing ? existing.id : ""}" data-prefix="${p}">
+      <div class="g-sec">Guest</div>
+      <div class="form-grid g-grid-3">
         <div class="form-field"><label>Guest Name *</label><input id="${p}name" data-draft required value="${escapeAttr(dv(`${p}name`, existing?.guest_name))}" /></div>
-        <div class="form-field"><label>Vehicle Purchased</label><input id="${p}vehicle" data-draft placeholder="e.g. GR GT" value="${escapeAttr(dv(`${p}vehicle`, existing?.vehicle_purchased))}" /></div>
-        <div class="form-field"><label>Status</label>
-          <select id="${p}status" data-draft>${GUEST_STATUSES.map((st) => `<option ${dv(`${p}status`, existing?.guest_status || "Allocated") === st ? "selected" : ""}>${st}</option>`).join("")}</select>
-        </div>
-        <div class="form-field"><label>Purchase / Order Date</label><input id="${p}date" data-draft type="date" value="${escapeAttr(dv(`${p}date`, existing?.purchase_date))}" /></div>
-        <div class="form-field"><label>Delivery Month</label>${(() => {
-          const cur = String(existing?.delivery_date || "");
-          const mm = dv(`${p}dmonth`, cur.slice(5, 7)), yy = dv(`${p}dyear`, cur.slice(0, 4));
-          const y0 = new Date().getFullYear() - 1;
-          const years = [...new Set([...Array.from({ length: 5 }, (_, i) => String(y0 + i)), ...(yy ? [yy] : [])])].sort();
-          return `<div class="form-field-split month-pick"><select id="${p}dmonth" data-draft><option value="">Month</option>${["01","02","03","04","05","06","07","08","09","10","11","12"].map((v, i) => `<option value="${v}" ${mm === v ? "selected" : ""}>${new Date(2000, i, 1).toLocaleDateString("en-US", { month: "short" })}</option>`).join("")}</select><select id="${p}dyear" data-draft><option value="">Year</option>${years.map((v) => `<option ${yy === v ? "selected" : ""}>${v}</option>`).join("")}</select></div>`;
-        })()}</div>
-        <div class="form-field"><label>Notes</label><input id="${p}notes" data-draft value="${escapeAttr(dv(`${p}notes`, existing?.notes))}" /></div>
+        <div class="form-field"><label>Status</label><select id="${p}status" data-draft>${GUEST_STATUSES.map((x) => `<option ${status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+        <div class="form-field"><label>VIP</label><button type="button" class="g-vip-tgl ${st.vip ? "on" : ""}" data-gvip>${I.star}<span>${st.vip ? "VIP guest" : "Not VIP"}</span></button></div>
+        <div class="form-field"><label>Order Date</label><input id="${p}date" data-draft type="date" value="${escapeAttr(dv(`${p}date`, existing?.purchase_date))}" /></div>
+        <div class="form-field"><label>Delivery Month</label><div class="form-field-split month-pick"><select id="${p}dmonth" data-draft><option value="">Month</option>${["01","02","03","04","05","06","07","08","09","10","11","12"].map((v, i) => `<option value="${v}" ${mm === v ? "selected" : ""}>${new Date(2000, i, 1).toLocaleDateString("en-US", { month: "short" })}</option>`).join("")}</select><select id="${p}dyear" data-draft><option value="">Year</option>${years.map((v) => `<option ${yy === v ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
+        <div class="form-field g-disabled" title="Future variants will be added here once they're public"><label>Variant <span class="muted">(coming later)</span></label><select disabled>${GUEST_VARIANTS.map((v) => `<option>${v}</option>`).join("")}</select></div>
       </div>
+
+      <div class="g-sec">Profile</div>
+      <div class="g-profile">
+        <div class="form-field"><label>Applicant Profile <span class="muted">(links the PDF straight from the Profiles tool)</span></label>
+          ${st.applicant ? `<div class="g-linked">${I.link}<b>${escapeHtml(st.applicant.name)}</b>${st.applicant.city || st.applicant.state ? `<span class="muted">${escapeHtml([st.applicant.city, st.applicant.state].filter(Boolean).join(", "))}</span>` : ""}<a href="../profiles/#/p/${st.applicant.id}/outputs" target="_blank" rel="noopener" class="btn btn-sm">Open PDF</a><button type="button" class="btn btn-sm" data-gunlink>Unlink</button></div>`
+            : `<div class="g-search"><input type="text" id="${p}appq" placeholder="Search Applicant Profiles by name" autocomplete="off" /><div class="g-results" id="${p}appres"></div></div>`}
+        </div>
+        <div class="form-field"><label>Or upload a PDF <span class="muted">(backup if the link isn't available)</span></label>
+          <div class="g-upload">${st.newPdf ? `<span class="g-file">${I.upload}${escapeHtml(st.newPdf.name)} <span class="muted">(uploads on save)</span></span><button type="button" class="btn btn-sm" data-gpdf-clear>Remove</button>`
+            : st.pdf_path ? `<span class="g-file">${I.download}${escapeHtml(st.pdf_name || "Uploaded PDF")}</span><button type="button" class="btn btn-sm" data-gpdf-clear>Remove</button>`
+            : `<label class="btn btn-sm g-pick">${I.upload}Choose PDF<input type="file" accept="application/pdf,.pdf" data-gpdf hidden /></label>`}</div>
+        </div>
+      </div>
+
+      <div class="g-sec g-sec-row">Build <span class="muted">One choice per category. Accessories can have several.</span>
+        <span class="g-sec-actions">${st.applicant?.spec_tags ? `<button type="button" class="btn btn-sm" data-gcopy>Copy from profile</button>` : ""}<label class="g-le ${st.launch_edition ? "on" : ""}"><input type="checkbox" data-gle ${st.launch_edition ? "checked" : ""} hidden /><span class="g-le-box">${I.check}</span>Launch Edition</label></span></div>
+      ${st.launch_edition ? `<p class="muted g-le-note">Launch Edition is spec locked. Anything picked below is kept in case it's turned off.</p>` : ""}
+      ${guestBuildPicker(st)}
+
+      <div class="g-sec">Notes</div>
+      <div class="form-field"><textarea id="${p}notes" data-draft rows="3">${escapeHtml(dv(`${p}notes`, existing?.notes))}</textarea></div>
       <div class="composer-actions">
         <button type="button" class="btn cancel-guest-btn">Cancel</button>
         <button type="submit" class="btn btn-primary">${existing ? "Save changes" : "Add Guest"}</button>
@@ -3529,19 +3608,103 @@ function guestFormHtml(existing) {
     </form>`;
 }
 
-function wireGuestsTab(meister) {
+// copy a profile's spec considerations into a build: one pick per category (their starred choice wins), every accessory
+function buildFromProfile(app) {
+  const tags = (Array.isArray(app?.spec_tags) ? app.spec_tags : []).filter((t) => SPEC_LABELS.includes(t.label));
+  const out = [];
+  SPEC_OPTIONS.forEach(([cat]) => {
+    const mine = tags.filter((t) => t.label.startsWith(cat + ": "));
+    if (!mine.length) return;
+    if (cat === "Accessories") mine.forEach((t) => out.push({ label: t.label }));
+    else out.push({ label: (mine.find((t) => t.priority) || mine[0]).label });
+  });
+  return out;
+}
+
+function wireGuestsTab(meister, guests = [], apps = []) {
   document.getElementById("add-guest-btn")?.addEventListener("click", () => {
+    delete guestEdit["g-"]; clearDrafts("g-");
     uiState.guestFormOpen = true;
     uiState.editingGuestId = null;
     uiState.focusId = "g-name";
     render();
   });
 
-  document.querySelectorAll(".guest-form").forEach((form) => {
+  document.querySelectorAll(".g-pdf-dl").forEach((b) => b.addEventListener("click", async () => {
+    const g = guests.find((x) => x.id === b.dataset.id);
+    try { const a = document.createElement("a"); a.href = await guestPdfUrl(g, true); a.download = g.pdf_name || "profile.pdf"; document.body.appendChild(a); a.click(); a.remove(); }
+    catch (err) { toast("Couldn't download: " + err.message, "error"); }
+  }));
+
+  const appById = new Map(apps.map((a) => [a.id, a]));
+  document.querySelectorAll(".guest-form").forEach(wireGuestForm);
+
+  function wireGuestForm(form) {
     const prefix = form.dataset.prefix;
     const editId = form.dataset.editId;
+    const st = guestEdit[prefix];
+    const existing = editId ? guests.find((x) => x.id === editId) : null;
+    // redraw just this form (a full render would reload the whole Meister)
+    const redraw = () => {
+      captureDrafts();
+      const y = window.scrollY;
+      const tmp = document.createElement("div");
+      tmp.innerHTML = guestFormHtml(existing, appById.get(existing?.applicant_id));
+      const next = tmp.firstElementChild;
+      form.replaceWith(next);
+      wireGuestForm(next);
+      window.scrollTo(0, y);
+    };
+
+    form.querySelector("[data-gvip]").addEventListener("click", () => { st.vip = !st.vip; redraw(); });
+    form.querySelector("[data-gle]").addEventListener("change", (e) => { st.launch_edition = e.target.checked; redraw(); });
+    form.querySelector("[data-gcopy]")?.addEventListener("click", () => { st.spec_tags = buildFromProfile(st.applicant); toast("Build copied from the profile"); redraw(); });
+    form.querySelectorAll(".gb-opt").forEach((b) => b.addEventListener("click", () => {
+      const l = b.dataset.spec, cat = b.closest(".gb-cat").dataset.cat, at = st.spec_tags.findIndex((t) => t.label === l);
+      if (at >= 0) st.spec_tags.splice(at, 1);
+      else {
+        if (cat !== "Accessories") st.spec_tags = st.spec_tags.filter((t) => !t.label.startsWith(cat + ": "));
+        st.spec_tags.push({ label: l });
+        st.spec_tags.sort((x, y) => (SPEC_LABELS.indexOf(x.label) + 1 || 999) - (SPEC_LABELS.indexOf(y.label) + 1 || 999));
+      }
+      redraw();
+    }));
+    form.querySelector("[data-gunlink]")?.addEventListener("click", () => { st.applicant = null; redraw(); });
+    form.querySelector("[data-gpdf]")?.addEventListener("change", (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      if (f.size > 25 * 1024 * 1024) return toast("That file is over 25MB", "error");
+      st.newPdf = f; redraw();
+    });
+    form.querySelector("[data-gpdf-clear]")?.addEventListener("click", () => { if (st.newPdf) st.newPdf = null; else { st.removePdf = st.pdf_path; st.pdf_path = null; st.pdf_name = null; } redraw(); });
+
+    // search Applicant Profiles to link
+    const q = form.querySelector(`#${CSS.escape(prefix)}appq`), res = form.querySelector(`#${CSS.escape(prefix)}appres`);
+    if (q) {
+      let timer, seqNo = 0;
+      const run = async () => {
+        const my = ++seqNo, term = q.value.trim();
+        if (!term) { res.innerHTML = ""; return; }
+        let rows = [];
+        try { rows = await searchApplicants(term); } catch { rows = []; }
+        if (my !== seqNo) return;
+        res.innerHTML = rows.length ? rows.map((a) => `<button type="button" class="g-res" data-aid="${a.id}"><b>${escapeHtml(a.name || "Unnamed")}</b>${a.vip ? ` <span class="guest-vip">${I.star}VIP</span>` : ""}<span class="muted">${escapeHtml([a.city, a.state].filter(Boolean).join(", "))}${a.interview_date ? ` · interviewed ${fmtDate(a.interview_date)}` : ""}</span></button>`).join("") : `<div class="muted g-none">No profiles match "${escapeHtml(term)}"</div>`;
+        res.querySelectorAll("[data-aid]").forEach((b) => b.addEventListener("click", () => {
+          const a = rows.find((x) => x.id === b.dataset.aid);
+          st.applicant = a;
+          if (!st.spec_tags.length && !st.launch_edition) { st.spec_tags = buildFromProfile(a); st.launch_edition = !!a.launch_edition; }
+          if (a.vip) st.vip = true;
+          const nameEl = document.getElementById(`${prefix}name`);
+          if (nameEl && !nameEl.value.trim()) nameEl.value = a.name || "";
+          redraw();
+        }));
+      };
+      q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(run, 200); });
+      // suggest by the guest's name when the box is first focused
+      q.addEventListener("focus", () => { if (!q.value) { const n = document.getElementById(`${prefix}name`)?.value.trim(); if (n) { q.value = n; run(); } } }, { once: true });
+    }
+
     form.querySelector(".cancel-guest-btn").addEventListener("click", () => {
-      clearDrafts(prefix);
+      clearDrafts(prefix); delete guestEdit[prefix];
       if (editId) uiState.editingGuestId = null;
       else uiState.guestFormOpen = false;
       render();
@@ -3549,32 +3712,38 @@ function wireGuestsTab(meister) {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const g = (s) => document.getElementById(`${prefix}${s}`).value.trim();
-      const fields = { guest_name: g("name"), vehicle_purchased: g("vehicle"), guest_status: g("status") || "Allocated", purchase_date: g("date") || null, delivery_date: g("dmonth") && g("dyear") ? `${g("dyear")}-${g("dmonth")}-01` : null, notes: g("notes") };
-      if (fields.guest_status === "Delivered" && !fields.delivery_date) fields.delivery_date = fields.purchase_date || new Date().toISOString().slice(0, 10);
+      const fields = {
+        guest_name: g("name"), guest_status: g("status") || "Submitted", vip: st.vip,
+        purchase_date: g("date") || null, delivery_date: g("dmonth") && g("dyear") ? `${g("dyear")}-${g("dmonth")}-01` : null,
+        notes: g("notes"), spec_tags: st.spec_tags, launch_edition: st.launch_edition,
+        applicant_id: st.applicant?.id || null, pdf_path: st.pdf_path, pdf_name: st.pdf_name,
+      };
       if (!fields.guest_name) return;
       const btn = form.querySelector("button[type=submit]");
       btn.disabled = true;
       try {
-        if (editId) {
-          await updateGuest(editId, fields);
-          uiState.editingGuestId = null;
-          toast("Guest updated");
-        } else {
-          await addGuest(meister.id, fields, currentProfile.full_name, currentProfile.id);
-          uiState.guestFormOpen = false;
-          toast("Guest added");
-        }
-        clearDrafts(prefix);
+        let saved;
+        if (editId) saved = await updateGuest(editId, fields);
+        else saved = await addGuest(meister.id, fields, currentProfile.full_name, currentProfile.id);
+        if (st.newPdf) {
+          const up = await uploadGuestPdf(saved.id, st.newPdf);
+          await updateGuest(saved.id, up);
+          if (st.removePdf || (editId && st.pdf_path)) await removeGuestPdf(st.removePdf || st.pdf_path).catch(() => {});
+        } else if (st.removePdf) await removeGuestPdf(st.removePdf).catch(() => {});
+        toast(editId ? "Guest updated" : "Guest added");
+        if (editId) uiState.editingGuestId = null; else uiState.guestFormOpen = false;
+        clearDrafts(prefix); delete guestEdit[prefix];
         render();
       } catch (err) {
-        toast("Could not save guest: " + err.message, "error");
+        toast("Could not save guest: " + (/column|schema cache/i.test(err.message) ? "run the NOMINATED GUESTS SQL in Supabase first." : err.message), "error");
         btn.disabled = false;
       }
     });
-  });
+  }
 
   document.querySelectorAll(".edit-guest-btn").forEach((btn) =>
     btn.addEventListener("click", () => {
+      delete guestEdit[`ge-${btn.dataset.id}-`]; clearDrafts(`ge-${btn.dataset.id}-`);
       uiState.editingGuestId = btn.dataset.id;
       uiState.guestFormOpen = false;
       render();

@@ -98,10 +98,14 @@ export async function exportToExcel(userId) {
   const guestRows = guests.map((g) => ({
     Meister: g.meisters ? g.meisters.name : "",
     "Guest Name": g.guest_name,
-    "Vehicle Purchased": g.vehicle_purchased || "",
-    Status: g.guest_status || "",
-    "Purchase Date": toDate(g.purchase_date),
-    "Delivery Date": toDate(g.delivery_date),
+    VIP: g.vip ? "Yes" : "",
+    Status: g.guest_status === "Ordered" ? "Allocated" : g.guest_status || "",
+    Variant: g.variant || "GR GT",
+    "Order Date": toDate(g.purchase_date),
+    "Delivery Month": g.delivery_date ? String(g.delivery_date).slice(0, 7) : "",
+    Build: g.launch_edition ? "Launch Edition" : (Array.isArray(g.spec_tags) ? g.spec_tags.map((t) => t.label).join("; ") : ""),
+    "Linked Profile": g.applicant_id ? "Yes" : "",
+    "Uploaded PDF": g.pdf_name || "",
     Notes: g.notes || "",
     "Logged By": g.created_by_name || "",
   }));
