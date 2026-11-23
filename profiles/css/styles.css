@@ -737,3 +737,7 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .inq-vip-more input[type=text], .inq-vip-more select, .inq-vip-more textarea { background: var(--panel); }
 .inq-gih { font-size: 10.5px; padding: 1px 7px; margin-left: 6px; color: #6fa3ff; border-color: rgba(111,163,255,.5); vertical-align: 2px; }
 @media (max-width: 760px) { .inq-details, .inq-vip-more { grid-template-columns: 1fr; } }
+.pill-method.m-referral { color: var(--red); border-color: rgba(224,38,63,.55); }
+.pill-method.m-phone { color: var(--green); border-color: rgba(61,220,132,.5); }
+.pill-method.m-email { color: var(--blue); border-color: rgba(77,139,255,.55); }
+.pill-method.m-other { color: var(--grey); border-color: var(--border-strong); }
