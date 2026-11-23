@@ -58,10 +58,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611231456";
-import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611231456";
-import { exportToExcel } from "./export.js?v=202611231456";
-import { wireImport } from "./import-export.js?v=202611231456";
+} from "./api.js?v=202611231502";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611231502";
+import { exportToExcel } from "./export.js?v=202611231502";
+import { wireImport } from "./import-export.js?v=202611231502";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1544,7 +1544,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611231456");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611231502");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;

@@ -6,14 +6,14 @@ import {
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611231456";
+} from "./api.js?v=202611231502";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611231456";
-import { SUPABASE_URL } from "./config.js?v=202611231456";
+} from "./outputs.js?v=202611231502";
+import { SUPABASE_URL } from "./config.js?v=202611231502";
 
 const app = document.getElementById("app");
 
@@ -2331,7 +2331,7 @@ async function renderInquiryForm(route, seq) {
           <details class="inq-multi" id="i-gih"><summary><span id="i-gih-sum">${gihText(v.gih_levels) || `<span class="muted">Select</span>`}</span></summary>
             <div class="inq-multi-pop">${[1, 2, 3].map((n) => `<label><input type="checkbox" value="${n}" ${(v.gih_levels || []).includes(n) ? "checked" : ""}><span class="tc-box">${I.check}</span>Level ${n}</label>`).join("")}</div>
           </details></div>
-        <div class="form-field"><label>Purchase timeframe</label><select id="i-timeframe"><option value=""></option>${[...new Set([...(v.purchase_timeframe ? [v.purchase_timeframe] : []), ...quarterOptions()])].sort((a, b) => (quarterKey(a) ?? 0) - (quarterKey(b) ?? 0)).map((q) => `<option ${v.purchase_timeframe === q ? "selected" : ""}>${q}</option>`).join("")}</select></div>
+        <div class="form-field"><label>Purchase timeframe</label><select id="i-timeframe"><option value=""></option><option ${v.purchase_timeframe === "Undecided" ? "selected" : ""}>Undecided</option>${[...new Set([...(v.purchase_timeframe && v.purchase_timeframe !== "Undecided" ? [v.purchase_timeframe] : []), ...quarterOptions()])].sort((a, b) => (quarterKey(a) ?? 0) - (quarterKey(b) ?? 0)).map((q) => `<option ${v.purchase_timeframe === q ? "selected" : ""}>${q}</option>`).join("")}</select></div>
         <div class="form-field"><label>Existing Toyota/Lexus customer</label>
           <label class="inq-check ${v.existing_customer ? "on" : ""}" data-tgl="i-existing"><input type="checkbox" id="i-existing" ${v.existing_customer ? "checked" : ""}><span class="tc-box">${I.check}</span><span>Yes, existing customer</span></label></div>
       </div>
@@ -2449,7 +2449,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231456");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231502");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2660,7 +2660,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231456");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231502");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
