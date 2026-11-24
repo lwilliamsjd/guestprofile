@@ -84,7 +84,7 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
       ${vipOnly ? kpi(list.filter((q) => q.ag_approved).length, "AG Approved") : `<div class="k vipk"><b>${vipTotal}</b><span>VIP</span></div>`}
       ${mixed && !vipOnly ? `<div class="k inqk"><b>${inqTotal}</b><span>Inquiries</span></div><div class="k webk"><b>${webTotal}</b><span>Level 3 Data</span></div>` : `${kpi(open, "Open")}${kpi(moved, "Moved to profiles")}`}
       ${kpi(topState ? esc(topState.st) : "—", `Top state${topState ? ` · ${topState.n}` : ""}`)}
-      ${kpi(topRegion && topRegion.n ? esc(topRegion.r) : "—", `Top region${topRegion && topRegion.n ? ` · ${pct(topRegion.share)}` : ""}`)}
+      ${kpi(topRegion && topRegion.n ? esc(topRegion.r) : "—", `Top area${topRegion && topRegion.n ? ` · ${pct(topRegion.share)}` : ""}`)}
     </div>
     <div class="maprow">
       <div class="mapbox"><svg id="map" viewBox="0 0 975 610" preserveAspectRatio="xMidYMin meet"></svg>
@@ -104,9 +104,9 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
   const page2 = `
   <section class="page">
     <header class="hd small"><div><div class="eyebrow">${EYEBROW} · BREAKDOWN BY AREA</div></div><div class="meta">${esc(generated)}</div></header>
-    <h2>By region</h2>
+    <h2>By area</h2>
     <table class="t">
-      <thead><tr><th>Region</th><th>Inquiries</th><th>Share</th><th>Open</th><th>Moved to profiles</th><th>Top state</th></tr></thead>
+      <thead><tr><th>Area</th><th>Inquiries</th><th>Share</th><th>Open</th><th>Moved to profiles</th><th>Top state</th></tr></thead>
       <tbody>${byRegion.map((x) => `<tr><td><b>${x.r}</b></td><td><b>${x.n}</b></td><td><span class="bar"><i style="width:${(x.n / maxRegion) * 100}%"></i></span>${pct(x.share)}</td><td>${x.open}</td><td>${x.moved}</td><td>${esc(x.top)}</td></tr>`).join("")}
       <tr class="tot"><td>All</td><td>${total}</td><td>100%</td><td>${open}</td><td>${moved}</td><td></td></tr></tbody>
     </table>
@@ -114,7 +114,7 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
       <div>
         <h2>By state</h2>
         <table class="t compact">
-          <thead><tr><th>State</th><th>Region</th><th>Inquiries</th><th>Open</th><th>Share</th></tr></thead>
+          <thead><tr><th>State</th><th>Area</th><th>Inquiries</th><th>Open</th><th>Share</th></tr></thead>
           <tbody>${byState.slice(0, 16).map((s) => `<tr><td><b>${esc(s.name)}</b></td><td class="mut">${esc(s.region)}</td><td><b>${s.n}</b></td><td>${s.open}</td><td><span class="bar sm"><i style="width:${(s.n / maxState) * 100}%"></i></span>${pct(total ? s.n / total : null)}</td></tr>`).join("") || `<tr><td colspan="5" class="mut">No locations yet</td></tr>`}</tbody>
         </table>
         ${byState.length > 16 ? `<p class="mut small">${byState.length - 16} more states not shown.</p>` : ""}
@@ -123,16 +123,11 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
         <h2>Top cities</h2>
         <table class="t compact">
           <thead><tr><th>City</th><th>Inquiries</th></tr></thead>
-          <tbody>${cityList.slice(0, 8).map((c) => `<tr><td><b>${esc(c.city)}, ${esc(c.state)}</b></td><td><b>${c.guests}</b>${c.vip && !vipOnly ? ` <span class="vipt">(${c.vip} VIP)</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="2" class="mut">No ZIP codes yet</td></tr>`}</tbody>
-        </table>
-        <h2>Closest participating dealer</h2>
-        <table class="t compact">
-          <thead><tr><th>Dealer</th><th>Inquiries nearby</th></tr></thead>
-          <tbody>${dealers.slice(0, 8).map((x) => `<tr><td><b>${esc(x.name)}</b></td><td><b>${x.n}</b></td></tr>`).join("") || `<tr><td colspan="2" class="mut">No dealers set yet</td></tr>`}</tbody>
+          <tbody>${cityList.slice(0, 14).map((c) => `<tr><td><b>${esc(c.city)}, ${esc(c.state)}</b></td><td><b>${c.guests}</b>${c.vip && !vipOnly ? ` <span class="vipt">(${c.vip} VIP)</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="2" class="mut">No ZIP codes yet</td></tr>`}</tbody>
         </table>
       </div>
     </div>
-    <footer class="ft"><span>Regions follow the US Census (South, Northeast, West, Midwest). Closest dealer is the one saved on each inquiry.</span><span>Page 2 / 2</span></footer>
+    <footer class="ft"><span>Areas follow the US Census (South, Northeast, West, Midwest). Counts only, no names or contact details.</span><span>Page 2 / 2</span></footer>
   </section>`;
 
   // Page 2 when both sources are included: Inquiries and Level 3 Data side by side, small combined totals at the bottom.
@@ -153,22 +148,20 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
   const col = (title, cls, lst, extra) => {
     const b = breakdown(lst);
     const mx = (arr) => Math.max(1, ...arr.map((x) => x.n));
-    const reg = b.reg, st = b.st.slice(0, ROWS.st), ct = b.cities.slice(0, ROWS.city), dl = b.dl.slice(0, ROWS.dl);
+    const reg = b.reg, st = b.st.slice(0, ROWS.st), ct = b.cities.slice(0, ROWS.city);
     return `<div class="half ${cls}">
       <div class="half-hd"><h2>${title}</h2><b>${b.n}</b></div>
       <div class="half-sub">${extra || `${b.open} open · ${b.moved} moved to profiles${b.vip ? ` · <i class="vipt">${b.vip} VIP</i>` : ""}`}</div>
-      <table class="t g">${COLS}<thead><tr><th>By region</th><th class="num">#</th><th colspan="2" class="pct">Share</th></tr></thead>
+      <table class="t g">${COLS}<thead><tr><th>By area</th><th class="num">#</th><th colspan="2" class="pct">Share</th></tr></thead>
         <tbody>${reg.map((x) => line(`<b>${x.r}</b>`, x.n, mx(reg), b.n)).join("")}</tbody></table>
       <h3>Top states</h3>
       <table class="t g">${COLS}<tbody>${st.map((x) => line(`<b>${esc(x.name)}</b> <span class="mut">${esc(x.region)}</span>`, x.n, mx(st), b.n)).join("") || empty("No locations yet")}</tbody></table>
       <h3>Top cities</h3>
       <table class="t g">${COLS}<tbody>${ct.map((c) => line(`<b>${esc(c.city)}, ${esc(c.state)}</b>${c.vip && !cls.includes("vip") ? ` <span class="vipt">(${c.vip} VIP)</span>` : ""}`, c.n, mx(ct), b.n)).join("") || empty("No ZIP codes yet")}</tbody></table>
-      <h3>Closest participating dealer</h3>
-      <table class="t g">${COLS}<tbody>${dl.map((x) => line(`<b>${esc(x.name)}</b>`, x.n, mx(dl), b.n)).join("") || empty("No dealers set yet")}</tbody></table>
     </div>`;
   };
   const vipList = list.filter((q) => q.vip), inqList = list.filter((q) => !isWeb(q)), webList = list.filter(isWeb);
-  const ROWS = vipList.length ? { st: 6, city: 4, dl: 4 } : { st: 7, city: 6, dl: 5 };
+  const ROWS = vipList.length ? { st: 8, city: 7 } : { st: 9, city: 8 };
   const totRow = (label, cls, lst) => {
     const b = breakdown(lst);
     const reg = (r) => b.reg.find((x) => x.r === r)?.n || 0;
@@ -194,7 +187,7 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
         </tbody>
       </table>
     </div>
-    <footer class="ft"><span>Regions follow the US Census (South, Northeast, West, Midwest). VIPs are counted in their own list too. Closest dealer is the one saved on each entry.</span><span>Page 2 / 2</span></footer>
+    <footer class="ft"><span>Areas follow the US Census (South, Northeast, West, Midwest). VIPs are counted in their own list too.</span><span>Page 2 / 2</span></footer>
   </section>`;
 
   const css = `

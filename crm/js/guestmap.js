@@ -2,8 +2,8 @@
 // built from a number per Meister (m.guest_estimate) and each Meister's ZIP. No guest names are used.
 // CRM Analytics passes the guests tracked on each Meister's Guests tab; opts.text relabels the report.
 // The original Guest count version is frozen in guestmap-legacy.js.
-import { ZIP5 } from "./zip5.js?v=202611241551";
-import { ZIP3 } from "./zip3.js?v=202611241551";
+import { ZIP5 } from "./zip5.js?v=202611241555";
+import { ZIP3 } from "./zip3.js?v=202611241555";
 
 export const REGIONS = {
   Northeast: "CT ME MA NH RI VT NJ NY PA",
@@ -161,9 +161,9 @@ export function buildGuestMapReport(meisters, opts = {}) {
   const page2 = `
   <section class="page">
     <header class="hd small"><div><div class="eyebrow">${esc(T.eyebrow)} · BREAKDOWN BY AREA</div></div><div class="meta">${esc(opts.filterLabel || "All concierges")} · ${esc(generated)}</div></header>
-    <h2>By region</h2>
+    <h2>By area</h2>
     <table class="t">
-      <thead><tr><th>Region</th><th>Meisters</th><th>${esc(T.withCountCol)}</th><th>Guests</th><th>Share</th><th>Average</th><th>Median</th><th>Highest</th><th>Top state</th></tr></thead>
+      <thead><tr><th>Area</th><th>Meisters</th><th>${esc(T.withCountCol)}</th><th>Guests</th><th>Share</th><th>Average</th><th>Median</th><th>Highest</th><th>Top state</th></tr></thead>
       <tbody>${byRegion.map((x) => `<tr><td><b>${x.r}</b></td><td>${x.meisters}</td><td>${x.reporting} <span class="mut">(${pct(x.coverage)})</span></td><td><b>${x.total}</b></td><td><span class="bar"><i style="width:${maxRegionShare ? ((x.share || 0) / maxRegionShare) * 100 : 0}%"></i></span>${pct(x.share)}</td><td>${r1(x.avg)}</td><td>${r1(x.median)}</td><td>${x.max ?? "—"}</td><td>${esc(x.topState)}</td></tr>`).join("")}
       <tr class="tot"><td>All</td><td>${nat.meisters}</td><td>${nat.reporting}</td><td>${nat.total}</td><td>100%</td><td>${r1(nat.avg)}</td><td>${r1(nat.median)}</td><td>${nat.max ?? "—"}</td><td></td></tr></tbody>
     </table>
@@ -171,15 +171,15 @@ export function buildGuestMapReport(meisters, opts = {}) {
       <div>
         <h2>By state</h2>
         <table class="t compact">
-          <thead><tr><th>State</th><th>Region</th><th>Meisters</th><th>Guests</th><th>Avg</th><th>Share</th></tr></thead>
+          <thead><tr><th>State</th><th>Area</th><th>Meisters</th><th>Guests</th><th>Avg</th><th>Share</th></tr></thead>
           <tbody>${byState.filter((s) => s.reporting).slice(0, 16).map((s) => `<tr><td><b>${esc(s.name)}</b></td><td class="mut">${esc(s.region)}</td><td>${s.reporting}<span class="mut"> / ${s.meisters}</span></td><td><b>${s.total}</b></td><td>${r1(s.avg)}</td><td><span class="bar sm"><i style="width:${(s.total / maxState) * 100}%"></i></span>${pct(nat.total ? s.total / nat.total : null)}</td></tr>`).join("")}</tbody>
         </table>
         ${byState.filter((s) => s.reporting).length > 16 ? `<p class="mut small">${byState.filter((s) => s.reporting).length - 16} more states not shown.</p>` : ""}
       </div>
       <div>
-        <h2>Guests per Meister, by region</h2>
+        <h2>Guests per Meister, by area</h2>
         <table class="t compact grid">
-          <thead><tr><th>Region</th>${BUCKETS.map(([l]) => `<th>${l}</th>`).join("")}</tr></thead>
+          <thead><tr><th>Area</th>${BUCKETS.map(([l]) => `<th>${l}</th>`).join("")}</tr></thead>
           <tbody>${spread.map((x) => `<tr><td><b>${x.r}</b></td>${x.cells.map((c) => `<td><span class="cell" style="--a:${c ? 0.15 + 0.85 * (c / Math.max(1, ...spread.flatMap((y) => y.cells))) : 0}">${c || ""}</span></td>`).join("")}</tr>`).join("")}</tbody>
         </table>
         <p class="mut small">Number of Meisters in each range. Darker means more Meisters.</p>
@@ -190,7 +190,7 @@ export function buildGuestMapReport(meisters, opts = {}) {
         </table>
       </div>
     </div>
-    <footer class="ft"><span>Regions follow the US Census (South, Northeast, West, Midwest).</span><span>Page 2 / ${totalPages}</span></footer>
+    <footer class="ft"><span>Areas follow the US Census (South, Northeast, West, Midwest).</span><span>Page 2 / ${totalPages}</span></footer>
   </section>`;
 
 
