@@ -146,24 +146,29 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
     const dl = [...lst.reduce((mp, q) => { if (q.closest_dealer) { const k = q.closest_dealer.trim(); mp.set(k, (mp.get(k) || 0) + 1); } return mp; }, new Map()).entries()].map(([name, c]) => ({ name, n: c })).sort((p, q) => q.n - p.n);
     return { n, st, reg, cities: [...cty.values()].sort((p, q) => q.n - p.n), dl, open: lst.filter((q) => q.status !== "Moved").length, moved: lst.filter((q) => q.status === "Moved").length, vip: lst.filter((q) => q.vip).length };
   };
+  // Every table in a column shares one grid (name | count | bar | share) so the numbers and bars line up.
+  const COLS = `<colgroup><col><col class="c-n"><col class="c-bar"><col class="c-pct"></colgroup>`;
+  const line = (label, n, max, total) => `<tr><td>${label}</td><td class="num"><b>${n}</b></td><td class="barc"><span class="bar"><i style="width:${max ? (n / max) * 100 : 0}%"></i></span></td><td class="pct">${pct(total ? n / total : null)}</td></tr>`;
+  const empty = (txt) => `<tr><td colspan="4" class="mut">${txt}</td></tr>`;
   const col = (title, cls, lst, extra) => {
-    const b = breakdown(lst), mr = Math.max(1, ...b.reg.map((x) => x.n)), ms = Math.max(1, ...b.st.map((x) => x.n));
+    const b = breakdown(lst);
+    const mx = (arr) => Math.max(1, ...arr.map((x) => x.n));
+    const reg = b.reg, st = b.st.slice(0, ROWS.st), ct = b.cities.slice(0, ROWS.city), dl = b.dl.slice(0, ROWS.dl);
     return `<div class="half ${cls}">
       <div class="half-hd"><h2>${title}</h2><b>${b.n}</b></div>
       <div class="half-sub">${extra || `${b.open} open · ${b.moved} moved to profiles${b.vip ? ` · <i class="vipt">${b.vip} VIP</i>` : ""}`}</div>
-      <h3>By region</h3>
-      <table class="t compact"><thead><tr><th>Region</th><th class="num">Guests</th><th>Share</th></tr></thead>
-        <tbody>${b.reg.map((x) => `<tr><td><b>${x.r}</b></td><td class="num"><b>${x.n}</b></td><td><span class="bar sm"><i style="width:${(x.n / mr) * 100}%"></i></span>${pct(x.share)}</td></tr>`).join("")}</tbody></table>
+      <table class="t g">${COLS}<thead><tr><th>By region</th><th class="num">#</th><th colspan="2" class="pct">Share</th></tr></thead>
+        <tbody>${reg.map((x) => line(`<b>${x.r}</b>`, x.n, mx(reg), b.n)).join("")}</tbody></table>
       <h3>Top states</h3>
-      <table class="t compact"><tbody>${b.st.slice(0, ROWS.st).map((x) => `<tr><td><b>${esc(x.name)}</b> <span class="mut">${esc(x.region)}</span></td><td class="num"><b>${x.n}</b></td><td><span class="bar sm"><i style="width:${(x.n / ms) * 100}%"></i></span>${pct(b.n ? x.n / b.n : null)}</td></tr>`).join("") || `<tr><td class="mut">No locations yet</td></tr>`}</tbody></table>
+      <table class="t g">${COLS}<tbody>${st.map((x) => line(`<b>${esc(x.name)}</b> <span class="mut">${esc(x.region)}</span>`, x.n, mx(st), b.n)).join("") || empty("No locations yet")}</tbody></table>
       <h3>Top cities</h3>
-      <table class="t compact"><tbody>${b.cities.slice(0, ROWS.city).map((c) => `<tr><td><b>${esc(c.city)}, ${esc(c.state)}</b>${c.vip && !cls.includes("vip") ? ` <span class="vipt">(${c.vip} VIP)</span>` : ""}</td><td class="num"><b>${c.n}</b></td></tr>`).join("") || `<tr><td class="mut">No ZIP codes yet</td></tr>`}</tbody></table>
+      <table class="t g">${COLS}<tbody>${ct.map((c) => line(`<b>${esc(c.city)}, ${esc(c.state)}</b>${c.vip && !cls.includes("vip") ? ` <span class="vipt">(${c.vip} VIP)</span>` : ""}`, c.n, mx(ct), b.n)).join("") || empty("No ZIP codes yet")}</tbody></table>
       <h3>Closest participating dealer</h3>
-      <table class="t compact"><tbody>${b.dl.slice(0, ROWS.dl).map((x) => `<tr><td><b>${esc(x.name)}</b></td><td class="num"><b>${x.n}</b></td></tr>`).join("") || `<tr><td class="mut">No dealers set yet</td></tr>`}</tbody></table>
+      <table class="t g">${COLS}<tbody>${dl.map((x) => line(`<b>${esc(x.name)}</b>`, x.n, mx(dl), b.n)).join("") || empty("No dealers set yet")}</tbody></table>
     </div>`;
   };
   const vipList = list.filter((q) => q.vip), inqList = list.filter((q) => !isWeb(q)), webList = list.filter(isWeb);
-  const ROWS = vipList.length ? { st: 5, city: 4, dl: 4 } : { st: 7, city: 6, dl: 5 };
+  const ROWS = vipList.length ? { st: 6, city: 4, dl: 4 } : { st: 7, city: 6, dl: 5 };
   const totRow = (label, cls, lst) => {
     const b = breakdown(lst);
     const reg = (r) => b.reg.find((x) => x.r === r)?.n || 0;
@@ -261,15 +266,22 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
 .half-hd h2 { margin: 0; font-size: 15px; letter-spacing: .06em; }
 .half-hd b { font-size: 22px; font-weight: 800; line-height: 1; }
 .half.h-inq .half-hd h2, .half.h-inq .half-hd b { color: #c0142e; } .half.h-web .half-hd h2, .half.h-web .half-hd b { color: #157a43; } .half.h-vip .half-hd h2, .half.h-vip .half-hd b { color: #a37a1f; }
-.half-sub { font-size: 10px; color: #5c5c64; margin: 4px 0 2px; min-height: 13px; }
+.half-sub { font-size: 10px; color: #5c5c64; margin: 4px 0 10px; min-height: 13px; }
 .half h3 { font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #8a8a92; margin: 9px 0 3px; }
 .half.h-web .bar i { background: #2fbf71; } .half.h-vip .bar i { background: #d4a94a; }
-.half .t { font-size: 11px; }
-.half .t th { padding-bottom: 4px; }
-.half .t.compact td { padding: 3px 6px 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
-.half .t td.num, .half .t th.num { text-align: right; padding-right: 10px; width: 1%; }
-.half .t .mut { font-size: 10px; }
-.half .bar.sm { width: 38px; }
+.half .t.g { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; }
+.half .t.g col.c-n { width: 36px; } .half .t.g col.c-bar { width: 52px; } .half .t.g col.c-pct { width: 34px; }
+.half .t.g th { padding: 0 0 4px; font-size: 9px; }
+.half .t.g thead th { font-size: 9px; color: #8a8a92; letter-spacing: .12em; } .half .t.g thead th.pct { text-align: right; }
+.half .t.g td { padding: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.half .t.g td:first-child { padding-right: 6px; }
+.half .t.g .num { text-align: right; padding-right: 8px; }
+.half .t.g td.barc { padding-right: 6px; }
+.half .t.g .bar { display: block; width: 100%; height: 7px; margin: 0; }
+.half .t.g td.pct { text-align: right; color: #5c5c64; font-variant-numeric: tabular-nums; }
+.half .t.g td.num b { font-variant-numeric: tabular-nums; }
+.half .t.g .mut { font-size: 10px; }
+.half h3 { margin-top: 10px; }
 .totals-box { margin-top: 12px; border: 2px solid #111; border-radius: 10px; overflow: hidden; }
 .totals-hd { background: #111; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; padding: 6px 12px; }
 .tt { width: 100%; border-collapse: collapse; font-size: 11.5px; }
