@@ -146,34 +146,50 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
     const dl = [...lst.reduce((mp, q) => { if (q.closest_dealer) { const k = q.closest_dealer.trim(); mp.set(k, (mp.get(k) || 0) + 1); } return mp; }, new Map()).entries()].map(([name, c]) => ({ name, n: c })).sort((p, q) => q.n - p.n);
     return { n, st, reg, cities: [...cty.values()].sort((p, q) => q.n - p.n), dl, open: lst.filter((q) => q.status !== "Moved").length, moved: lst.filter((q) => q.status === "Moved").length, vip: lst.filter((q) => q.vip).length };
   };
-  const half = (title, cls, lst) => {
+  const col = (title, cls, lst, extra) => {
     const b = breakdown(lst), mr = Math.max(1, ...b.reg.map((x) => x.n)), ms = Math.max(1, ...b.st.map((x) => x.n));
     return `<div class="half ${cls}">
-      <div class="half-hd"><h2>${title}</h2><span><b>${b.n}</b> total · ${b.open} open · ${b.moved} moved to profiles${b.vip ? ` · <i class="vipt">${b.vip} VIP</i>` : ""}</span></div>
+      <div class="half-hd"><h2>${title}</h2><b>${b.n}</b></div>
+      <div class="half-sub">${extra || `${b.open} open · ${b.moved} moved to profiles${b.vip ? ` · <i class="vipt">${b.vip} VIP</i>` : ""}`}</div>
       <h3>By region</h3>
-      <table class="t compact"><thead><tr><th>Region</th><th>Guests</th><th>Share</th><th>Open</th><th>Moved</th></tr></thead>
-        <tbody>${b.reg.map((x) => `<tr><td><b>${x.r}</b></td><td><b>${x.n}</b></td><td><span class="bar sm"><i style="width:${(x.n / mr) * 100}%"></i></span>${pct(x.share)}</td><td>${x.open}</td><td>${x.moved}</td></tr>`).join("")}</tbody></table>
+      <table class="t compact"><thead><tr><th>Region</th><th class="num">Guests</th><th>Share</th></tr></thead>
+        <tbody>${b.reg.map((x) => `<tr><td><b>${x.r}</b></td><td class="num"><b>${x.n}</b></td><td><span class="bar sm"><i style="width:${(x.n / mr) * 100}%"></i></span>${pct(x.share)}</td></tr>`).join("")}</tbody></table>
       <h3>Top states</h3>
-      <table class="t compact"><thead><tr><th>State</th><th>Region</th><th>Guests</th><th>Share</th></tr></thead>
-        <tbody>${b.st.slice(0, 8).map((x) => `<tr><td><b>${esc(x.name)}</b></td><td class="mut">${esc(x.region)}</td><td><b>${x.n}</b></td><td><span class="bar sm"><i style="width:${(x.n / ms) * 100}%"></i></span>${pct(b.n ? x.n / b.n : null)}</td></tr>`).join("") || `<tr><td colspan="4" class="mut">No locations yet</td></tr>`}</tbody></table>
-      <div class="pair">
-        <div><h3>Top cities</h3><table class="t compact"><tbody>${b.cities.slice(0, 7).map((c) => `<tr><td><b>${esc(c.city)}, ${esc(c.state)}</b>${c.vip ? ` <span class="vipt">(${c.vip} VIP)</span>` : ""}</td><td class="num"><b>${c.n}</b></td></tr>`).join("") || `<tr><td class="mut">No ZIP codes yet</td></tr>`}</tbody></table></div>
-        <div><h3>Closest dealer</h3><table class="t compact"><tbody>${b.dl.slice(0, 7).map((x) => `<tr><td><b>${esc(x.name)}</b></td><td class="num"><b>${x.n}</b></td></tr>`).join("") || `<tr><td class="mut">No dealers set yet</td></tr>`}</tbody></table></div>
-      </div>
+      <table class="t compact"><tbody>${b.st.slice(0, ROWS.st).map((x) => `<tr><td><b>${esc(x.name)}</b> <span class="mut">${esc(x.region)}</span></td><td class="num"><b>${x.n}</b></td><td><span class="bar sm"><i style="width:${(x.n / ms) * 100}%"></i></span>${pct(b.n ? x.n / b.n : null)}</td></tr>`).join("") || `<tr><td class="mut">No locations yet</td></tr>`}</tbody></table>
+      <h3>Top cities</h3>
+      <table class="t compact"><tbody>${b.cities.slice(0, ROWS.city).map((c) => `<tr><td><b>${esc(c.city)}, ${esc(c.state)}</b>${c.vip && !cls.includes("vip") ? ` <span class="vipt">(${c.vip} VIP)</span>` : ""}</td><td class="num"><b>${c.n}</b></td></tr>`).join("") || `<tr><td class="mut">No ZIP codes yet</td></tr>`}</tbody></table>
+      <h3>Closest participating dealer</h3>
+      <table class="t compact"><tbody>${b.dl.slice(0, ROWS.dl).map((x) => `<tr><td><b>${esc(x.name)}</b></td><td class="num"><b>${x.n}</b></td></tr>`).join("") || `<tr><td class="mut">No dealers set yet</td></tr>`}</tbody></table>
     </div>`;
+  };
+  const vipList = list.filter((q) => q.vip), inqList = list.filter((q) => !isWeb(q)), webList = list.filter(isWeb);
+  const ROWS = vipList.length ? { st: 5, city: 4, dl: 4 } : { st: 7, city: 6, dl: 5 };
+  const totRow = (label, cls, lst) => {
+    const b = breakdown(lst);
+    const reg = (r) => b.reg.find((x) => x.r === r)?.n || 0;
+    return `<tr class="${cls}"><th>${label}</th><td><b>${b.n}</b></td>${["South", "Northeast", "West", "Midwest"].map((r) => `<td>${reg(r)}<em>${b.n ? pct(reg(r) / b.n) : ""}</em></td>`).join("")}<td>${reg("No location")}</td><td>${b.open}</td><td>${b.moved}</td><td>${b.st[0] ? `${esc(b.st[0].name)} <em>${b.st[0].n}</em>` : "—"}</td></tr>`;
   };
   const page2split = `
   <section class="page">
     <header class="hd small"><div><div class="eyebrow">${EYEBROW} · BREAKDOWN BY AREA</div></div><div class="meta">${esc(generated)}</div></header>
-    <div class="halves">${half("Inquiries", "h-inq", list.filter((q) => !isWeb(q)))}${half("Level 3 Data", "h-web", list.filter(isWeb))}</div>
-    <div class="totals">
-      <span class="tl">Combined</span>
-      <span><b>${total}</b> guests</span><span class="inqt">${inqTotal} inquiries</span><span class="webt">${webTotal} Level 3</span>${vipTotal ? `<span class="vipt">${vipTotal} VIP</span>` : ""}
-      <span class="sep"></span>
-      ${byRegion.filter((x) => x.n).map((x) => `<span>${x.r} <b>${x.n}</b> <em>${pct(x.share)}</em></span>`).join("")}
-      ${topState ? `<span class="sep"></span><span>Top state <b>${esc(topState.name)}</b> (${topState.n})</span>` : ""}
+    <div class="halves ${vipList.length ? "three" : ""}">
+      ${col("Inquiries", "h-inq", inqList)}
+      ${col("Level 3 Data", "h-web", webList)}
+      ${vipList.length ? col("VIP", "h-vip", vipList, `${vipList.filter((q) => !isWeb(q)).length} from Inquiries · ${vipList.filter(isWeb).length} from Level 3 · ${vipList.filter((q) => q.ag_approved).length} AG Approved${vipList.some((q) => q.do_not_contact) ? ` · ${vipList.filter((q) => q.do_not_contact).length} DNC` : ""}`) : ""}
     </div>
-    <footer class="ft"><span>Regions follow the US Census (South, Northeast, West, Midwest). Closest dealer is the one saved on each entry.</span><span>Page 2 / 2</span></footer>
+    <div class="totals-box">
+      <div class="totals-hd">Totals</div>
+      <table class="tt">
+        <thead><tr><th></th><th>Total</th><th>South</th><th>Northeast</th><th>West</th><th>Midwest</th><th>No location</th><th>Open</th><th>Moved</th><th>Top state</th></tr></thead>
+        <tbody>
+          ${totRow("Inquiries", "r-inq", inqList)}
+          ${totRow("Level 3 Data", "r-web", webList)}
+          ${vipList.length ? totRow("VIP (in both)", "r-vip", vipList) : ""}
+          ${totRow("Combined", "r-all", list)}
+        </tbody>
+      </table>
+    </div>
+    <footer class="ft"><span>Regions follow the US Census (South, Northeast, West, Midwest). VIPs are counted in their own list too. Closest dealer is the one saved on each entry.</span><span>Page 2 / 2</span></footer>
   </section>`;
 
   const css = `
@@ -237,22 +253,33 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
 .meth b { text-align: right; }
 #map .bub.vip { fill: #d4a94a; fill-opacity: .9; stroke: #8a6a1c; stroke-width: 1.2; }
 .legend .dot.gold { background: rgba(212,169,74,.9); border-color: #8a6a1c; margin-left: 6px; }
-.halves { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; flex: 1; min-height: 0; }
-.half { min-width: 0; }
-.half-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-bottom: 3px solid #e0263f; padding-bottom: 4px; margin-bottom: 2px; }
-.half.h-web .half-hd { border-color: #2fbf71; }
+.halves { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; min-height: 0; }
+.halves.three { grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+.half { min-width: 0; display: flex; flex-direction: column; }
+.half-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-bottom: 3px solid #e0263f; padding-bottom: 3px; }
+.half.h-web .half-hd { border-color: #2fbf71; } .half.h-vip .half-hd { border-color: #d4a94a; }
 .half-hd h2 { margin: 0; font-size: 15px; letter-spacing: .06em; }
-.half.h-inq .half-hd h2 { color: #c0142e; } .half.h-web .half-hd h2 { color: #157a43; }
-.half-hd span { font-size: 10.5px; color: #5c5c64; }
-.half h3 { font-size: 9.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #8a8a92; margin: 10px 0 4px; }
-.half.h-web .bar i { background: #2fbf71; }
-.half .t.compact td { padding: 3px 8px 3px 0; }
-.half .t td.num { text-align: right; padding-right: 0; }
-.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.totals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 10px; padding: 8px 12px; border: 1px solid #ececef; border-radius: 8px; background: #fafafb; font-size: 10.5px; color: #3c3c44; }
-.totals .tl { font-size: 9.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #8a8a92; }
-.totals em { font-style: normal; color: #8a8a92; }
-.totals .sep { width: 1px; height: 14px; background: #dcdce0; }
+.half-hd b { font-size: 22px; font-weight: 800; line-height: 1; }
+.half.h-inq .half-hd h2, .half.h-inq .half-hd b { color: #c0142e; } .half.h-web .half-hd h2, .half.h-web .half-hd b { color: #157a43; } .half.h-vip .half-hd h2, .half.h-vip .half-hd b { color: #a37a1f; }
+.half-sub { font-size: 10px; color: #5c5c64; margin: 4px 0 2px; min-height: 13px; }
+.half h3 { font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #8a8a92; margin: 9px 0 3px; }
+.half.h-web .bar i { background: #2fbf71; } .half.h-vip .bar i { background: #d4a94a; }
+.half .t { font-size: 11px; }
+.half .t th { padding-bottom: 4px; }
+.half .t.compact td { padding: 3px 6px 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+.half .t td.num, .half .t th.num { text-align: right; padding-right: 10px; width: 1%; }
+.half .t .mut { font-size: 10px; }
+.half .bar.sm { width: 38px; }
+.totals-box { margin-top: 12px; border: 2px solid #111; border-radius: 10px; overflow: hidden; }
+.totals-hd { background: #111; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; padding: 6px 12px; }
+.tt { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.tt thead th { background: #f4f4f6; text-align: left; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #5c5c64; padding: 5px 10px; border-bottom: 1px solid #dcdce0; }
+.tt tbody th { text-align: left; font-weight: 800; padding: 5px 10px; white-space: nowrap; border-left: 5px solid transparent; }
+.tt td { padding: 5px 10px; border-bottom: 1px solid #ececef; }
+.tt td em { font-style: normal; color: #8a8a92; font-size: 10px; margin-left: 4px; }
+.tt tr.r-inq th { color: #c0142e; border-left-color: #e0263f; } .tt tr.r-web th { color: #157a43; border-left-color: #2fbf71; } .tt tr.r-vip th { color: #a37a1f; border-left-color: #d4a94a; }
+.tt tr.r-all th, .tt tr.r-all td { background: #fff4f5; font-weight: 800; border-top: 2px solid #111; border-bottom: none; }
+.tt tr.r-all th { border-left-color: #111; }
 .vipt { color: #a37a1f; font-style: normal; font-weight: 700; }
 #map .bub.web { fill: #3ddc84; fill-opacity: .88; stroke: #0e5c31; stroke-width: 1.4; }
 .legend .dot.green { background: rgba(61,220,132,.88); border-color: #0e5c31; margin-left: 6px; }
