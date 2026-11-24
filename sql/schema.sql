@@ -417,3 +417,14 @@ alter table inquiries add constraint inquiries_gih_levels_check check (gih_level
 alter table inquiries add column if not exists preferred_contact text;
 alter table inquiries drop constraint if exists inquiries_preferred_contact_check;
 alter table inquiries add constraint inquiries_preferred_contact_check check (preferred_contact is null or preferred_contact in ('Phone','Text','Email'));
+
+-- ============================================================
+-- LEVEL 3 DATA (website requests, imported from the daily Excel export)
+-- Same inquiries table; source tells the two pages apart. Safe to run more than once.
+-- ============================================================
+alter table inquiries add column if not exists source text not null default 'direct';
+alter table inquiries drop constraint if exists inquiries_source_check;
+alter table inquiries add constraint inquiries_source_check check (source in ('direct','website'));
+alter table inquiries drop constraint if exists inquiries_method_check;
+alter table inquiries add constraint inquiries_method_check check (method in ('Phone','Email','Referral','Website','Other'));
+create index if not exists inquiries_email_idx on inquiries (lower(email));

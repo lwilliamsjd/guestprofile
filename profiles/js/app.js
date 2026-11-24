@@ -5,16 +5,16 @@ import {
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
   listMyNotifications, countMyUnread, markNotificationRead, markAllNotificationsRead, markInquiryNotificationsRead, subscribeMyNotifications,
-  listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
+  listInquiries, getInquiry, createInquiry, createInquiries, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611241040";
+} from "./api.js?v=202611241424";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611241040";
-import { SUPABASE_URL } from "./config.js?v=202611241040";
+} from "./outputs.js?v=202611241424";
+import { SUPABASE_URL } from "./config.js?v=202611241424";
 
 const app = document.getElementById("app");
 
@@ -38,6 +38,7 @@ const I = {
   star: svg('<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>'),
   excel: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m8 8 8 8m0-8-8 8"/>'),
   warn: svg('<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>'),
+  upload: svg('<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>'),
   ban: svg('<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>'),
   undo: svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>'),
   notes: svg('<path d="M5 3h10l4 4v14H5z"/><path d="M8 10h8M8 14h8M8 18h5"/>'),
@@ -293,8 +294,11 @@ function parseRoute() {
   if (parts[0] === "account") return { name: "account" };
   if (parts[0] === "notifications") return { name: "notifications" };
   if (parts[0] === "analytics") return { name: "analytics" };
-  if (parts[0] === "inquiries" && parts[1]) return { name: "inquiry", id: parts[1] === "new" ? null : parts[1] };
-  if (parts[0] === "inquiries") return { name: "inquiries" };
+  if (parts[0] === "inquiries" && parts[1]) return { name: "inquiry", id: parts[1] === "new" ? null : parts[1], src: "direct" };
+  if (parts[0] === "inquiries") return { name: "inquiries", src: "direct" };
+  if (parts[0] === "level3" && parts[1] === "import") return { name: "l3import" };
+  if (parts[0] === "level3" && parts[1]) return { name: "inquiry", id: parts[1] === "new" ? null : parts[1], src: "website" };
+  if (parts[0] === "level3") return { name: "inquiries", src: "website" };
   return { name: "list" };
 }
 
@@ -342,7 +346,8 @@ async function render() {
   if (route.name === "outputs") return renderOutputs(route, seq);
   if (route.name === "account") return renderAccount(seq);
   if (route.name === "analytics") return renderAnalytics(seq);
-  if (route.name === "inquiries") return renderInquiries(seq);
+  if (route.name === "inquiries") return renderInquiries(seq, route.src);
+  if (route.name === "l3import") return renderL3Import(seq);
   if (route.name === "inquiry") return renderInquiryForm(route, seq);
 }
 
@@ -389,6 +394,7 @@ function shell(active, inner) {
           <a href="#/" class="${active === "list" ? "active" : ""}">Applicants</a>
           <a href="#/new" class="${active === "new" ? "active" : ""}">New Profile</a>
           <a href="#/inquiries" class="${active === "inquiries" ? "active" : ""}" title="Guests who reached out to us directly, not through a dealer">Inquiries</a>
+          <a href="#/level3" class="${active === "level3" ? "active" : ""}" title="Website requests to speak with us (GIH Level 3), imported daily">Level 3 Data</a>
           <a href="#/analytics" class="${active === "analytics" ? "active" : ""}">Analytics</a>
         </nav>
         <div class="user-area">
@@ -1946,7 +1952,11 @@ async function renderAnalytics(seq) {
             </a>`).join("")}</div>` : ""}
       </aside>`;
 
-    main.querySelector("#inq-map-btn")?.addEventListener("click", () => openInquiryMap(inqs, main.querySelector("#inq-map-show")?.value === "vip"));
+    main.querySelector("#inq-map-btn")?.addEventListener("click", () => {
+      const v = main.querySelector("#inq-map-show")?.value || "";
+      const rows = (inqs || []).filter((r) => (v === "both" ? true : v === "web" ? srcOf(r) === "website" : srcOf(r) === "direct"));
+      openInquiryMap(rows, v === "vip");
+    });
     main.querySelector("#an-print").addEventListener("click", () => {
       const t = document.title;
       document.title = `GR GT Applicant Analytics ${todayISO()}`;
@@ -2160,7 +2170,14 @@ render();
 // ============================================================
 // INQUIRIES: guests who reach out to us directly (not through a dealer)
 // ============================================================
-const INQ_METHODS = ["Phone", "Email", "Referral", "Other"];
+const INQ_METHODS = ["Phone", "Email", "Referral", "Website", "Other"];
+// Two pages share the inquiries table: Inquiries (source "direct") and Level 3 Data (source "website").
+const srcOf = (r) => (r?.source === "website" ? "website" : "direct");
+const SRC = {
+  direct: { base: "#/inquiries", nav: "inquiries", title: "Inquiries", noun: "Inquiries", sub: "Guests who reached out to us, met us at events, or were referred by Toyota" },
+  website: { base: "#/level3", nav: "level3", title: "Level 3 Data", noun: "Level 3 Data", sub: "Guests who asked to speak with us on the website (GIH Level 3), imported from the daily export" },
+};
+const l3State = Object.assign({ view: "open", q: "", sort: "received_on", dir: "desc", show: "" }, store.get("gtap-l3") || {});
 const inqState = Object.assign({ view: "open", q: "", sort: "received_on", dir: "desc", show: "" }, store.get("gtap-inq") || {});
 let dealerCache = null; // participating dealers with a ZIP, from the CRM
 async function dealerLocations() {
@@ -2229,68 +2246,71 @@ const isL3 = (r) => Array.isArray(r.gih_levels) && r.gih_levels.includes(3);
 const gihText = (l) => (Array.isArray(l) && l.length ? `GIH ${[...l].sort().join(" · ")}` : "");
 const vipBadges = (r) => (r.vip ? `<span class="pill pill-vip inq-vip">${I.star}VIP</span>${r.ag_approved ? `<span class="pill inq-ag">${I.check}AG Approved</span>` : ""}${r.do_not_contact ? `<span class="pill inq-dnc">${I.ban}Do Not Contact</span>` : ""}` : "");
 
-async function renderInquiries(seq) {
-  const main = shell("inquiries", `<div class="loading">Loading inquiries…</div>`);
+async function renderInquiries(seq, src = "direct") {
+  const S = SRC[src], st = src === "website" ? l3State : inqState;
+  const main = shell(S.nav, `<div class="loading">Loading ${src === "website" ? "Level 3 Data" : "inquiries"}…</div>`);
   let all, notes = [], seen = { seen_at: null };
-  try { [all, notes, seen] = await Promise.all([listInquiries(), listInquiryNotes(), getInquirySeen(currentProfile.id)]); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  let everyone;
+  try { [everyone, notes, seen] = await Promise.all([listInquiries(), listInquiryNotes(), getInquirySeen(currentProfile.id)]); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  all = everyone.filter((r) => srcOf(r) === src);
   const mgMap = new Map();
   (await meisterGuestMatches(all.map((r) => r.name)).catch(() => [])).forEach((m) => { const k = m.name_key; if (!mgMap.has(k)) mgMap.set(k, []); mgMap.get(k).push(m); });
   const mgOf = (r) => mgMap.get(guestMatchKey(r.name));
   if (seq !== renderSeq) return;
   const lastSeen = seen.seen_at || new Date(Date.now() - 14 * 86400000).toISOString();
-  const isNewForMe = (r) => r.notify_team && r.created_at > lastSeen && r.created_by !== currentProfile.id;
+  const isNewForMe = (r) => src === "direct" && r.notify_team && r.created_at > lastSeen && r.created_by !== currentProfile.id;
   const latestNote = new Map();
   notes.forEach((n) => { if (!latestNote.has(n.inquiry_id)) latestNote.set(n.inquiry_id, n); });
-  const dups = duplicateMap(all);
-  if (!seen.missing) { markInquiriesSeen(currentProfile.id).catch(() => {}); inqAlert = { count: 0, checked: true }; paintInquiryBadge(); }
+  const dups = duplicateMap(everyone); // duplicates are checked across both pages
+  if (src === "direct" && !seen.missing) { markInquiriesSeen(currentProfile.id).catch(() => {}); inqAlert = { count: 0, checked: true }; paintInquiryBadge(); }
 
   function draw() {
-    store.set("gtap-inq", inqState);
-    const q = inqState.q.trim().toLowerCase();
+    store.set(src === "website" ? "gtap-l3" : "gtap-inq", st);
+    const q = st.q.trim().toLowerCase();
     const open = all.filter((r) => r.status !== "Moved"), moved = all.filter((r) => r.status === "Moved");
-    let base = inqState.view === "moved" ? moved : inqState.view === "all" ? all : open;
-    if (inqState.show === "vip") base = base.filter((r) => r.vip);
-    if (inqState.show === "dnc") base = base.filter((r) => r.vip && r.do_not_contact);
-    if (inqState.show === "mg") base = base.filter((r) => mgOf(r));
-    if (inqState.show === "l3") base = base.filter(isL3);
-    if (inqState.show === "notl3") base = base.filter((r) => !isL3(r));
-    if (inqState.show === "dups") base = base.filter((r) => dups.has(r.id));
+    let base = st.view === "moved" ? moved : st.view === "all" ? all : open;
+    if (st.show === "vip") base = base.filter((r) => r.vip);
+    if (st.show === "dnc") base = base.filter((r) => r.vip && r.do_not_contact);
+    if (st.show === "mg") base = base.filter((r) => mgOf(r));
+    if (st.show === "l3") base = base.filter(isL3);
+    if (st.show === "notl3") base = base.filter((r) => !isL3(r));
+    if (st.show === "dups") base = base.filter((r) => dups.has(r.id));
     const sortVal = (r) => ({
       received_on: r.received_on || "", name: (r.name || "").toLowerCase(), method: r.method || "",
       location: [r.state, r.city].filter(Boolean).join(" ").toLowerCase() || "~", closest_dealer: (r.closest_dealer || "~").toLowerCase(), status: r.status || "",
-      vip: inqState.dir === "asc" ? (r.vip ? (r.ag_approved ? "0" : "1") : "2") : (r.vip ? (r.ag_approved ? "2" : "1") : "0"),
-    }[inqState.sort] ?? "");
+      vip: st.dir === "asc" ? (r.vip ? (r.ag_approved ? "0" : "1") : "2") : (r.vip ? (r.ag_approved ? "2" : "1") : "0"),
+    }[st.sort] ?? "");
     const list = base.filter((r) => !q || [r.name, r.email, r.phone, fmtPhone(r.phone), r.city, r.state, r.zip, r.closest_dealer, latestNote.get(r.id)?.body, r.referred_by, r.handler, r.preferred_name, r.internal_status, r.record_owner_notes].some((f) => (f || "").toLowerCase().includes(q)))
-      .sort((a, b) => { const x = sortVal(a), y = sortVal(b); const c = x < y ? -1 : x > y ? 1 : (a.name || "").localeCompare(b.name || ""); return inqState.dir === "asc" ? c : -c; });
-    const th = (label, key) => { const on = inqState.sort === key; return `<th data-sort="${key}">${label}<span class="sort-ic ${on ? "on" : ""}">${on ? (inqState.dir === "asc" ? "▲" : "▼") : "▼"}</span></th>`; };
+      .sort((a, b) => { const x = sortVal(a), y = sortVal(b); const c = x < y ? -1 : x > y ? 1 : (a.name || "").localeCompare(b.name || ""); return st.dir === "asc" ? c : -c; });
+    const th = (label, key) => { const on = st.sort === key; return `<th data-sort="${key}">${label}<span class="sort-ic ${on ? "on" : ""}">${on ? (st.dir === "asc" ? "▲" : "▼") : "▼"}</span></th>`; };
     const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-    const tab = (k, label, n) => `<button class="kpi ${inqState.view === k ? "active" : ""}" data-view="${k}"><span class="kpi-num">${n}</span><span class="kpi-label">${label}</span></button>`;
+    const tab = (k, label, n) => `<button class="kpi ${st.view === k ? "active" : ""}" data-view="${k}"><span class="kpi-num">${n}</span><span class="kpi-label">${label}</span></button>`;
     const newCount = all.filter(isNewForMe).length;
     main.innerHTML = `
       <div class="page-header">
-        <div><h1>Inquiries</h1><p class="muted">Guests who reached out to us directly, not through a dealer</p></div>
+        <div><h1>${S.title}</h1><p class="muted">${S.sub}</p></div>
         <div class="page-actions">
           <button class="btn" id="inq-export">${I.excel}Export Excel</button>
-          <a href="#/inquiries/new" class="btn btn-primary">${I.plus}New Inquiry</a>
+          ${src === "website" ? `<a href="#/level3/new" class="btn">${I.plus}Add one</a><a href="#/level3/import" class="btn btn-primary">${I.upload}Import Excel</a>` : `<a href="#/inquiries/new" class="btn btn-primary">${I.plus}New Inquiry</a>`}
         </div>
       </div>
       ${newCount ? `<div class="banner inq-new-banner">${I.warn}<span><b>${newCount} new ${newCount === 1 ? "inquiry was" : "inquiries were"} added</b> since your last visit. They're marked <span class="pill inq-new">New</span> below.</span></div>` : ""}
       <div class="kpi-strip inq-kpis">
         ${tab("open", "Open", open.length)}
         ${tab("moved", "Moved to profiles", moved.length)}
-        ${tab("all", "All inquiries", all.length)}
+        ${tab("all", src === "website" ? "All Level 3" : "All inquiries", all.length)}
         <div class="kpi static"><span class="kpi-num">${all.filter((r) => (r.received_on || "") >= since).length}</span><span class="kpi-label">Last 30 days</span></div>
       </div>
       <div class="filters">
-        <label class="search-box">${I.search}<input id="inq-q" placeholder="Search name, email, phone, city, dealer, handler, notes…" value="${escapeHtml(inqState.q)}"></label>
+        <label class="search-box">${I.search}<input id="inq-q" placeholder="Search name, email, phone, city, dealer, handler, notes…" value="${escapeHtml(st.q)}"></label>
         <select id="inq-show" class="inq-show">
           <option value="">All guests</option>
-          <option value="vip" ${inqState.show === "vip" ? "selected" : ""}>VIP only (${all.filter((r) => r.vip).length})</option>
-          <option value="dnc" ${inqState.show === "dnc" ? "selected" : ""}>Do Not Contact (${all.filter((r) => r.vip && r.do_not_contact).length})</option>
-          <option value="l3" ${inqState.show === "l3" ? "selected" : ""}>GIH Level 3, ready (${all.filter(isL3).length})</option>
-          <option value="notl3" ${inqState.show === "notl3" ? "selected" : ""}>Not yet Level 3 (${all.filter((r) => !isL3(r)).length})</option>
-          <option value="mg" ${inqState.show === "mg" ? "selected" : ""}>On a Meister's guest list (${all.filter((r) => mgOf(r)).length})</option>
-          <option value="dups" ${inqState.show === "dups" ? "selected" : ""}>Possible duplicates (${dups.size})</option>
+          <option value="vip" ${st.show === "vip" ? "selected" : ""}>VIP only (${all.filter((r) => r.vip).length})</option>
+          <option value="dnc" ${st.show === "dnc" ? "selected" : ""}>Do Not Contact (${all.filter((r) => r.vip && r.do_not_contact).length})</option>
+          <option value="l3" ${st.show === "l3" ? "selected" : ""}>GIH Level 3, ready (${all.filter(isL3).length})</option>
+          <option value="notl3" ${st.show === "notl3" ? "selected" : ""}>Not yet Level 3 (${all.filter((r) => !isL3(r)).length})</option>
+          <option value="mg" ${st.show === "mg" ? "selected" : ""}>On a Meister's guest list (${all.filter((r) => mgOf(r)).length})</option>
+          <option value="dups" ${st.show === "dups" ? "selected" : ""}>Possible duplicates (${dups.size})</option>
         </select>
       </div>
       <div class="table-wrap">
@@ -2310,25 +2330,25 @@ async function renderInquiries(seq) {
               <td class="inq-vip-cell">${r.vip ? `<div class="inq-badges">${vipBadges(r)}</div>${r.handler ? `<div class="cell-sub muted">Handler: ${escapeHtml(r.handler)}</div>` : ""}` : `<span class="muted">—</span>`}</td>
               <td>${r.status === "Moved" ? `<span class="pill pill-complete" title="Moved to profiles ${r.moved_at ? fmtDate(r.moved_at) : ""}">${I.check}Profile started</span>` : `<span class="pill pill-draft">Open</span>`}</td>
             </tr>`; }).join("")}</tbody></table>`
-          : `<div class="empty-state">${all.length ? (q || inqState.show ? "No inquiries match these filters." : inqState.view === "moved" ? "No inquiries have been moved to profiles yet." : "No open inquiries.") : "No inquiries yet. Add one with <b>New Inquiry</b> when a guest reaches out on their own."}</div>`}
+          : `<div class="empty-state">${all.length ? (q || st.show ? "No inquiries match these filters." : st.view === "moved" ? "No inquiries have been moved to profiles yet." : "No open inquiries.") : src === "website" ? "Nothing imported yet. Use <b>Import Excel</b> with the daily website export." : "No inquiries yet. Add one with <b>New Inquiry</b> when a guest reaches out on their own."}</div>`}
       </div>`;
     const qi = main.querySelector("#inq-q");
-    qi.addEventListener("input", () => { inqState.q = qi.value; const pos = qi.selectionStart; draw(); const n = main.querySelector("#inq-q"); n.value = inqState.q; n.focus(); n.setSelectionRange(pos, pos); });
-    main.querySelector("#inq-show").addEventListener("change", (e) => { inqState.show = e.target.value; draw(); });
-    main.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { inqState.view = b.dataset.view; draw(); }));
+    qi.addEventListener("input", () => { st.q = qi.value; const pos = qi.selectionStart; draw(); const n = main.querySelector("#inq-q"); n.value = st.q; n.focus(); n.setSelectionRange(pos, pos); });
+    main.querySelector("#inq-show").addEventListener("change", (e) => { st.show = e.target.value; draw(); });
+    main.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { st.view = b.dataset.view; draw(); }));
     main.querySelectorAll("th[data-sort]").forEach((t) => t.addEventListener("click", () => {
       const k = t.dataset.sort;
-      if (inqState.sort === k) inqState.dir = inqState.dir === "asc" ? "desc" : "asc";
-      else { inqState.sort = k; inqState.dir = k === "received_on" ? "desc" : "asc"; }
+      if (st.sort === k) st.dir = st.dir === "asc" ? "desc" : "asc";
+      else { st.sort = k; st.dir = k === "received_on" ? "desc" : "asc"; }
       draw();
     }));
-    main.querySelectorAll(".clickable-row").forEach((tr) => tr.addEventListener("click", () => navigate(`#/inquiries/${tr.dataset.id}`)));
-    main.querySelector("#inq-export").addEventListener("click", () => exportInquiries(all, notes));
+    main.querySelectorAll(".clickable-row").forEach((tr) => tr.addEventListener("click", () => navigate(`${S.base}/${tr.dataset.id}`)));
+    main.querySelector("#inq-export").addEventListener("click", () => exportInquiries(all, notes, S.title));
   }
   draw();
 }
 
-function exportInquiries(rows, notes = []) {
+function exportInquiries(rows, notes = [], title = "Inquiries") {
   if (!window.XLSX) return alert("Excel library didn't load. Check your connection and try again.");
   const byInq = new Map();
   notes.slice().reverse().forEach((n) => { if (!byInq.has(n.inquiry_id)) byInq.set(n.inquiry_id, []); byInq.get(n.inquiry_id).push(`${fmtDate(n.created_at)} ${n.author_name || ""}: ${n.body}`); });
@@ -2341,7 +2361,7 @@ function exportInquiries(rows, notes = []) {
   }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Inquiries");
-  XLSX.writeFile(wb, `GR GT Inquiries ${todayISO()}.xlsx`);
+  XLSX.writeFile(wb, `GR GT ${title} ${todayISO()}.xlsx`);
 }
 
 const FILE_ACCEPT = ".pdf,.eml,.msg,.txt,.doc,.docx,.xls,.xlsx,.csv,image/*,application/pdf";
@@ -2352,7 +2372,8 @@ const fmtWhen = (iso) => new Date(iso).toLocaleString("en-US", { month: "short",
 
 async function renderInquiryForm(route, seq) {
   const isNew = !route.id;
-  const main = shell("inquiries", `<div class="loading">Loading…</div>`);
+  const src = route.src || "direct", S = SRC[src];
+  const main = shell(S.nav, `<div class="loading">Loading…</div>`);
   let rec = null, others = [], profiles = [], notes = [], files = [];
   try {
     [rec, others, profiles, notes, files] = await Promise.all([
@@ -2362,17 +2383,18 @@ async function renderInquiryForm(route, seq) {
   } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
   others = others.filter((o) => o.id !== route.id);
   if (seq !== renderSeq) return;
+  if (rec && srcOf(rec) !== src) return navigate(`${SRC[srcOf(rec)].base}/${rec.id}`); // e.g. a notification link to the other page
   if (rec) markInquiryNotificationsRead(currentProfile.id, rec.id).then(refreshBell).catch(() => {}); // opening it counts as seeing the alert
-  const v = rec || { method: "Phone", received_on: todayISO() };
+  const v = rec || (src === "website" ? { method: "Website", received_on: todayISO(), gih_levels: [3], source: "website" } : { method: "Phone", received_on: todayISO() });
   const moved = rec && rec.status === "Moved";
   const val = (k) => escapeHtml(v[k] ?? "");
   let queued = []; // files picked on a new inquiry, uploaded right after it saves
   const tgl = (id, on, label, sub, extra = "") => `<label class="toggle-card ${on ? "on" : ""} ${extra}" data-tgl="${id}"><input type="checkbox" id="${id}" ${on ? "checked" : ""}><span class="tc-box">${I.check}</span><span><div class="tc-label">${label}</div><div class="tc-sub">${sub}</div></span></label>`;
 
   main.innerHTML = `
-    <a href="#/inquiries" class="back-link">${I.back}Inquiries</a>
+    <a href="${S.base}" class="back-link">${I.back}${S.title}</a>
     <div class="page-header">
-      <div><h1>${isNew ? "New Inquiry" : escapeHtml(rec.name)}${rec?.vip ? ` <span class="pill pill-vip inq-vip">${I.star}VIP</span>` : ""}</h1><p class="muted">${isNew ? "A guest who reached out to us directly" : `Added ${fmtDate(rec.created_at)}${rec.created_by_name ? ` by ${escapeHtml(rec.created_by_name)}` : ""}`}</p></div>
+      <div><h1>${isNew ? (src === "website" ? "New Level 3 entry" : "New Inquiry") : escapeHtml(rec.name)}${rec?.vip ? ` <span class="pill pill-vip inq-vip">${I.star}VIP</span>` : ""}</h1><p class="muted">${isNew ? (src === "website" ? "A website request to speak with us (GIH Level 3)" : "A guest who reached out to us directly") : `${src === "website" ? "Level 3 Data · " : ""}Added ${fmtDate(rec.created_at)}${rec.created_by_name ? ` by ${escapeHtml(rec.created_by_name)}` : ""}`}</p></div>
       <div class="page-actions">
         ${!isNew && !moved ? `<button class="btn btn-primary" id="inq-move" type="button">${I.doc}Start a profile</button>` : ""}
         ${!isNew && currentProfile?.is_admin ? `<button class="btn btn-danger" id="inq-delete" type="button">${I.trash}Delete</button>` : ""}
@@ -2453,7 +2475,7 @@ async function renderInquiryForm(route, seq) {
 
       <div class="inq-actions">
         <button type="submit" class="btn btn-primary">${I.save}${isNew ? "Save Inquiry" : "Save Changes"}</button>
-        <a href="#/inquiries" class="btn">Cancel</a>
+        <a href="${S.base}" class="btn">Cancel</a>
       </div>
     </form>
 
@@ -2530,7 +2552,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241040");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241424");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2658,13 +2680,13 @@ async function renderInquiryForm(route, seq) {
     btn.disabled = true;
     try {
       if (isNew) {
-        const created = await createInquiry({ ...f, notify_team: $("i-notify").checked }, currentProfile);
+        const created = await createInquiry({ ...f, source: src, notify_team: $("i-notify").checked }, currentProfile);
         const first = $("i-notes").value.trim();
         if (first) await addInquiryNote(created.id, first, currentProfile).catch((err) => alert("Saved, but the note didn't: " + err.message));
         for (const file of queued) await uploadInquiryFile(created.id, file, currentProfile).catch((err) => alert(`Saved, but ${file.name} didn't upload: ${err.message}`));
-        toast("Inquiry saved");
+        toast(src === "website" ? "Saved to Level 3 Data" : "Inquiry saved");
       } else { await updateInquiry(rec.id, f, currentProfile); toast("Changes saved"); }
-      navigate("#/inquiries");
+      navigate(S.base);
     } catch (err) { alert("Couldn't save: " + err.message); btn.disabled = false; }
   });
 
@@ -2702,7 +2724,7 @@ async function renderInquiryForm(route, seq) {
       if (trashIt) await trashApplicant(rec.applicant_id);
       await updateInquiry(rec.id, { status: "Open", applicant_id: null, moved_at: null, moved_by_name: null }, currentProfile);
       toast(trashIt ? "Back on the open list. The profile is in the Trash." : rec.applicant_id && !currentProfile?.is_admin ? "Back on the open list. The started profile is still there; an admin can remove it." : "Back on the open list");
-      navigate(`#/inquiries/${rec.id}`); render();
+      navigate(`${S.base}/${rec.id}`); render();
     } catch (err) { alert("Couldn't undo: " + err.message); btn.disabled = false; }
   });
 
@@ -2710,14 +2732,193 @@ async function renderInquiryForm(route, seq) {
     if (!confirm(`Delete the inquiry from ${rec.name}? Its notes and files are deleted too. This can't be undone.${moved ? " The profile that was started stays." : ""}`)) return;
     try {
       for (const f of files) await deleteInquiryFile(f).catch(() => {});
-      await deleteInquiry(rec.id); toast("Inquiry deleted"); navigate("#/inquiries");
+      await deleteInquiry(rec.id); toast("Inquiry deleted"); navigate(S.base);
     } catch (err) { alert(err.message); }
   });
 }
 
+// ---------- Level 3 Data: import the daily website export ----------
+// Reads the Excel/CSV, matches columns, then sorts every row into: new (added), same email as
+// someone already on file (skipped), or same name/phone as someone on file (held for review).
+const L3_FIELDS = [
+  ["name", "Name", /^(full\s*)?name$|^(guest|customer|contact|lead)\s*name$/i],
+  ["first", "First name", /first/i],
+  ["last", "Last name", /last|surname/i],
+  ["email", "Email", /e-?mail/i],
+  ["phone", "Phone", /phone|mobile|cell|number|tel/i],
+  ["zip", "ZIP", /zip|postal/i],
+  ["date", "Date", /date|submitted|created|received|time/i],
+];
+function l3Zip(v) {
+  let z = String(v ?? "").trim();
+  if (/^\d{1,5}(\.0+)?$/.test(z)) z = String(parseInt(z, 10)).padStart(5, "0"); // Excel drops leading zeros
+  const m = z.match(/\d{5}/);
+  return m ? m[0] : "";
+}
+function l3Date(v) {
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+  if (typeof v === "number" && v > 20000 && v < 80000) return new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10); // Excel serial date
+  const d = v ? new Date(v) : null;
+  return d && !isNaN(d) && d.getFullYear() > 2000 ? d.toISOString().slice(0, 10) : "";
+}
+const tidyName = (s) => String(s || "").replace(/\s+/g, " ").trim();
+
+async function renderL3Import(seq) {
+  const main = shell("level3", `<div class="loading">Loading…</div>`);
+  let inqs, apps;
+  try { [inqs, apps] = await Promise.all([listInquiries(), listApplicants().catch(() => [])]); }
+  catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  if (seq !== renderSeq) return;
+  let sheet = null, headers = [], map = {}, fileName = "", result = null, plan = null;
+
+  main.innerHTML = `
+    <a href="#/level3" class="back-link">${I.back}Level 3 Data</a>
+    <div class="page-header"><div><h1>Import Level 3 Data</h1><p class="muted">Drop in the daily website export (.xlsx or .csv). Everyone comes in as GIH Level 3. Nothing is saved until you click Import.</p></div></div>
+    <label class="l3-drop" id="l3-drop">${I.upload}<span><b>Choose the export file</b> or drag it here</span><input type="file" id="l3-file" accept=".xlsx,.xls,.csv" hidden></label>
+    <div id="l3-body"></div>`;
+  const body = main.querySelector("#l3-body"), drop = main.querySelector("#l3-drop");
+
+  const readFile = async (file) => {
+    if (!window.XLSX) return alert("Excel library didn't load. Check your connection and try again.");
+    fileName = file.name; result = null;
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true, blankrows: false });
+      // header row = first row with 2+ text cells
+      const hi = Math.max(0, rows.findIndex((r) => r.filter((c) => typeof c === "string" && c.trim()).length >= 2));
+      headers = (rows[hi] || []).map((h, i) => String(h || "").trim() || `Column ${i + 1}`);
+      sheet = rows.slice(hi + 1).filter((r) => r.some((c) => String(c).trim()));
+      map = {};
+      L3_FIELDS.forEach(([k, , re]) => { const i = headers.findIndex((h, j) => re.test(h) && !Object.values(map).includes(j)); if (i >= 0) map[k] = i; });
+      if (map.name != null) { delete map.first; delete map.last; }
+      await analyze();
+    } catch (e) { body.innerHTML = `<div class="banner error">Couldn't read that file: ${escapeHtml(e.message)}</div>`; }
+  };
+  main.querySelector("#l3-file").addEventListener("change", (e) => e.target.files[0] && readFile(e.target.files[0]));
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+
+  async function analyze() {
+    body.innerHTML = `<div class="loading">Checking ${sheet.length} rows against everything on file…</div>`;
+    const cell = (r, k) => (map[k] != null ? r[map[k]] : "");
+    const rows = sheet.map((r, i) => {
+      const name = map.name != null ? tidyName(cell(r, "name")) : tidyName(`${cell(r, "first") || ""} ${cell(r, "last") || ""}`);
+      return { line: i + 1, name, email: normEmail(cell(r, "email")), phone: fmtPhone(cell(r, "phone")), zip: l3Zip(cell(r, "zip")), received_on: l3Date(cell(r, "date")) || todayISO() };
+    });
+    // what's already on file, across Inquiries, Level 3 Data, applicant profiles and Meister guest lists
+    const byEmail = new Map(), byName = new Map(), byPhone = new Map();
+    const push = (m, k, v) => { if (!k) return; if (!m.has(k)) m.set(k, []); m.get(k).push(v); };
+    inqs.forEach((q) => {
+      const where = `${srcOf(q) === "website" ? "Level 3 Data" : "Inquiries"}: <a href="${SRC[srcOf(q)].base}/${q.id}" target="_blank" rel="noopener">${escapeHtml(q.name)}</a>${q.received_on ? ` (${fmtDate(q.received_on)})` : ""}`;
+      push(byEmail, normEmail(q.email), where);
+      const n = normName(q.name); if (n.length > 2) push(byName, n, where);
+      push(byPhone, normPhone(q.phone), where);
+    });
+    apps.forEach((a) => { const n = normName(a.name); if (n.length > 2) push(byName, n, `Applicant profile: <a href="#/p/${a.id}" target="_blank" rel="noopener">${escapeHtml(a.name)}</a>`); });
+    (await meisterGuestMatches(rows.map((r) => r.name)).catch(() => [])).forEach((m) => push(byName, m.name_key, m.meister_name ? `${escapeHtml(m.meister_name)}'s Guests tab (CRM)${m.guest_status ? ` · ${escapeHtml(m.guest_status)}` : ""}` : "A Meister's Guests tab"));
+
+    const seenEmail = new Map(), seenName = new Map();
+    plan = { add: [], review: [], skip: [], bad: [] };
+    for (const r of rows) {
+      if (!r.name) { r.why = ["No name in this row"]; plan.bad.push(r); continue; }
+      if (r.email && byEmail.has(r.email)) { r.why = byEmail.get(r.email).map((w) => `Same email · ${w}`); plan.skip.push(r); continue; }
+      if (r.email && seenEmail.has(r.email)) { r.why = [`Same email as row ${seenEmail.get(r.email)} in this file`]; plan.skip.push(r); continue; }
+      if (r.email) seenEmail.set(r.email, r.line);
+      const n = normName(r.name), why = [];
+      (byName.get(n) || []).forEach((w) => why.push(`Same name · ${w}`));
+      if (seenName.has(n)) why.push(`Same name as row ${seenName.get(n)} in this file`);
+      const ph = normPhone(r.phone);
+      if (ph) (byPhone.get(ph) || []).forEach((w) => why.push(`Same phone · ${w}`));
+      seenName.set(n, r.line);
+      r.why = why; r.pick = !why.length;
+      (why.length ? plan.review : plan.add).push(r);
+    }
+    draw();
+  }
+
+  function draw() {
+    if (!plan) return;
+    const opt = (k) => `<select data-map="${k}"><option value="">(none)</option>${headers.map((h, i) => `<option value="${i}" ${map[k] === i ? "selected" : ""}>${escapeHtml(h)}</option>`).join("")}</select>`;
+    const rowHtml = (r, box) => `<tr>
+        ${box ? `<td><input type="checkbox" data-line="${r.line}" ${r.pick ? "checked" : ""}></td>` : ""}
+        <td class="muted">${r.line}</td><td><b>${escapeHtml(r.name || "—")}</b></td><td>${escapeHtml(r.email)}</td><td style="white-space:nowrap">${escapeHtml(r.phone)}</td><td>${escapeHtml(r.zip)}</td>
+        ${r.why?.length ? `<td class="l3-why">${r.why.map((w) => `<div>${w}</div>`).join("")}</td>` : box === "add" ? `<td class="muted">New</td>` : "<td></td>"}</tr>`;
+    const table = (list, box) => `<div class="table-wrap"><table class="crm-table l3-table"><thead><tr>${box ? "<th></th>" : ""}<th>Row</th><th>Name</th><th>Email</th><th>Phone</th><th>ZIP</th><th>${box === "add" ? "" : "Why"}</th></tr></thead><tbody>${list.map((r) => rowHtml(r, box)).join("")}</tbody></table></div>`;
+    const picked = plan.add.filter((r) => r.pick).length + plan.review.filter((r) => r.pick).length;
+    body.innerHTML = `
+      <div class="l3-file-line">${I.doc}<b>${escapeHtml(fileName)}</b><span class="muted">${sheet.length} rows</span></div>
+      <div class="l3-map"><span class="muted">Columns:</span>${(map.name != null || map.first == null ? ["name"] : ["first", "last"]).concat(["email", "phone", "zip", "date"]).map((k) => `<label>${L3_FIELDS.find((f) => f[0] === k)[1]}${opt(k)}</label>`).join("")}</div>
+      ${map.name == null && map.first == null ? `<div class="banner error">Pick which column has the guest's name.</div>` : ""}
+      <div class="l3-summary">
+        <div class="l3-tile add"><b>${plan.add.length}</b><span>New</span></div>
+        <div class="l3-tile review"><b>${plan.review.length}</b><span>Need your review</span></div>
+        <div class="l3-tile skip"><b>${plan.skip.length}</b><span>Already on file (same email), skipped</span></div>
+        ${plan.bad.length ? `<div class="l3-tile bad"><b>${plan.bad.length}</b><span>Can't import (no name)</span></div>` : ""}
+      </div>
+      ${result ? "" : `<div class="l3-actions"><button class="btn btn-primary" id="l3-go" ${picked ? "" : "disabled"}>${I.upload}Import ${picked} ${picked === 1 ? "guest" : "guests"}</button><button class="btn" id="l3-report">${I.excel}Download report</button></div>`}
+      ${result ? `<div class="banner inq-moved-banner">${I.check}<span><b>${result.added} ${result.added === 1 ? "guest" : "guests"} added to Level 3 Data.</b> ${result.skipped} skipped, ${result.held} left out after review.</span><span class="inq-moved-actions"><button class="btn btn-sm" id="l3-report">${I.excel}Download report</button><a class="btn btn-sm btn-primary" href="#/level3">Open Level 3 Data</a></span></div>` : ""}
+      ${plan.review.length ? `<div class="sec-kicker inq-kicker">Need your review <span class="muted">Same name or phone as someone already on file. Check the ones that are a different person to add them.</span></div>${table(plan.review, "review")}` : ""}
+      ${plan.add.length ? `<div class="sec-kicker inq-kicker">New <span class="muted">Not on file anywhere. Uncheck any you don't want.</span></div>${table(plan.add, "add")}` : ""}
+      ${plan.skip.length ? `<details class="l3-more"><summary class="sec-kicker inq-kicker">Skipped: already on file with the same email (${plan.skip.length})</summary>${table(plan.skip, "")}</details>` : ""}
+      ${plan.bad.length ? `<details class="l3-more"><summary class="sec-kicker inq-kicker">Can't import (${plan.bad.length})</summary>${table(plan.bad, "")}</details>` : ""}`;
+    body.querySelectorAll("[data-map]").forEach((sel) => sel.addEventListener("change", () => { const k = sel.dataset.map; if (sel.value === "") delete map[k]; else map[k] = Number(sel.value); if (k === "name" && sel.value !== "") { delete map.first; delete map.last; } result = null; analyze(); }));
+    body.querySelectorAll("input[data-line]").forEach((cb) => cb.addEventListener("change", () => {
+      const r = [...plan.add, ...plan.review].find((x) => String(x.line) === cb.dataset.line); r.pick = cb.checked;
+      const n = plan.add.filter((x) => x.pick).length + plan.review.filter((x) => x.pick).length, go = body.querySelector("#l3-go");
+      if (go) { go.disabled = !n; go.innerHTML = `${I.upload}Import ${n} ${n === 1 ? "guest" : "guests"}`; }
+    }));
+    body.querySelector("#l3-report")?.addEventListener("click", downloadReport);
+    body.querySelector("#l3-go")?.addEventListener("click", runImport);
+  }
+
+  async function runImport() {
+    const go = body.querySelector("#l3-go");
+    const chosen = [...plan.add, ...plan.review].filter((r) => r.pick);
+    if (!chosen.length) return;
+    go.disabled = true; go.textContent = "Importing…";
+    try {
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241424");
+      const dealers = await dealerLocations();
+      const out = [];
+      for (const r of chosen) {
+        const here = r.zip ? await lookupZip(r.zip) : null;
+        const near = r.zip ? await closestDealers(r.zip, dealers, 1) : [];
+        out.push({
+          name: r.name, email: r.email || null, phone: r.phone || null, zip: r.zip || null, city: here?.city || null, state: here?.state || null,
+          closest_dealer: near[0]?.dealership || null, closest_dealer_miles: near[0]?.miles ?? null,
+          received_on: r.received_on, method: "Website", source: "website", gih_levels: [3], notify_team: false, status: "Open",
+        });
+      }
+      await createInquiries(out, currentProfile);
+      chosen.forEach((r) => (r.added = true));
+      result = { added: chosen.length, skipped: plan.skip.length + plan.bad.length, held: plan.review.filter((r) => !r.pick).length + plan.add.filter((r) => !r.pick).length };
+      toast(`${chosen.length} added to Level 3 Data`);
+      draw();
+    } catch (e) { alert("Import stopped: " + e.message + "\n\nNothing after the first error was saved. Fix the issue and import the file again; anyone already added will be skipped by email."); go.disabled = false; go.textContent = "Try again"; }
+  }
+
+  function downloadReport() {
+    if (!window.XLSX) return alert("Excel library didn't load.");
+    const strip = (h) => String(h).replace(/<[^>]+>/g, "");
+    const row = (r, status) => ({ Row: r.line, Status: status, Name: r.name, Email: r.email, Phone: r.phone, ZIP: r.zip, Date: r.received_on, Why: (r.why || []).map(strip).join("; ") });
+    const data = [
+      ...plan.review.map((r) => row(r, result ? (r.added ? "Added after review" : "Held for review, not added") : r.pick ? "Review: will be added" : "Review: not checked")),
+      ...plan.add.map((r) => row(r, result ? (r.added ? "Added" : "Unchecked, not added") : r.pick ? "New: will be added" : "New: unchecked")),
+      ...plan.skip.map((r) => row(r, "Skipped: same email already on file")),
+      ...plan.bad.map((r) => row(r, "Can't import")),
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Import report");
+    XLSX.writeFile(wb, `Level 3 import report ${todayISO()}.xlsx`);
+  }
+}
+
 // Analytics: Direct inquiries section (a simple count, where they come from, and the map report)
-function inquiryAnalyticsHtml(inqs) {
-  if (!inqs) return "";
+function inquiryAnalyticsHtml(everyone) {
+  if (!everyone) return "";
+  const inqs = everyone.filter((r) => srcOf(r) === "direct"), web = everyone.filter((r) => srcOf(r) === "website");
   const REG = { Northeast: "CT ME MA NH RI VT NJ NY PA", Midwest: "IL IN MI OH WI IA KS MN MO NE ND SD", South: "DE DC FL GA MD NC SC VA WV AL KY MS TN AR LA OK TX PR", West: "AZ CO ID MT NV NM UT WY AK CA HI OR WA" };
   const regionOf = (st) => Object.keys(REG).find((r) => REG[r].split(" ").includes(String(st || "").toUpperCase())) || "No location";
   const total = inqs.length, open = inqs.filter((r) => r.status !== "Moved").length, moved = total - open;
@@ -2739,10 +2940,11 @@ function inquiryAnalyticsHtml(inqs) {
             <a href="#/inquiries" class="inq-stat vip"><b>${inqs.filter((r) => r.vip).length}</b><span>VIP</span></a>
             <a href="#/inquiries" class="inq-stat"><b>${inqs.filter((r) => r.vip && r.ag_approved).length}</b><span>AG Approved</span></a>
             <a href="#/inquiries" class="inq-stat dnc"><b>${inqs.filter((r) => r.vip && r.do_not_contact).length}</b><span>Do Not Contact</span></a>
+            <a href="#/level3" class="inq-stat l3"><b>${web.length}</b><span>Level 3 Data (website)</span></a>
           </div>
           <div class="inq-map-row no-print">
-            <select id="inq-map-show"><option value="">All inquiries</option><option value="vip">VIP only (${inqs.filter((r) => r.vip).length})</option></select>
-            <button class="btn btn-primary" id="inq-map-btn" type="button" ${total ? "" : "disabled"}>${I.doc}Map report (PDF)</button>
+            <select id="inq-map-show"><option value="">Inquiries</option><option value="vip">Inquiries, VIP only (${inqs.filter((r) => r.vip).length})</option><option value="web">Level 3 Data (${web.length})</option><option value="both">Both (${everyone.length})</option></select>
+            <button class="btn btn-primary" id="inq-map-btn" type="button" ${everyone.length ? "" : "disabled"}>${I.doc}Map report (PDF)</button>
           </div>
         </div>
         <div class="an-card span-4"><div class="an-head"><h2>By region</h2></div>${total ? `<div class="hbars">${regions.map((x) => bar(x.r, x.n, rMax)).join("")}</div>` : `<div class="an-empty">Nothing recorded yet</div>`}</div>
@@ -2755,7 +2957,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241040");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241424");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;

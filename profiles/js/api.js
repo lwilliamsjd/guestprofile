@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611241040";
+import { supabase } from "./supabase-client.js?v=202611241424";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -236,6 +236,17 @@ export async function lastExportAt() {
 // ---------- inquiries (guests who reach out to us directly, not through a dealer) ----------
 const NO_INQ = "The Inquiries list needs its database update. Run the INQUIRIES block of sql/schema.sql in Supabase first.";
 const inqErr = (error) => (/inquiries/.test(error.message || "") && /exist|schema cache|relation/i.test(error.message || "") ? new Error(NO_INQ) : error);
+// Many at once (the Level 3 Data import). Rows go in chunks so a big file doesn't time out.
+export async function createInquiries(rows, profile) {
+  const out = [];
+  for (let i = 0; i < rows.length; i += 200) {
+    const chunk = rows.slice(i, i + 200).map((f) => ({ ...f, created_by: profile.id, created_by_name: profile.full_name, updated_by_name: profile.full_name }));
+    const { data, error } = await supabase.from("inquiries").insert(chunk).select();
+    if (error) throw inqErr(error);
+    out.push(...(data || []));
+  }
+  return out;
+}
 export async function listInquiries() {
   const { data, error } = await supabase.from("inquiries").select("*").order("received_on", { ascending: false }).order("created_at", { ascending: false });
   if (error) throw inqErr(error);

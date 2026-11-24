@@ -774,3 +774,31 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .notif-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .notif-msg { font-size: 14px; line-height: 1.4; }
 .notif-body .muted { font-size: 12.5px; }
+
+/* ---------- Level 3 Data ---------- */
+.pill-method.m-website { color: #b48cff; border-color: rgba(180,140,255,.55); }
+.inq-stat.l3 b { color: var(--green); }
+.l3-drop { display: flex; align-items: center; gap: 12px; padding: 22px 20px; border: 1.5px dashed var(--border-strong); border-radius: 12px; background: var(--panel); cursor: pointer; color: var(--grey); margin-bottom: 18px; transition: border-color .15s, background .15s; }
+.l3-drop svg { width: 22px; height: 22px; color: var(--red); flex: none; }
+.l3-drop b { color: var(--text); }
+.l3-drop:hover, .l3-drop.over { border-color: var(--red); background: var(--panel-2); }
+.l3-file-line { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 14px; }
+.l3-file-line svg { width: 16px; height: 16px; color: var(--grey); }
+.l3-map { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); margin-bottom: 14px; font-size: 13px; }
+.l3-map label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; color: var(--grey); text-transform: uppercase; }
+.l3-map select { min-width: 150px; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; color-scheme: dark; }
+.l3-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.l3-tile { padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); display: flex; flex-direction: column; gap: 2px; }
+.l3-tile b { font-size: 24px; }
+.l3-tile span { font-size: 12.5px; color: var(--grey); }
+.l3-tile.add b { color: var(--green); }
+.l3-tile.review b { color: var(--amber, #f5a623); }
+.l3-tile.skip b, .l3-tile.bad b { color: var(--grey); }
+.l3-actions { display: flex; gap: 10px; margin-bottom: 8px; }
+.l3-table td { vertical-align: top; }
+.l3-table input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--red); }
+.l3-why { font-size: 12.5px; color: var(--amber, #f5a623); }
+.l3-why a { color: var(--text); text-decoration: underline; }
+.l3-more summary { cursor: pointer; list-style: none; }
+.l3-more summary::-webkit-details-marker { display: none; }
+.sec-kicker .muted { font-weight: 400; letter-spacing: 0; text-transform: none; margin-left: 8px; font-size: 12.5px; }
