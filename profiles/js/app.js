@@ -4,16 +4,17 @@ import {
   listTrash, restoreApplicant, deleteApplicantForever, subscribeApplicants,
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
+  listMyNotifications, countMyUnread, markNotificationRead, markAllNotificationsRead, markInquiryNotificationsRead, subscribeMyNotifications,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611241004";
+} from "./api.js?v=202611241040";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611241004";
-import { SUPABASE_URL } from "./config.js?v=202611241004";
+} from "./outputs.js?v=202611241040";
+import { SUPABASE_URL } from "./config.js?v=202611241040";
 
 const app = document.getElementById("app");
 
@@ -42,6 +43,9 @@ const I = {
   notes: svg('<path d="M5 3h10l4 4v14H5z"/><path d="M8 10h8M8 14h8M8 18h5"/>'),
   phone: svg('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'),
   save: svg('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/>'),
+  bell: svg('<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'),
+  inbox: svg('<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>'),
+  reply: svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v4"/>'),
   users: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5 6.5-5s5.5 1.5 6.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 14.2c2.5.2 4.3 1.7 5 4.8"/>'),
   image: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>'),
 };
@@ -215,6 +219,7 @@ let session = null;
 let currentProfile = null;
 let renderSeq = 0;
 let unsubscribeLive = null;
+let myUnreadN = 0, unsubNotif = null; // the shared notification bell (same notifications as the CRM)
 let dirty = false;
 let liveRefresh = null;     // current page's handler for teammate saves
 let presenceRefresh = null; // current page's handler for "who has what open"
@@ -286,6 +291,7 @@ function parseRoute() {
   if (parts[0] === "p" && parts[1] && parts[2] === "outputs") return { name: "outputs", id: parts[1] };
   if (parts[0] === "p" && parts[1]) return { name: "editor", id: parts[1] };
   if (parts[0] === "account") return { name: "account" };
+  if (parts[0] === "notifications") return { name: "notifications" };
   if (parts[0] === "analytics") return { name: "analytics" };
   if (parts[0] === "inquiries" && parts[1]) return { name: "inquiry", id: parts[1] === "new" ? null : parts[1] };
   if (parts[0] === "inquiries") return { name: "inquiries" };
@@ -324,6 +330,13 @@ async function render() {
   }
   if (route.name !== "editor") setEditing(null);
   setTimeout(paintInquiryBadge, 0);
+  if (!unsubNotif && currentProfile) unsubNotif = subscribeMyNotifications(currentProfile.id, (p) => {
+    refreshBell();
+    if (p.eventType === "INSERT" && p.new?.kind === "inquiry") toast(p.new.message);
+    if (parseRoute().name === "notifications") render();
+  });
+  refreshBell();
+  if (route.name === "notifications") return renderNotifications(seq);
   if (route.name === "list") return renderList(seq);
   if (route.name === "editor") return renderEditor(route, seq);
   if (route.name === "outputs") return renderOutputs(route, seq);
@@ -379,6 +392,7 @@ function shell(active, inner) {
           <a href="#/analytics" class="${active === "analytics" ? "active" : ""}">Analytics</a>
         </nav>
         <div class="user-area">
+          <a href="#/notifications" id="nav-bell" class="bell ${active === "notifications" ? "active" : ""}" title="Notifications">${I.bell}${myUnreadN ? `<span class="bell-count">${myUnreadN > 99 ? "99+" : myUnreadN}</span>` : ""}</a>
           <a href="#/account" class="user-chip ${active === "account" ? "active" : ""}" title="Account">
             <span class="user-avatar">${escapeHtml(initials(currentProfile?.full_name))}</span>
             <span class="user-name">${escapeHtml(currentProfile?.full_name || "")}</span>
@@ -2044,6 +2058,54 @@ async function paintTeamAccess(box) {
   });
 }
 
+// ---------- shared notification bell ----------
+async function refreshBell() {
+  if (!currentProfile) return;
+  myUnreadN = await countMyUnread(currentProfile.id).catch(() => myUnreadN);
+  const bell = document.getElementById("nav-bell");
+  if (!bell) return;
+  bell.querySelector(".bell-count")?.remove();
+  if (myUnreadN) bell.insertAdjacentHTML("beforeend", `<span class="bell-count">${myUnreadN > 99 ? "99+" : myUnreadN}</span>`);
+}
+
+// where a notification goes: inquiries open here, Meister activity opens in the CRM
+function notifLink(n) {
+  if (n.kind === "inquiry") return n.inquiry_id ? `#/inquiries/${n.inquiry_id}` : "#/inquiries";
+  if (n.meister_id && currentProfile?.crm_access !== false) return `../crm/#/meister/${n.meister_id}`;
+  return "";
+}
+
+async function renderNotifications(seq) {
+  const main = shell("notifications", `<div class="loading">Loading notifications…</div>`);
+  let items;
+  try { items = await listMyNotifications(currentProfile.id); }
+  catch (e) { main.innerHTML = `<div class="banner error">Couldn't load notifications: ${escapeHtml(e.message)}</div>`; return; }
+  if (seq !== renderSeq) return;
+  const unread = items.filter((n) => !n.read_at).length;
+  const dayLabel = (iso) => { const d = new Date(iso), t = new Date(); const y = new Date(t); y.setDate(t.getDate() - 1);
+    return d.toDateString() === t.toDateString() ? "Today" : d.toDateString() === y.toDateString() ? "Yesterday" : d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }); };
+  const groups = [];
+  items.forEach((n) => { const l = dayLabel(n.created_at); if (!groups.length || groups[groups.length - 1][0] !== l) groups.push([l, []]); groups[groups.length - 1][1].push(n); });
+  const icon = (n) => (n.kind === "inquiry" ? I.inbox : n.kind === "comment" ? I.reply : n.kind === "mention" ? "@" : n.kind === "assigned" ? I.calendar || I.bell : I.notes);
+  const sub = (n) => [n.kind === "inquiry" ? "Inquiries" : n.meisters?.name ? `CRM · ${n.meisters.name}` : "CRM", new Date(n.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })].join(" · ");
+  main.innerHTML = `
+    <div class="page-header"><div><h1>Notifications</h1><p class="muted">Yours from both tools: new inquiries your team flags, plus your Concierge CRM activity. ${unread ? `${unread} unread.` : "You're caught up."}</p></div>
+      ${unread ? `<button id="mark-all-btn" class="btn">${I.check}Mark all read</button>` : ""}</div>
+    ${items.length ? groups.map(([label, list]) => `
+      <div class="notif-day">${escapeHtml(label)}</div>
+      <div class="notif-list">${list.map((n) => { const href = notifLink(n); return `
+        <${href ? `a href="${href}"` : "div"} class="notif ${n.read_at ? "" : "unread"}" data-id="${n.id}">
+          <span class="notif-ic ${n.kind === "mention" ? "mention" : ""} ${n.kind === "inquiry" ? "inq" : ""}">${icon(n)}</span>
+          <span class="notif-body"><span class="notif-msg">${escapeHtml(n.message)}</span><span class="muted">${escapeHtml(sub(n))}</span></span>
+          ${n.read_at ? "" : `<span class="unread-dot"></span>`}
+        </${href ? "a" : "div"}>`; }).join("")}</div>`).join("")
+      : `<div class="empty-state">Nothing yet. When someone adds an inquiry with "Notify the team" checked, or there's activity on your Meisters in the CRM, it shows up here.</div>`}`;
+  main.querySelector("#mark-all-btn")?.addEventListener("click", async () => {
+    try { await markAllNotificationsRead(currentProfile.id); render(); } catch (e) { toast("Couldn't update: " + e.message); }
+  });
+  main.querySelectorAll(".notif.unread").forEach((a) => a.addEventListener("click", () => { markNotificationRead(a.dataset.id).then(refreshBell).catch(() => {}); }));
+}
+
 async function renderAccount(seq) {
   const main = shell("account", "");
   main.innerHTML = `
@@ -2300,6 +2362,7 @@ async function renderInquiryForm(route, seq) {
   } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
   others = others.filter((o) => o.id !== route.id);
   if (seq !== renderSeq) return;
+  if (rec) markInquiryNotificationsRead(currentProfile.id, rec.id).then(refreshBell).catch(() => {}); // opening it counts as seeing the alert
   const v = rec || { method: "Phone", received_on: todayISO() };
   const moved = rec && rec.status === "Moved";
   const val = (k) => escapeHtml(v[k] ?? "");
@@ -2467,7 +2530,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241004");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241040");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2692,7 +2755,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241004");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241040");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;

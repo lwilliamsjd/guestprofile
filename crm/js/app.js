@@ -58,10 +58,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611241004";
-import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611241004";
-import { exportToExcel } from "./export.js?v=202611241004";
-import { wireImport } from "./import-export.js?v=202611241004";
+} from "./api.js?v=202611241040";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611241040";
+import { exportToExcel } from "./export.js?v=202611241040";
+import { wireImport } from "./import-export.js?v=202611241040";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -119,6 +119,7 @@ const I = {
   users: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>`,
   lock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
   reply: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17 4 12l5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>`,
+  inbox: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/></svg>`,
   bell: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>`,
   briefcase: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>`,
   x: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
@@ -572,7 +573,8 @@ async function renderDashboard(route, seq) {
         </div>` : ""}
         ${myUnread.length ? `<div class="today-col">
           <div class="today-lbl">${I.bell} New activity (${myUnread.length})</div>
-          ${[...new Set(myUnread.map((n) => n.meister_id))].slice(0, 5).map((id) => { const m = meisters.find((x) => x.id === id); return m ? `<a href="#/meister/${id}" class="today-row"><span class="today-title"><span class="unread-dot"></span>${escapeHtml(m.name)}</span><span class="muted">${escapeHtml(m.dealership || "")}</span></a>` : ""; }).join("")}
+          ${myUnread.some((n) => n.kind === "inquiry") ? `<a href="../profiles/#/inquiries" class="today-row"><span class="today-title"><span class="unread-dot"></span>${myUnread.filter((n) => n.kind === "inquiry").length} new ${myUnread.filter((n) => n.kind === "inquiry").length === 1 ? "inquiry" : "inquiries"}</span><span class="muted">Applicant Profiles</span></a>` : ""}
+          ${[...new Set(myUnread.filter((n) => n.meister_id).map((n) => n.meister_id))].slice(0, 5).map((id) => { const m = meisters.find((x) => x.id === id); return m ? `<a href="#/meister/${id}" class="today-row"><span class="today-title"><span class="unread-dot"></span>${escapeHtml(m.name)}</span><span class="muted">${escapeHtml(m.dealership || "")}</span></a>` : ""; }).join("")}
           <a href="#/notifications" class="today-more">All notifications</a>
         </div>` : ""}
         ${staleList.length ? `<div class="today-col">
@@ -1561,7 +1563,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611241004");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611241040");
       const tracked = meisters.map((m) => ({ ...m, guest_estimate: tPerM.get(m.id) || null }));
       const html = buildGuestMapReport(tracked, {
         filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "",
@@ -1581,7 +1583,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building legacy map…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611241004");
+      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611241040");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -2025,7 +2027,7 @@ async function renderNotificationsPage(route, seq) {
       <div><h1>Notifications</h1>
         <p class="muted">${
           linked
-            ? `Activity by teammates on Meisters assigned to <strong>${escapeHtml(currentProfile.concierge)}</strong>, plus any comment that @mentions you. ${unread.length ? unread.length + " unread." : "You're caught up."}`
+            ? `Activity by teammates on Meisters assigned to <strong>${escapeHtml(currentProfile.concierge)}</strong>, any comment that @mentions you, and new inquiries your team flags. The same list shows in Applicant Profiles. ${unread.length ? unread.length + " unread." : "You're caught up."}`
             : `Your login isn't linked to a Concierge name yet, so only @mentions reach you here. Your admin can link it (see README).`
         }</p>
       </div>
@@ -2044,11 +2046,11 @@ async function renderNotificationsPage(route, seq) {
             ${group
               .map(
                 (n) => `
-              <a href="#/meister/${n.meister_id}" class="notif ${n.read_at ? "" : "unread"}" data-id="${n.id}">
-                <span class="notif-ic ${n.kind === "mention" ? "mention" : ""}">${n.kind === "comment" ? I.reply : n.kind === "mention" ? "@" : n.kind === "assigned" ? I.calendar : I.note}</span>
+              <a href="${n.kind === "inquiry" ? `../profiles/#/inquiries/${n.inquiry_id || ""}` : `#/meister/${n.meister_id}`}" class="notif ${n.read_at ? "" : "unread"}" data-id="${n.id}">
+                <span class="notif-ic ${n.kind === "mention" ? "mention" : ""} ${n.kind === "inquiry" ? "inq" : ""}">${n.kind === "inquiry" ? I.inbox : n.kind === "comment" ? I.reply : n.kind === "mention" ? "@" : n.kind === "assigned" ? I.calendar : I.note}</span>
                 <span class="notif-body">
                   <span class="notif-msg">${escapeHtml(n.message)}</span>
-                  <span class="muted">${escapeHtml(n.meisters?.name || "")} · ${fmtTime(n.created_at)}</span>
+                  <span class="muted">${n.kind === "inquiry" ? "Inquiries (Applicant Profiles)" : escapeHtml(n.meisters?.name || "")} · ${fmtTime(n.created_at)}</span>
                 </span>
                 ${n.read_at ? "" : `<span class="unread-dot"></span>`}
               </a>`

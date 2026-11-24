@@ -756,3 +756,21 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 }
 .inq-moved-actions { display: flex; gap: 8px; margin-left: auto; flex: none; }
 .inq-moved-actions svg { width: 13px; height: 13px; }
+
+/* ---------- shared notification bell (same look as the CRM) ---------- */
+.bell { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; color: var(--grey); border: 1px solid transparent; flex: none; }
+.bell svg { width: 17px; height: 17px; }
+.bell:hover, .bell.active { color: var(--text); background: var(--panel-2); border-color: var(--border-strong); text-decoration: none; }
+.bell-count { position: absolute; top: -3px; right: -4px; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 100px; background: var(--red); color: #fff; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; border: 2px solid #0f0f11; }
+.unread-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 3px rgba(224,38,63,0.2); flex-shrink: 0; }
+.notif-day { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--grey-dim, #6b6b73); margin: 22px 0 8px; }
+.notif-list { display: flex; flex-direction: column; gap: 8px; }
+.notif { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); text-decoration: none; }
+.notif:hover { border-color: var(--border-strong); text-decoration: none; }
+.notif.unread { background: var(--panel-2); border-color: var(--red-dim); }
+.notif-ic { width: 30px; height: 30px; border-radius: 50%; background: var(--panel-3); color: var(--red); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-weight: 800; }
+.notif-ic.inq { color: var(--green); }
+.notif-ic svg { width: 14px; height: 14px; }
+.notif-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.notif-msg { font-size: 14px; line-height: 1.4; }
+.notif-body .muted { font-size: 12.5px; }

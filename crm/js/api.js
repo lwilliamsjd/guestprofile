@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611241004";
+import { supabase } from "./supabase-client.js?v=202611241040";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -48,7 +48,7 @@ export async function listNotifications(userId, limit = 100) {
 export async function listUnreadNotifications(userId) {
   const { data, error } = await supabase
     .from("notifications")
-    .select("id, meister_id")
+    .select("id, meister_id, kind")
     .eq("user_id", userId)
     .is("read_at", null);
   if (error) return [];

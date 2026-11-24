@@ -1451,3 +1451,4 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 .gc-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; background: currentColor; vertical-align: 1px; padding: 0 !important; border: 0 !important; }
 .gc-status .bar-label { white-space: nowrap; }
 @media print { .gc-legacy { display: none; } }
+.notif-ic.inq { color: var(--green); }

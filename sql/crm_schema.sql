@@ -732,7 +732,7 @@ $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['meisters','status_history','question_categories','interactions','guests','follow_ups','interaction_comments','notifications'] loop
+  foreach t in array array['meisters','status_history','question_categories','interactions','guests','follow_ups','interaction_comments'] loop
     if to_regclass('public.' || t) is not null then
       execute format('drop policy if exists crm_access_only on public.%I', t);
       execute format('create policy crm_access_only on public.%I as restrictive for all using (public.has_crm_access()) with check (public.has_crm_access())', t);
@@ -891,3 +891,33 @@ language sql security definer stable set search_path = public as $$
   where auth.uid() is not null and m.deleted_at is null;
 $$;
 revoke execute on function public.meister_guest_matches(text[]) from anon;
+
+-- ============================================================
+-- SHARED NOTIFICATIONS (one bell for both tools)
+-- Notifications belong to the person, not the CRM: everyone signed in sees their own,
+-- in either tool. A new inquiry saved with "Notify the team" notifies every other user.
+-- Safe to run more than once.
+-- ============================================================
+drop policy if exists crm_access_only on notifications;
+
+alter table notifications add column if not exists inquiry_id uuid references inquiries(id) on delete cascade;
+alter table notifications drop constraint if exists notifications_kind_check;
+alter table notifications add constraint notifications_kind_check
+  check (kind in ('comment','activity','mention','assigned','inquiry'));
+
+create or replace function public.notify_new_inquiry()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.notify_team then
+    insert into notifications (user_id, actor_id, actor_name, kind, inquiry_id, message)
+    select p.id, new.created_by, new.created_by_name, 'inquiry', new.id,
+           coalesce(nullif(trim(new.created_by_name), ''), 'Someone') || ' added a new inquiry: ' || new.name
+             || case when new.vip then ' (VIP)' else '' end
+    from profiles p
+    where p.id is distinct from new.created_by;
+  end if;
+  return null;
+end $$;
+drop trigger if exists inquiries_notify_team on inquiries;
+create trigger inquiries_notify_team after insert on inquiries
+  for each row execute function public.notify_new_inquiry();

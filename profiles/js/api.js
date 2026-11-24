@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611241004";
+import { supabase } from "./supabase-client.js?v=202611241040";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -123,6 +123,34 @@ export async function restoreApplicant(id) {
 export async function deleteApplicantForever(id) {
   const { error } = await supabase.from("applicants").delete().eq("id", id);
   if (error) throw error;
+}
+
+// ---------- notifications (shared with the CRM: one bell, per person) ----------
+export async function listMyNotifications(userId, limit = 150) {
+  let r = await supabase.from("notifications").select("*, meisters(name, deleted_at), inquiries(name)").eq("user_id", userId).order("created_at", { ascending: false }).limit(limit);
+  if (r.error) r = await supabase.from("notifications").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(limit);
+  if (r.error) throw r.error;
+  return (r.data || []).filter((n) => !n.meisters || !n.meisters.deleted_at);
+}
+export async function countMyUnread(userId) {
+  const { count, error } = await supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", userId).is("read_at", null);
+  return error ? 0 : count || 0;
+}
+export async function markNotificationRead(id) {
+  await supabase.from("notifications").update({ read_at: new Date().toISOString() }).eq("id", id);
+}
+export async function markAllNotificationsRead(userId) {
+  const { error } = await supabase.from("notifications").update({ read_at: new Date().toISOString() }).eq("user_id", userId).is("read_at", null);
+  if (error) throw error;
+}
+export async function markInquiryNotificationsRead(userId, inquiryId) {
+  await supabase.from("notifications").update({ read_at: new Date().toISOString() }).eq("user_id", userId).eq("inquiry_id", inquiryId).is("read_at", null);
+}
+export function subscribeMyNotifications(userId, cb) {
+  const ch = supabase.channel("my-notifications")
+    .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` }, (p) => cb(p))
+    .subscribe();
+  return () => supabase.removeChannel(ch);
 }
 
 export function subscribeApplicants(cb, onStatus) {
