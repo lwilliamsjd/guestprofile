@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611241444";
+import { supabase } from "./supabase-client.js?v=202611241518";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -249,15 +249,61 @@ export async function createInquiries(rows, profile) {
 }
 // Undo the most recent Level 3 import (the database checks it's the latest and who's asking).
 export async function undoInquiryImport(batch) {
+  // returns { deleted, kept, unmarked }
   const { data, error } = await supabase.rpc("undo_inquiry_import", { p_batch: batch });
   if (error) throw new Error(/undo_inquiry_import|function/i.test(error.message) && /exist|find/i.test(error.message) ? "Run level-3-undo.sql in Supabase first." : error.message);
   if (data?.paths?.length) await supabase.storage.from("inquiry-files").remove(data.paths).catch(() => {});
   return data || { deleted: 0, kept: 0 };
 }
-export async function listInquiries() {
-  const { data, error } = await supabase.from("inquiries").select("*").order("received_on", { ascending: false }).order("created_at", { ascending: false });
-  if (error) throw inqErr(error);
+// Supabase hands back at most 1,000 rows per request, so big tables are read in pages.
+async function fetchAll(build, pageSize = 1000) {
+  const out = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await build().range(from, from + pageSize - 1);
+    if (error) throw error;
+    out.push(...(data || []));
+    if (!data || data.length < pageSize) return out;
+  }
+}
+// All inquiries, or one page's worth: { source: "direct" | "website" }.
+export async function listInquiries(opts = {}) {
+  try {
+    return await fetchAll(() => {
+      let q = supabase.from("inquiries").select("*");
+      if (opts.source === "website") q = q.eq("source", "website");
+      else if (opts.source === "direct") q = q.neq("source", "website");
+      return q.order("received_on", { ascending: false }).order("created_at", { ascending: false }).order("id");
+    });
+  } catch (error) {
+    if (opts.source && /source/.test(error.message || "")) return listInquiries(); // before level-3-data.sql
+    throw inqErr(error);
+  }
+}
+// Just enough of every inquiry to spot duplicates across both pages.
+export async function listInquiryKeys() {
+  try { return await fetchAll(() => supabase.from("inquiries").select("id, name, email, phone, source, received_on, status").order("id")); }
+  catch { return fetchAll(() => supabase.from("inquiries").select("id, name, email, phone, received_on, status").order("id")); }
+}
+
+// ---------- Level 3 import matching (done in the database so it scales) ----------
+export async function level3Candidates(emails, names, phones) {
+  const { data, error } = await supabase.rpc("level3_candidates", { p_emails: emails, p_names: names, p_phones: phones });
+  if (error) throw new Error(/level3_candidates/.test(error.message) ? "Run level-3-matching.sql in Supabase first." : error.message);
+  return data || { inquiries: [], guests: [], applicants: [] };
+}
+export async function level3Mark(batch, inquiryIds, guestIds) {
+  if (!inquiryIds.length && !guestIds.length) return { inquiries: 0, guests: 0 };
+  const { data, error } = await supabase.rpc("level3_mark", { p_batch: batch, p_inquiry_ids: inquiryIds, p_guest_ids: guestIds });
+  if (error) throw error;
   return data;
+}
+export async function logInquiryImport(row) {
+  const { error } = await supabase.from("inquiry_imports").insert(row);
+  if (error) throw error;
+}
+export async function latestImportLog() {
+  const { data, error } = await supabase.from("inquiry_imports").select("*").is("undone_at", null).order("imported_at", { ascending: false }).limit(1);
+  return error ? null : data?.[0] || null;
 }
 export async function getInquiry(id) {
   const { data, error } = await supabase.from("inquiries").select("*").eq("id", id).single();
@@ -305,11 +351,9 @@ export async function listDealerLocations() {
 
 // ---------- inquiry notes log, attachments, team alerts ----------
 export async function listInquiryNotes(inquiryId = null) {
-  let q = supabase.from("inquiry_notes").select("*").order("created_at", { ascending: false });
-  if (inquiryId) q = q.eq("inquiry_id", inquiryId);
-  const { data, error } = await q;
-  if (error) return [];
-  return data;
+  try {
+    return await fetchAll(() => { let q = supabase.from("inquiry_notes").select("*").order("created_at", { ascending: false }).order("id"); if (inquiryId) q = q.eq("inquiry_id", inquiryId); return q; });
+  } catch { return []; }
 }
 export async function addInquiryNote(inquiryId, body, profile) {
   const { data, error } = await supabase.from("inquiry_notes")

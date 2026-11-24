@@ -5,16 +5,16 @@ import {
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
   listMyNotifications, countMyUnread, markNotificationRead, markAllNotificationsRead, markInquiryNotificationsRead, subscribeMyNotifications,
-  listInquiries, getInquiry, createInquiry, createInquiries, undoInquiryImport, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
+  listInquiries, listInquiryKeys, level3Candidates, level3Mark, logInquiryImport, latestImportLog, getInquiry, createInquiry, createInquiries, undoInquiryImport, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611241444";
+} from "./api.js?v=202611241518";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611241444";
-import { SUPABASE_URL } from "./config.js?v=202611241444";
+} from "./outputs.js?v=202611241518";
+import { SUPABASE_URL } from "./config.js?v=202611241518";
 
 const app = document.getElementById("app");
 
@@ -2204,7 +2204,7 @@ const inqLocation = (q) => [[q.city, q.state].filter(Boolean).join(", "), q.zip]
 let inqAlert = { count: 0, checked: false };
 async function refreshInquiryAlert() {
   try {
-    const [seen, all] = await Promise.all([getInquirySeen(currentProfile.id), listInquiries()]);
+    const [seen, all] = await Promise.all([getInquirySeen(currentProfile.id), listInquiries({ source: "direct" })]);
     if (seen.missing) { inqAlert = { count: 0, checked: true }; return; }
     const since = seen.seen_at || new Date(Date.now() - 14 * 86400000).toISOString();
     inqAlert = { count: all.filter((r) => r.notify_team && r.created_at > since && r.created_by !== currentProfile.id).length, checked: true };
@@ -2248,12 +2248,14 @@ const vipBadges = (r) => (r.vip ? `<span class="pill pill-vip inq-vip">${I.star}
 
 async function renderInquiries(seq, src = "direct") {
   const S = SRC[src], st = src === "website" ? l3State : inqState;
+  st.shown = 0;
   const main = shell(S.nav, `<div class="loading">Loading ${src === "website" ? "Level 3 Data" : "inquiries"}…</div>`);
   let all, notes = [], seen = { seen_at: null };
   let everyone;
-  try { [everyone, notes, seen] = await Promise.all([listInquiries(), listInquiryNotes(), getInquirySeen(currentProfile.id)]); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
-  all = everyone.filter((r) => srcOf(r) === src);
-  const lastImp = src === "website" ? latestImport(all) : null;
+  let impLog = null;
+  try { [all, everyone, notes, seen, impLog] = await Promise.all([listInquiries({ source: src }), listInquiryKeys(), listInquiryNotes(), getInquirySeen(currentProfile.id), src === "website" ? latestImportLog() : null]); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  all = all.filter((r) => srcOf(r) === src);
+  const lastImp = src === "website" ? importFromLog(impLog, all) : null;
   const mgMap = new Map();
   (await meisterGuestMatches(all.map((r) => r.name)).catch(() => [])).forEach((m) => { const k = m.name_key; if (!mgMap.has(k)) mgMap.set(k, []); mgMap.get(k).push(m); });
   const mgOf = (r) => mgMap.get(guestMatchKey(r.name));
@@ -2262,7 +2264,7 @@ async function renderInquiries(seq, src = "direct") {
   const isNewForMe = (r) => src === "direct" && r.notify_team && r.created_at > lastSeen && r.created_by !== currentProfile.id;
   const latestNote = new Map();
   notes.forEach((n) => { if (!latestNote.has(n.inquiry_id)) latestNote.set(n.inquiry_id, n); });
-  const dups = duplicateMap(everyone); // duplicates are checked across both pages
+  const dups = duplicateMap(everyone); // duplicates are checked across both pages (light rows: name, email, phone)
   if (src === "direct" && !seen.missing) { markInquiriesSeen(currentProfile.id).catch(() => {}); inqAlert = { count: 0, checked: true }; paintInquiryBadge(); }
 
   function draw() {
@@ -2281,8 +2283,9 @@ async function renderInquiries(seq, src = "direct") {
       location: [r.state, r.city].filter(Boolean).join(" ").toLowerCase() || "~", closest_dealer: (r.closest_dealer || "~").toLowerCase(), status: r.status || "",
       vip: st.dir === "asc" ? (r.vip ? (r.ag_approved ? "0" : "1") : "2") : (r.vip ? (r.ag_approved ? "2" : "1") : "0"),
     }[st.sort] ?? "");
-    const list = base.filter((r) => !q || [r.name, r.email, r.phone, fmtPhone(r.phone), r.city, r.state, r.zip, r.closest_dealer, latestNote.get(r.id)?.body, r.referred_by, r.handler, r.preferred_name, r.internal_status, r.record_owner_notes].some((f) => (f || "").toLowerCase().includes(q)))
+    const fullList = base.filter((r) => !q || [r.name, r.email, r.phone, fmtPhone(r.phone), r.city, r.state, r.zip, r.closest_dealer, latestNote.get(r.id)?.body, r.referred_by, r.handler, r.preferred_name, r.internal_status, r.record_owner_notes].some((f) => (f || "").toLowerCase().includes(q)))
       .sort((a, b) => { const x = sortVal(a), y = sortVal(b); const c = x < y ? -1 : x > y ? 1 : (a.name || "").localeCompare(b.name || ""); return st.dir === "asc" ? c : -c; });
+    const shown = st.shown || PAGE_ROWS, list = fullList.slice(0, shown);
     const th = (label, key) => { const on = st.sort === key; return `<th data-sort="${key}">${label}<span class="sort-ic ${on ? "on" : ""}">${on ? (st.dir === "asc" ? "▲" : "▼") : "▼"}</span></th>`; };
     const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const tab = (k, label, n) => `<button class="kpi ${st.view === k ? "active" : ""}" data-view="${k}"><span class="kpi-num">${n}</span><span class="kpi-label">${label}</span></button>`;
@@ -2325,19 +2328,23 @@ async function renderInquiries(seq, src = "direct") {
               <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}${isNewForMe(r) ? `<div><span class="pill inq-new">New</span></div>` : ""}</td>
               <td><div class="cell-name">${escapeHtml(r.name)}${gihText(r.gih_levels) ? ` <span class="pill inq-gih ${isL3(r) ? "l3" : ""}" ${isL3(r) ? `title="Reached GIH Level 3: ready for next steps"` : ""}>${isL3(r) ? I.check : ""}${gihText(r.gih_levels)}</span>` : ""}</div>
                 <div class="cell-sub muted">${escapeHtml([r.email, fmtPhone(r.phone)].filter(Boolean).join(" · "))}</div>
+                ${r.gih3_added_at ? `<div class="inq-auto" title="This guest showed up in the website Level 3 export, so GIH Level 3 was added automatically">${I.check}GIH 3 added by Level 3 import · ${fmtDate(r.gih3_added_at)}</div>` : ""}
                 ${dup ? `<div class="inq-dup" title="Another inquiry has the same ${[...dup].join(", ")}">${I.warn}Possible duplicate (same ${[...dup].join(", ")})</div>` : ""}${meisterGuestLine(mgOf(r), true)}</td>
               <td><span class="pill pill-method m-${(r.method || "Other").toLowerCase()}">${escapeHtml(r.method || "Other")}</span>${r.method === "Referral" && r.referred_by ? `<div class="cell-sub muted">from ${escapeHtml(r.referred_by)}</div>` : ""}</td>
               <td>${escapeHtml(inqLocation(r))}</td>
               <td>${escapeHtml(r.closest_dealer || "")}${r.closest_dealer_miles != null && r.closest_dealer ? `<div class="cell-sub muted">${r.closest_dealer_miles < 1 ? "under 1 mi" : `about ${Math.round(r.closest_dealer_miles)} mi`}</div>` : ""}</td>
               <td class="inq-vip-cell">${r.vip ? `<div class="inq-badges">${vipBadges(r)}</div>${r.handler ? `<div class="cell-sub muted">Handler: ${escapeHtml(r.handler)}</div>` : ""}` : `<span class="muted">—</span>`}</td>
               <td>${r.status === "Moved" ? `<span class="pill pill-complete" title="Moved to profiles ${r.moved_at ? fmtDate(r.moved_at) : ""}">${I.check}Profile started</span>` : `<span class="pill pill-draft">Open</span>`}</td>
-            </tr>`; }).join("")}</tbody></table>`
+            </tr>`; }).join("")}</tbody></table>
+          ${fullList.length > list.length ? `<div class="inq-more"><span class="muted">Showing ${list.length.toLocaleString()} of ${fullList.length.toLocaleString()}</span><button class="btn" id="inq-more">Show ${Math.min(PAGE_ROWS, fullList.length - list.length)} more</button><button class="btn" id="inq-all">Show all</button></div>` : fullList.length > PAGE_ROWS ? `<div class="inq-more"><span class="muted">Showing all ${fullList.length.toLocaleString()}</span></div>` : ""}`
           : `<div class="empty-state">${all.length ? (q || st.show ? "No inquiries match these filters." : st.view === "moved" ? "No inquiries have been moved to profiles yet." : "No open inquiries.") : src === "website" ? "Nothing imported yet. Use <b>Import Excel</b> with the daily website export." : "No inquiries yet. Add one with <b>New Inquiry</b> when a guest reaches out on their own."}</div>`}
       </div>`;
     const qi = main.querySelector("#inq-q");
-    qi.addEventListener("input", () => { st.q = qi.value; const pos = qi.selectionStart; draw(); const n = main.querySelector("#inq-q"); n.value = st.q; n.focus(); n.setSelectionRange(pos, pos); });
-    main.querySelector("#inq-show").addEventListener("change", (e) => { st.show = e.target.value; draw(); });
-    main.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { st.view = b.dataset.view; draw(); }));
+    qi.addEventListener("input", () => { st.q = qi.value; st.shown = 0; const pos = qi.selectionStart; draw(); const n = main.querySelector("#inq-q"); n.value = st.q; n.focus(); n.setSelectionRange(pos, pos); });
+    main.querySelector("#inq-show").addEventListener("change", (e) => { st.show = e.target.value; st.shown = 0; draw(); });
+    main.querySelector("#inq-more")?.addEventListener("click", () => { st.shown = (st.shown || PAGE_ROWS) + PAGE_ROWS; draw(); });
+    main.querySelector("#inq-all")?.addEventListener("click", () => { st.shown = 1e9; draw(); });
+    main.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { st.view = b.dataset.view; st.shown = 0; draw(); }));
     main.querySelectorAll("th[data-sort]").forEach((t) => t.addEventListener("click", () => {
       const k = t.dataset.sort;
       if (st.sort === k) st.dir = st.dir === "asc" ? "desc" : "asc";
@@ -2384,7 +2391,7 @@ async function renderInquiryForm(route, seq) {
   let rec = null, others = [], profiles = [], notes = [], files = [];
   try {
     [rec, others, profiles, notes, files] = await Promise.all([
-      isNew ? null : getInquiry(route.id), listInquiries().catch(() => []), listApplicants().catch(() => []),
+      isNew ? null : getInquiry(route.id), listInquiryKeys().catch(() => []), listApplicants().catch(() => []),
       isNew ? [] : listInquiryNotes(route.id), isNew ? [] : listInquiryFiles(route.id),
     ]);
   } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
@@ -2407,6 +2414,7 @@ async function renderInquiryForm(route, seq) {
         ${!isNew && currentProfile?.is_admin ? `<button class="btn btn-danger" id="inq-delete" type="button">${I.trash}Delete</button>` : ""}
       </div>
     </div>
+    ${rec?.gih3_added_at ? `<div class="banner inq-auto-banner">${I.check}<span><b>GIH Level 3 added automatically</b> ${fmtDate(rec.gih3_added_at)}: this guest also came in through the website Level 3 export.</span></div>` : ""}
     ${rec?.vip && rec?.do_not_contact ? `<div class="banner inq-dnc-banner">${I.ban}<span><b>Do Not Contact.</b> High profile VIP: keep tracking and build the profile, but don't reach out.</span></div>` : ""}
     ${moved ? `<div class="banner inq-moved-banner">${I.check}<span><b>Profile started</b> ${rec.moved_at ? fmtDate(rec.moved_at) : ""}${rec.moved_by_name ? ` by ${escapeHtml(rec.moved_by_name)}` : ""}. This inquiry stays here for the record.</span><span class="inq-moved-actions">${rec.applicant_id ? `<a class="btn btn-sm" href="#/p/${rec.applicant_id}">Open profile</a>` : ""}<button type="button" class="btn btn-sm" id="inq-unmove" title="Started on the wrong guest? Put this inquiry back on the open list">${I.undo}Undo</button></span></div>` : ""}
     <form id="inq-form" class="form-section inq-form" autocomplete="off">
@@ -2528,7 +2536,7 @@ async function renderInquiryForm(route, seq) {
     const rows = [];
     for (const o of others) {
       const why = [n.length > 2 && normName(o.name) === n && "name", em && normEmail(o.email) === em && "email", ph && normPhone(o.phone) === ph && "phone"].filter(Boolean);
-      if (why.length) rows.push(`<a href="#/inquiries/${o.id}" target="_blank" rel="noopener">${escapeHtml(o.name)}</a> · inquiry ${o.received_on ? fmtDate(o.received_on) : ""}${o.email ? " · " + escapeHtml(o.email) : ""}${o.phone ? " · " + escapeHtml(fmtPhone(o.phone)) : ""} <span class="muted">(same ${why.join(" and ")})</span>`);
+      if (why.length) rows.push(`<a href="${SRC[srcOf(o)].base}/${o.id}" target="_blank" rel="noopener">${escapeHtml(o.name)}</a> · ${srcOf(o) === "website" ? "Level 3 Data" : "inquiry"} ${o.received_on ? fmtDate(o.received_on) : ""}${o.email ? " · " + escapeHtml(o.email) : ""}${o.phone ? " · " + escapeHtml(fmtPhone(o.phone)) : ""} <span class="muted">(same ${why.join(" and ")})</span>`);
     }
     if (n.length > 2) for (const p of profiles) if (normName(p.name) === n && p.id !== rec?.applicant_id) rows.push(`<a href="#/p/${p.id}" target="_blank" rel="noopener">${escapeHtml(p.name)}</a> · applicant profile${p.preferred_dealer ? " · " + escapeHtml(p.preferred_dealer) : ""} <span class="muted">(same name)</span>`);
     if (n.length > 2 && guestHits.key === n) rows.push(...meisterGuestLine(guestHits.rows));
@@ -2559,7 +2567,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241444");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241518");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2770,6 +2778,12 @@ function l3Date(v) {
 }
 const tidyName = (s) => String(s || "").replace(/\s+/g, " ").trim();
 
+const PAGE_ROWS = 200; // the list draws this many rows at a time (Level 3 Data can run to tens of thousands)
+// Most recent import from the import log (falls back to scanning rows for imports made before the log).
+function importFromLog(log, rows) {
+  if (!log) return latestImport(rows);
+  return { batch: log.id, at: log.imported_at, file: log.file_name, by: log.imported_by_name, byId: log.imported_by, added: log.added, marked: log.marked, rows: rows.filter((r) => r.import_batch === log.id) };
+}
 // The most recent import among these rows: { batch, at, file, by, byId, rows }
 function latestImport(rows) {
   const tagged = rows.filter((r) => r.import_batch);
@@ -2778,43 +2792,41 @@ function latestImport(rows) {
   const mine = tagged.filter((r) => r.import_batch === top.import_batch);
   return { batch: top.import_batch, at: top.imported_at || top.created_at, file: top.import_file, by: top.created_by_name, byId: top.created_by, rows: mine };
 }
-const canUndoImport = (imp) => imp && (currentProfile?.is_admin || imp.byId === currentProfile?.id);
+const canUndoImport = (imp) => imp && (imp.rows.length || imp.marked) && (currentProfile?.is_admin || imp.byId === currentProfile?.id);
 async function undoImportFlow(imp, notes = []) {
   const moved = imp.rows.filter((r) => r.status === "Moved").length, gone = imp.rows.length - moved;
   const worked = imp.rows.filter((r) => r.status !== "Moved" && (notes.some((n) => n.inquiry_id === r.id) || (r.updated_at && r.imported_at && r.updated_at > new Date(new Date(r.imported_at).getTime() + 60000).toISOString()))).length;
   const when = new Date(imp.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const msg = `Undo the import from ${when}${imp.file ? ` (${imp.file})` : ""}${imp.by ? ` by ${imp.by}` : ""}?\n\nThis removes the ${gone} ${gone === 1 ? "guest" : "guests"} it added.`
+    + (imp.marked ? `\n\nIt also takes GIH Level 3 back off the ${imp.marked} existing ${imp.marked === 1 ? "record" : "records"} it marked (Inquiries or Meister guests).` : "")
     + (worked ? `\n\n${worked} of them ${worked === 1 ? "has" : "have"} been edited or has notes since, and ${worked === 1 ? "it" : "those"} will be removed too.` : "")
     + (moved ? `\n\n${moved} already moved to a profile will be kept.` : "");
   if (!confirm(msg)) return false;
   const res = await undoInquiryImport(imp.batch);
-  toast(`Import undone: ${res.deleted} removed${res.kept ? `, ${res.kept} kept (moved to profiles)` : ""}`);
+  toast(`Import undone: ${res.deleted} removed${res.unmarked ? `, GIH 3 taken off ${res.unmarked}` : ""}${res.kept ? `, ${res.kept} kept (moved to profiles)` : ""}`);
   return true;
 }
 
 async function renderL3Import(seq) {
-  const main = shell("level3", `<div class="loading">Loading…</div>`);
-  let inqs, apps;
-  try { [inqs, apps] = await Promise.all([listInquiries(), listApplicants().catch(() => [])]); }
-  catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+  shell("level3", "");
   if (seq !== renderSeq) return;
+  const main = document.getElementById("main");
   let sheet = null, headers = [], map = {}, fileName = "", result = null, plan = null, lastBatch = null;
 
   main.innerHTML = `
     <a href="#/level3" class="back-link">${I.back}Level 3 Data</a>
-    <div class="page-header"><div><h1>Import Level 3 Data</h1><p class="muted">Drop in the daily website export (.xlsx or .csv). Everyone comes in as GIH Level 3. Nothing is saved until you click Import.</p></div></div>
+    <div class="page-header"><div><h1>Import Level 3 Data</h1><p class="muted">Drop in the daily website export (.xlsx or .csv). New guests come in as GIH Level 3, and anyone already on file is marked Level 3 instead of being added twice. Nothing is saved until you click Import.</p></div></div>
     <label class="l3-drop" id="l3-drop">${I.upload}<span><b>Choose the export file</b> or drag it here</span><input type="file" id="l3-file" accept=".xlsx,.xls,.csv" hidden></label>
     <div id="l3-body"></div>`;
   const body = main.querySelector("#l3-body"), drop = main.querySelector("#l3-drop");
 
   const readFile = async (file) => {
     if (!window.XLSX) return alert("Excel library didn't load. Check your connection and try again.");
-    fileName = file.name; result = null;
+    fileName = file.name; result = null; lastBatch = null;
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true, blankrows: false });
-      // header row = first row with 2+ text cells
       const hi = Math.max(0, rows.findIndex((r) => r.filter((c) => typeof c === "string" && c.trim()).length >= 2));
       headers = (rows[hi] || []).map((h, i) => String(h || "").trim() || `Column ${i + 1}`);
       sheet = rows.slice(hi + 1).filter((r) => r.some((c) => String(c).trim()));
@@ -2829,97 +2841,125 @@ async function renderL3Import(seq) {
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
   drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) readFile(f); });
 
+  // A strong match (same email, or same first + last name + ZIP) is the same person: never added again.
+  // A name-only or phone-only match goes to review.
   async function analyze() {
-    body.innerHTML = `<div class="loading">Checking ${sheet.length} rows against everything on file…</div>`;
+    body.innerHTML = `<div class="loading">Checking ${sheet.length.toLocaleString()} rows against everything on file…</div>`;
     const cell = (r, k) => (map[k] != null ? r[map[k]] : "");
     const rows = sheet.map((r, i) => {
       const name = map.name != null ? tidyName(cell(r, "name")) : tidyName(`${cell(r, "first") || ""} ${cell(r, "last") || ""}`);
-      return { line: i + 1, name, email: normEmail(cell(r, "email")), phone: fmtPhone(cell(r, "phone")), zip: l3Zip(cell(r, "zip")), received_on: l3Date(cell(r, "date")) || todayISO() };
+      return { line: i + 1, name, key: normName(name), email: normEmail(cell(r, "email")), phone: fmtPhone(cell(r, "phone")), zip: l3Zip(cell(r, "zip")), received_on: l3Date(cell(r, "date")) || todayISO() };
     });
-    // what's already on file, across Inquiries, Level 3 Data, applicant profiles and Meister guest lists
-    const byEmail = new Map(), byName = new Map(), byPhone = new Map();
-    const push = (m, k, v) => { if (!k) return; if (!m.has(k)) m.set(k, []); m.get(k).push(v); };
-    inqs.forEach((q) => {
-      const where = `${srcOf(q) === "website" ? "Level 3 Data" : "Inquiries"}: <a href="${SRC[srcOf(q)].base}/${q.id}" target="_blank" rel="noopener">${escapeHtml(q.name)}</a>${q.received_on ? ` (${fmtDate(q.received_on)})` : ""}`;
-      push(byEmail, normEmail(q.email), where);
-      const n = normName(q.name); if (n.length > 2) push(byName, n, where);
-      push(byPhone, normPhone(q.phone), where);
-    });
-    apps.forEach((a) => { const n = normName(a.name); if (n.length > 2) push(byName, n, `Applicant profile: <a href="#/p/${a.id}" target="_blank" rel="noopener">${escapeHtml(a.name)}</a>`); });
-    (await meisterGuestMatches(rows.map((r) => r.name)).catch(() => [])).forEach((m) => push(byName, m.name_key, m.meister_name ? `${escapeHtml(m.meister_name)}'s Guests tab (CRM)${m.guest_status ? ` · ${escapeHtml(m.guest_status)}` : ""}` : "A Meister's Guests tab"));
+    let cand;
+    try { cand = await level3Candidates([...new Set(rows.map((r) => r.email).filter(Boolean))], [...new Set(rows.map((r) => r.name).filter(Boolean))], [...new Set(rows.map((r) => r.phone).filter(Boolean))]); }
+    catch (e) { body.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
+    const z5 = (z) => l3Zip(z);
+    const inqDesc = (q) => `${srcOf(q) === "website" ? "Level 3 Data" : "Inquiries"}: <a href="${SRC[srcOf(q)].base}/${q.id}" target="_blank" rel="noopener">${escapeHtml(q.name)}</a>${q.received_on ? ` (${fmtDate(q.received_on)})` : ""}${(q.gih_levels || []).includes(3) ? " · already Level 3" : ""}`;
+    const guestDesc = (g) => `${g.meister_name ? `${g.meister_id ? `<a href="../crm/#/meister/${g.meister_id}" target="_blank" rel="noopener">${escapeHtml(g.meister_name)}</a>` : escapeHtml(g.meister_name)}'s Guests tab` : "A Meister's Guests tab"}: ${escapeHtml(g.name)}${g.status ? ` · ${escapeHtml(g.status)}` : ""}${g.gih_level3 ? " · already Level 3" : ""}`;
+    const strong = (x, r) => (r.email && normEmail(x.email) === r.email) || (r.zip && normName(x.name) === r.key && z5(x.zip) === r.zip);
 
-    const seenEmail = new Map(), seenName = new Map();
-    plan = { add: [], review: [], skip: [], bad: [] };
+    const seenEmail = new Map(), seenStrong = new Map(), seenName = new Map();
+    plan = { add: [], auto: [], have: [], review: [], skip: [], bad: [] };
     for (const r of rows) {
       if (!r.name) { r.why = ["No name in this row"]; plan.bad.push(r); continue; }
-      if (r.email && byEmail.has(r.email)) { r.why = byEmail.get(r.email).map((w) => `Same email · ${w}`); plan.skip.push(r); continue; }
-      if (r.email && seenEmail.has(r.email)) { r.why = [`Same email as row ${seenEmail.get(r.email)} in this file`]; plan.skip.push(r); continue; }
+      // repeats inside the file itself
+      const sk = r.zip ? `${r.key}|${r.zip}` : "";
+      if ((r.email && seenEmail.has(r.email)) || (sk && seenStrong.has(sk))) { r.why = [`Same person as row ${seenEmail.get(r.email) || seenStrong.get(sk)} in this file`]; plan.skip.push(r); continue; }
       if (r.email) seenEmail.set(r.email, r.line);
-      const n = normName(r.name), why = [];
-      (byName.get(n) || []).forEach((w) => why.push(`Same name · ${w}`));
-      if (seenName.has(n)) why.push(`Same name as row ${seenName.get(n)} in this file`);
+      if (sk) seenStrong.set(sk, r.line);
+
+      const sInq = cand.inquiries.filter((q) => strong(q, r)), sGuest = cand.guests.filter((g) => strong(g, r));
+      if (sInq.length || sGuest.length) {
+        r.markInq = sInq.filter((q) => srcOf(q) === "direct" && !(q.gih_levels || []).includes(3)).map((q) => q.id);
+        r.markGuest = sGuest.filter((g) => !g.gih_level3).map((g) => g.id);
+        r.why = [...sInq.map((q) => `${normEmail(q.email) === r.email ? "Same email" : "Same name and ZIP"} · ${inqDesc(q)}`), ...sGuest.map((g) => `${normEmail(g.email) === r.email ? "Same email" : "Same name and ZIP"} · ${guestDesc(g)}`)];
+        (r.markInq.length || r.markGuest.length ? plan.auto : plan.have).push(r);
+        continue;
+      }
+      // name-only or phone-only: you decide
       const ph = normPhone(r.phone);
-      if (ph) (byPhone.get(ph) || []).forEach((w) => why.push(`Same phone · ${w}`));
-      seenName.set(n, r.line);
-      r.why = why; r.pick = !why.length;
-      (why.length ? plan.review : plan.add).push(r);
+      const nInq = cand.inquiries.filter((q) => normName(q.name) === r.key), nGuest = cand.guests.filter((g) => normName(g.name) === r.key);
+      const nApp = cand.applicants.filter((a) => normName(a.name) === r.key);
+      const pInq = ph ? cand.inquiries.filter((q) => normPhone(q.phone) === ph && !nInq.includes(q)) : [];
+      const why = [...nInq.map((q) => `Same name, different ${q.zip ? "ZIP" : "details"} · ${inqDesc(q)}`), ...nGuest.map((g) => `Same name · ${guestDesc(g)}`),
+        ...nApp.map((a) => `Same name · Applicant profile: <a href="#/p/${a.id}" target="_blank" rel="noopener">${escapeHtml(a.name)}</a>${a.city || a.state ? ` (${escapeHtml([a.city, a.state].filter(Boolean).join(", "))})` : ""}`),
+        ...pInq.map((q) => `Same phone · ${inqDesc(q)}`)];
+      if (seenName.has(r.key)) why.push(`Same name as row ${seenName.get(r.key)} in this file`);
+      seenName.set(r.key, r.line);
+      if (why.length) {
+        r.why = why; r.choice = "";
+        r.markInq = [...nInq, ...pInq].filter((q) => srcOf(q) === "direct" && !(q.gih_levels || []).includes(3)).map((q) => q.id);
+        r.markGuest = nGuest.filter((g) => !g.gih_level3).map((g) => g.id);
+        plan.review.push(r);
+      } else { r.why = []; r.pick = true; plan.add.push(r); }
     }
     draw();
   }
 
+  const willAdd = () => plan.add.filter((r) => r.pick).length + plan.review.filter((r) => r.choice === "new").length;
+  const willMark = () => plan.auto.length + plan.review.filter((r) => r.choice === "same" && (r.markInq.length || r.markGuest.length)).length;
+
   function draw() {
     if (!plan) return;
     const opt = (k) => `<select data-map="${k}"><option value="">(none)</option>${headers.map((h, i) => `<option value="${i}" ${map[k] === i ? "selected" : ""}>${escapeHtml(h)}</option>`).join("")}</select>`;
-    const rowHtml = (r, box) => `<tr>
-        ${box ? `<td><input type="checkbox" data-line="${r.line}" ${r.pick ? "checked" : ""}></td>` : ""}
-        <td class="muted">${r.line}</td><td><b>${escapeHtml(r.name || "—")}</b></td><td>${escapeHtml(r.email)}</td><td style="white-space:nowrap">${escapeHtml(r.phone)}</td><td>${escapeHtml(r.zip)}</td>
-        ${r.why?.length ? `<td class="l3-why">${r.why.map((w) => `<div>${w}</div>`).join("")}</td>` : box === "add" ? `<td class="muted">New</td>` : "<td></td>"}</tr>`;
-    const table = (list, box) => `<div class="table-wrap"><table class="crm-table l3-table"><thead><tr>${box ? "<th></th>" : ""}<th>Row</th><th>Name</th><th>Email</th><th>Phone</th><th>ZIP</th><th>${box === "add" ? "" : "Why"}</th></tr></thead><tbody>${list.map((r) => rowHtml(r, box)).join("")}</tbody></table></div>`;
-    const picked = plan.add.filter((r) => r.pick).length + plan.review.filter((r) => r.pick).length;
+    const cells = (r) => `<td class="muted">${r.line}</td><td><b>${escapeHtml(r.name || "—")}</b></td><td>${escapeHtml(r.email)}</td><td style="white-space:nowrap">${escapeHtml(r.phone)}</td><td>${escapeHtml(r.zip)}</td>`;
+    const why = (r) => `<td class="l3-why">${(r.why || []).map((w) => `<div>${w}</div>`).join("")}</td>`;
+    const head = (first, last) => `<thead><tr>${first ? `<th>${first}</th>` : ""}<th>Row</th><th>Name</th><th>Email</th><th>Phone</th><th>ZIP</th><th>${last}</th></tr></thead>`;
+    const reviewRow = (r) => {
+      const canMark = r.markInq.length || r.markGuest.length, done = r.added || r.marked;
+      return `<tr class="${r.choice ? "l3-chosen" : ""}"><td class="l3-choice">${done ? `<span class="pill ${r.added ? "pill-complete" : "inq-gih l3"}">${r.added ? "Added" : "Marked GIH 3"}</span>` : `
+        <button type="button" class="l3-ch ${r.choice === "same" ? "on same" : ""}" data-line="${r.line}" data-ch="same">${canMark ? "Same person: add GIH 3" : "Same person: skip"}</button>
+        <button type="button" class="l3-ch ${r.choice === "new" ? "on new" : ""}" data-line="${r.line}" data-ch="new">Different person: add new</button>`}</td>${cells(r)}${why(r)}</tr>`;
+    };
+    const plain = (list, last = "Why") => `<div class="table-wrap"><table class="crm-table l3-table">${head("", last)}<tbody>${list.map((r) => `<tr>${cells(r)}${why(r)}</tr>`).join("")}</tbody></table></div>`;
+    const nAdd = willAdd(), nMark = willMark(), undecided = plan.review.filter((r) => !r.choice).length;
     body.innerHTML = `
-      <div class="l3-file-line">${I.doc}<b>${escapeHtml(fileName)}</b><span class="muted">${sheet.length} rows</span></div>
+      <div class="l3-file-line">${I.doc}<b>${escapeHtml(fileName)}</b><span class="muted">${sheet.length.toLocaleString()} rows</span></div>
       <div class="l3-map"><span class="muted">Columns:</span>${(map.name != null || map.first == null ? ["name"] : ["first", "last"]).concat(["email", "phone", "zip", "date"]).map((k) => `<label>${L3_FIELDS.find((f) => f[0] === k)[1]}${opt(k)}</label>`).join("")}</div>
       ${map.name == null && map.first == null ? `<div class="banner error">Pick which column has the guest's name.</div>` : ""}
       <div class="l3-summary">
         <div class="l3-tile add"><b>${plan.add.length}</b><span>New</span></div>
-        <div class="l3-tile review"><b>${plan.review.length}</b><span>Need your review</span></div>
-        <div class="l3-tile skip"><b>${plan.skip.length}</b><span>Already on file (same email), skipped</span></div>
+        <div class="l3-tile auto"><b>${plan.auto.length}</b><span>Already on file: will be marked GIH 3</span></div>
+        <div class="l3-tile review"><b>${plan.review.length}</b><span>Need your review${undecided && plan.review.length ? ` (${undecided} undecided)` : ""}</span></div>
+        <div class="l3-tile skip"><b>${plan.have.length + plan.skip.length}</b><span>Already Level 3 or repeated, skipped</span></div>
         ${plan.bad.length ? `<div class="l3-tile bad"><b>${plan.bad.length}</b><span>Can't import (no name)</span></div>` : ""}
       </div>
-      ${result ? "" : `<div class="l3-actions"><button class="btn btn-primary" id="l3-go" ${picked ? "" : "disabled"}>${I.upload}Import ${picked} ${picked === 1 ? "guest" : "guests"}</button><button class="btn" id="l3-report">${I.excel}Download report</button></div>`}
-      ${result ? `<div class="banner inq-moved-banner">${I.check}<span><b>${result.added} ${result.added === 1 ? "guest" : "guests"} added to Level 3 Data.</b> ${result.skipped} skipped, ${result.held} left out after review.</span><span class="inq-moved-actions"><button class="btn btn-sm" id="l3-undo-now">${I.undo}Undo this import</button><button class="btn btn-sm" id="l3-report">${I.excel}Download report</button><a class="btn btn-sm btn-primary" href="#/level3">Open Level 3 Data</a></span></div>` : ""}
-      ${plan.review.length ? `<div class="sec-kicker inq-kicker">Need your review <span class="muted">Same name or phone as someone already on file. Check the ones that are a different person to add them.</span></div>${table(plan.review, "review")}` : ""}
-      ${plan.add.length ? `<div class="sec-kicker inq-kicker">New <span class="muted">Not on file anywhere. Uncheck any you don't want.</span></div>${table(plan.add, "add")}` : ""}
-      ${plan.skip.length ? `<details class="l3-more"><summary class="sec-kicker inq-kicker">Skipped: already on file with the same email (${plan.skip.length})</summary>${table(plan.skip, "")}</details>` : ""}
-      ${plan.bad.length ? `<details class="l3-more"><summary class="sec-kicker inq-kicker">Can't import (${plan.bad.length})</summary>${table(plan.bad, "")}</details>` : ""}`;
+      ${result ? `<div class="banner inq-moved-banner">${I.check}<span><b>${result.added} ${result.added === 1 ? "guest" : "guests"} added to Level 3 Data, ${result.marked} existing ${result.marked === 1 ? "record" : "records"} marked GIH 3.</b> ${result.skipped} skipped${result.undecided ? `, ${result.undecided} left undecided` : ""}.</span><span class="inq-moved-actions"><button class="btn btn-sm" id="l3-undo-now">${I.undo}Undo this import</button><button class="btn btn-sm" id="l3-report">${I.excel}Download report</button><a class="btn btn-sm btn-primary" href="#/level3">Open Level 3 Data</a></span></div>`
+        : `<div class="l3-actions"><button class="btn btn-primary" id="l3-go" ${nAdd || nMark ? "" : "disabled"}>${I.upload}Import: add ${nAdd}, mark ${nMark}</button><button class="btn" id="l3-report">${I.excel}Download report</button>${undecided ? `<span class="muted">${undecided} in review ${undecided === 1 ? "has" : "have"} no choice yet and will be left out.</span>` : ""}</div>`}
+      ${plan.review.length ? `<div class="sec-kicker inq-kicker">Need your review <span class="muted">Same name (or phone) but not the same email or ZIP. Pick one for each.</span></div>
+        <div class="table-wrap"><table class="crm-table l3-table">${head("Your call", "Matches")}<tbody>${plan.review.map(reviewRow).join("")}</tbody></table></div>` : ""}
+      ${plan.auto.length ? `<div class="sec-kicker inq-kicker">Updated automatically <span class="muted">Same email, or same name and ZIP, as someone already on file. Not added again; marked GIH Level 3 instead.</span></div><div class="l3-auto">${plain(plan.auto, "Matched")}</div>` : ""}
+      ${plan.add.length ? `<div class="sec-kicker inq-kicker">New <span class="muted">Not on file anywhere. Uncheck any you don't want.</span></div>
+        <div class="table-wrap"><table class="crm-table l3-table">${head("", "")}<tbody>${plan.add.map((r) => `<tr>${cells(r)}<td>${r.added ? `<span class="pill pill-complete">Added</span>` : `<label class="l3-keep"><input type="checkbox" data-line="${r.line}" ${r.pick ? "checked" : ""} ${result ? "disabled" : ""}> Add</label>`}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      ${plan.have.length + plan.skip.length ? `<details class="l3-more"><summary class="sec-kicker inq-kicker">Skipped: already Level 3 or repeated in the file (${plan.have.length + plan.skip.length})</summary>${plain([...plan.have, ...plan.skip])}</details>` : ""}
+      ${plan.bad.length ? `<details class="l3-more"><summary class="sec-kicker inq-kicker">Can't import (${plan.bad.length})</summary>${plain(plan.bad)}</details>` : ""}`;
     body.querySelectorAll("[data-map]").forEach((sel) => sel.addEventListener("change", () => { const k = sel.dataset.map; if (sel.value === "") delete map[k]; else map[k] = Number(sel.value); if (k === "name" && sel.value !== "") { delete map.first; delete map.last; } result = null; analyze(); }));
-    body.querySelectorAll("input[data-line]").forEach((cb) => cb.addEventListener("change", () => {
-      const r = [...plan.add, ...plan.review].find((x) => String(x.line) === cb.dataset.line); r.pick = cb.checked;
-      const n = plan.add.filter((x) => x.pick).length + plan.review.filter((x) => x.pick).length, go = body.querySelector("#l3-go");
-      if (go) { go.disabled = !n; go.innerHTML = `${I.upload}Import ${n} ${n === 1 ? "guest" : "guests"}`; }
+    body.querySelectorAll(".l3-ch").forEach((b) => b.addEventListener("click", () => {
+      const r = plan.review.find((x) => String(x.line) === b.dataset.line);
+      r.choice = r.choice === b.dataset.ch ? "" : b.dataset.ch; draw();
     }));
+    body.querySelectorAll(".l3-keep input").forEach((cb) => cb.addEventListener("change", () => { plan.add.find((x) => String(x.line) === cb.dataset.line).pick = cb.checked; draw(); }));
     body.querySelector("#l3-report")?.addEventListener("click", downloadReport);
     body.querySelector("#l3-go")?.addEventListener("click", runImport);
     body.querySelector("#l3-undo-now")?.addEventListener("click", async (e) => {
       e.target.disabled = true;
-      try {
-        if (await undoImportFlow(lastBatch)) { result = null; lastBatch = null; inqs = await listInquiries(); return analyze(); }
-      } catch (err) { alert("Couldn't undo: " + err.message); }
+      try { if (await undoImportFlow(lastBatch)) { result = null; lastBatch = null; return analyze(); } } catch (err) { alert("Couldn't undo: " + err.message); }
       e.target.disabled = false;
     });
   }
 
   async function runImport() {
     const go = body.querySelector("#l3-go");
-    const chosen = [...plan.add, ...plan.review].filter((r) => r.pick);
-    if (!chosen.length) return;
+    const adds = [...plan.add.filter((r) => r.pick), ...plan.review.filter((r) => r.choice === "new")];
+    const marks = [...plan.auto, ...plan.review.filter((r) => r.choice === "same")];
+    if (!adds.length && !marks.some((r) => r.markInq.length || r.markGuest.length)) return;
     go.disabled = true; go.textContent = "Importing…";
+    const batch = crypto.randomUUID(), importedAt = new Date().toISOString();
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241444");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241518");
       const dealers = await dealerLocations();
-      const batch = crypto.randomUUID(), importedAt = new Date().toISOString();
       const out = [];
-      for (const r of chosen) {
+      for (const r of adds) {
         const here = r.zip ? await lookupZip(r.zip) : null;
         const near = r.zip ? await closestDealers(r.zip, dealers, 1) : [];
         out.push({
@@ -2929,23 +2969,36 @@ async function renderL3Import(seq) {
           import_batch: batch, imported_at: importedAt, import_file: fileName.slice(0, 200),
         });
       }
-      const saved = await createInquiries(out, currentProfile);
-      lastBatch = { batch, at: importedAt, file: fileName, by: currentProfile.full_name, byId: currentProfile.id, rows: saved };
-      chosen.forEach((r) => (r.added = true));
-      result = { added: chosen.length, skipped: plan.skip.length + plan.bad.length, held: plan.review.filter((r) => !r.pick).length + plan.add.filter((r) => !r.pick).length };
-      toast(`${chosen.length} added to Level 3 Data`);
+      const saved = out.length ? await createInquiries(out, currentProfile) : [];
+      adds.forEach((r) => (r.added = true));
+      const inqIds = [...new Set(marks.flatMap((r) => r.markInq || []))], guestIds = [...new Set(marks.flatMap((r) => r.markGuest || []))];
+      const m = await level3Mark(batch, inqIds, guestIds);
+      marks.forEach((r) => (r.marked = true));
+      const markedN = (m?.inquiries || 0) + (m?.guests || 0);
+      const skipped = plan.have.length + plan.skip.length + plan.bad.length + plan.review.filter((r) => r.choice === "same" && !(r.markInq.length || r.markGuest.length)).length;
+      await logInquiryImport({ id: batch, file_name: fileName.slice(0, 200), imported_at: importedAt, imported_by_name: currentProfile.full_name, added: saved.length, marked: markedN, skipped }).catch(() => {});
+      lastBatch = { batch, at: importedAt, file: fileName, by: currentProfile.full_name, byId: currentProfile.id, rows: saved, marked: markedN };
+      result = { added: saved.length, marked: markedN, skipped, undecided: plan.review.filter((r) => !r.choice).length };
+      toast(`Imported: ${saved.length} added, ${markedN} marked GIH 3`);
       draw();
-    } catch (e) { alert("Import stopped: " + e.message + "\n\nNothing after the first error was saved. Fix the issue and import the file again; anyone already added will be skipped by email."); go.disabled = false; go.textContent = "Try again"; }
+    } catch (e) {
+      alert("Import stopped: " + e.message + "\n\nAnything already saved can be removed with Undo last import on the Level 3 Data page, or import the file again: people already added are matched by email and skipped.");
+      await logInquiryImport({ id: batch, file_name: fileName.slice(0, 200), imported_at: importedAt, imported_by_name: currentProfile.full_name }).catch(() => {});
+      go.disabled = false; go.textContent = "Try again";
+    }
   }
 
   function downloadReport() {
     if (!window.XLSX) return alert("Excel library didn't load.");
     const strip = (h) => String(h).replace(/<[^>]+>/g, "");
-    const row = (r, status) => ({ Row: r.line, Status: status, Name: r.name, Email: r.email, Phone: r.phone, ZIP: r.zip, Date: r.received_on, Why: (r.why || []).map(strip).join("; ") });
+    const row = (r, status) => ({ Row: r.line, Result: status, Name: r.name, Email: r.email, Phone: r.phone, ZIP: r.zip, Date: r.received_on, Details: (r.why || []).map(strip).join("; ") });
+    const done = !!result;
     const data = [
-      ...plan.review.map((r) => row(r, result ? (r.added ? "Added after review" : "Held for review, not added") : r.pick ? "Review: will be added" : "Review: not checked")),
-      ...plan.add.map((r) => row(r, result ? (r.added ? "Added" : "Unchecked, not added") : r.pick ? "New: will be added" : "New: unchecked")),
-      ...plan.skip.map((r) => row(r, "Skipped: same email already on file")),
+      ...plan.auto.map((r) => row(r, done ? "Marked GIH 3 on the existing record (not added)" : "Will mark GIH 3 on the existing record (not added)")),
+      ...plan.review.map((r) => row(r, r.choice === "same" ? (r.markInq.length || r.markGuest.length ? `${done ? "Marked" : "Will mark"} GIH 3 after review (same person)` : "Same person, skipped") : r.choice === "new" ? `${done ? "Added" : "Will add"} after review (different person)` : "Review: no choice, not added")),
+      ...plan.add.map((r) => row(r, r.pick ? (done ? "Added" : "New: will be added") : "New: unchecked, not added")),
+      ...plan.have.map((r) => row(r, "Skipped: already Level 3 on file")),
+      ...plan.skip.map((r) => row(r, "Skipped: repeated in this file")),
       ...plan.bad.map((r) => row(r, "Can't import")),
     ];
     const wb = XLSX.utils.book_new();
@@ -2996,7 +3049,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241444");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241518");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;

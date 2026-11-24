@@ -921,3 +921,114 @@ end $$;
 drop trigger if exists inquiries_notify_team on inquiries;
 create trigger inquiries_notify_team after insert on inquiries
   for each row execute function public.notify_new_inquiry();
+
+-- ============================================================
+-- LEVEL 3 MATCHING (run after level-3-data.sql and level-3-undo.sql)
+-- * Meister guests get an email, a ZIP and a GIH Level 3 flag.
+-- * Each Level 3 import is logged; GIH 3 marks it puts on existing Inquiries or
+--   Meister guests are tagged with the import, so undo can take them back off.
+-- * Matching runs in the database so it stays fast with tens of thousands of rows.
+-- Safe to run more than once.
+-- ============================================================
+alter table guests add column if not exists email text;
+alter table guests add column if not exists zip text;
+alter table guests add column if not exists gih_level3 boolean not null default false;
+alter table guests add column if not exists gih3_added_at timestamptz;
+alter table guests add column if not exists gih3_batch uuid;
+create index if not exists guests_email_idx on guests (lower(email));
+
+alter table inquiries add column if not exists gih3_added_at timestamptz;
+alter table inquiries add column if not exists gih3_batch uuid;
+create index if not exists inquiries_name_key_idx on inquiries (public.norm_person_name(name));
+create index if not exists guests_name_key_idx on guests (public.norm_person_name(guest_name));
+create index if not exists inquiries_source_idx on inquiries (source, received_on desc);
+
+create table if not exists inquiry_imports (
+  id uuid primary key,
+  file_name text,
+  imported_at timestamptz not null default now(),
+  imported_by uuid references auth.users(id) default auth.uid(),
+  imported_by_name text,
+  added int not null default 0,
+  marked int not null default 0,
+  skipped int not null default 0,
+  undone_at timestamptz
+);
+alter table inquiry_imports enable row level security;
+drop policy if exists inquiry_imports_select on inquiry_imports;
+create policy inquiry_imports_select on inquiry_imports for select to authenticated using (true);
+drop policy if exists inquiry_imports_insert on inquiry_imports;
+create policy inquiry_imports_insert on inquiry_imports for insert to authenticated with check (imported_by = auth.uid());
+
+-- Everything on file that could be the same person as rows in an import file.
+-- Guests: CRM users see the Meister and status; others get just enough to match.
+create or replace function public.level3_candidates(p_emails text[], p_names text[], p_phones text[])
+returns jsonb language sql security definer stable set search_path = public as $$
+  with e as (select distinct lower(trim(x)) v from unnest(p_emails) x where coalesce(trim(x), '') <> ''),
+       n as (select distinct public.norm_person_name(x) v from unnest(p_names) x where length(public.norm_person_name(x)) > 2),
+       p as (select distinct right(regexp_replace(x, '\D', '', 'g'), 10) v from unnest(p_phones) x where length(regexp_replace(x, '\D', '', 'g')) >= 10)
+  select jsonb_build_object(
+    'inquiries', coalesce((select jsonb_agg(jsonb_build_object('id', i.id, 'source', i.source, 'name', i.name, 'email', i.email, 'phone', i.phone, 'zip', i.zip,
+        'received_on', i.received_on, 'gih_levels', i.gih_levels, 'status', i.status))
+      from inquiries i
+      where lower(i.email) in (select v from e) or public.norm_person_name(i.name) in (select v from n)
+         or right(regexp_replace(coalesce(i.phone, ''), '\D', '', 'g'), 10) in (select v from p)), '[]'::jsonb),
+    'guests', coalesce((select jsonb_agg(jsonb_build_object('id', g.id, 'name', g.guest_name, 'email', g.email, 'zip', g.zip, 'gih_level3', g.gih_level3,
+        'status', case when public.has_crm_access() then g.guest_status end,
+        'meister_id', case when public.has_crm_access() then m.id end,
+        'meister_name', case when public.has_crm_access() then m.name end))
+      from guests g join meisters m on m.id = g.meister_id
+      where m.deleted_at is null
+        and (lower(g.email) in (select v from e) or public.norm_person_name(g.guest_name) in (select v from n))), '[]'::jsonb),
+    'applicants', coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'name', a.name, 'city', a.city, 'state', a.state))
+      from applicants a where a.deleted_at is null and public.norm_person_name(a.name) in (select v from n)), '[]'::jsonb)
+  )
+  where auth.uid() is not null;
+$$;
+
+-- Put GIH Level 3 on existing Inquiries and Meister guests, tagged with the import.
+create or replace function public.level3_mark(p_batch uuid, p_inquiry_ids uuid[], p_guest_ids uuid[])
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_i int; v_g int;
+begin
+  if auth.uid() is null then raise exception 'Please sign in'; end if;
+  update inquiries set gih_levels = (select array_agg(distinct x order by x) from unnest(gih_levels || array[3]::smallint[]) x),
+         gih3_added_at = now(), gih3_batch = p_batch
+   where id = any(p_inquiry_ids) and not (3 = any(gih_levels));
+  get diagnostics v_i = row_count;
+  update guests set gih_level3 = true, gih3_added_at = now(), gih3_batch = p_batch
+   where id = any(p_guest_ids) and not gih_level3;
+  get diagnostics v_g = row_count;
+  return jsonb_build_object('inquiries', v_i, 'guests', v_g);
+end $$;
+
+-- Undo now uses the import log, and also takes back the GIH 3 marks that import made.
+create or replace function public.undo_inquiry_import(p_batch uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_latest uuid; v_owner uuid; v_paths text[]; v_deleted int; v_kept int; v_ui int; v_ug int;
+begin
+  select id, imported_by into v_latest, v_owner from inquiry_imports where undone_at is null order by imported_at desc limit 1;
+  if v_latest is null then  -- imports from before the log existed
+    select import_batch, created_by into v_latest, v_owner from inquiries where import_batch is not null
+      order by imported_at desc nulls last, created_at desc limit 1;
+  end if;
+  if v_latest is null or v_latest <> p_batch then raise exception 'Only the most recent import can be undone'; end if;
+  if not (public.is_admin() or v_owner = auth.uid()) then raise exception 'Only the person who ran this import, or an admin, can undo it'; end if;
+  select coalesce(array_agg(f.path), '{}') into v_paths from inquiry_files f join inquiries i on i.id = f.inquiry_id
+    where i.import_batch = p_batch and i.status <> 'Moved';
+  select count(*) into v_kept from inquiries where import_batch = p_batch and status = 'Moved';
+  delete from inquiries where import_batch = p_batch and status <> 'Moved';
+  get diagnostics v_deleted = row_count;
+  update inquiries set import_batch = null where import_batch = p_batch;
+  update inquiries set gih_levels = array_remove(gih_levels, 3::smallint), gih3_added_at = null, gih3_batch = null where gih3_batch = p_batch;
+  get diagnostics v_ui = row_count;
+  update guests set gih_level3 = false, gih3_added_at = null, gih3_batch = null where gih3_batch = p_batch;
+  get diagnostics v_ug = row_count;
+  update inquiry_imports set undone_at = now() where id = p_batch;
+  return json_build_object('deleted', v_deleted, 'kept', v_kept, 'unmarked', v_ui + v_ug, 'paths', v_paths);
+end $$;
+
+revoke execute on function public.level3_candidates(text[], text[], text[]) from anon;
+revoke execute on function public.level3_mark(uuid, uuid[], uuid[]) from anon;
+revoke execute on function public.undo_inquiry_import(uuid) from anon;

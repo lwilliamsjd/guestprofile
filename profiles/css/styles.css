@@ -802,3 +802,19 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
 .l3-more summary { cursor: pointer; list-style: none; }
 .l3-more summary::-webkit-details-marker { display: none; }
 .sec-kicker .muted { font-weight: 400; letter-spacing: 0; text-transform: none; margin-left: 8px; font-size: 12.5px; }
+.inq-auto { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 11.5px; font-weight: 600; color: var(--green); }
+.inq-auto svg { width: 11px; height: 11px; }
+.inq-auto-banner { display: flex; align-items: center; justify-content: flex-start; gap: 10px; border-color: var(--green); background: rgba(61,220,132,.07); }
+.inq-auto-banner svg { width: 16px; height: 16px; color: var(--green); flex: none; }
+.l3-tile.auto b { color: var(--green); }
+.l3-choice { white-space: nowrap; }
+.l3-ch { display: block; width: 100%; text-align: left; margin: 2px 0; padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--panel-2); color: var(--grey); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.l3-ch:hover { color: var(--text); border-color: var(--border-strong); }
+.l3-ch.on.same { color: var(--green); border-color: var(--green); background: rgba(61,220,132,.1); }
+.l3-ch.on.new { color: #fff; border-color: var(--red); background: var(--red); }
+.l3-table tr.l3-chosen td { background: rgba(255,255,255,.02); }
+.l3-keep { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--grey); cursor: pointer; }
+.l3-actions { align-items: center; flex-wrap: wrap; }
+.l3-actions .muted { font-size: 12.5px; }
+.inq-more { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 0 4px; }
+.l3-auto .l3-why { color: var(--green); }

@@ -58,10 +58,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611241444";
-import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611241444";
-import { exportToExcel } from "./export.js?v=202611241444";
-import { wireImport } from "./import-export.js?v=202611241444";
+} from "./api.js?v=202611241518";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611241518";
+import { exportToExcel } from "./export.js?v=202611241518";
+import { wireImport } from "./import-export.js?v=202611241518";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1563,7 +1563,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611241444");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611241518");
       const tracked = meisters.map((m) => ({ ...m, guest_estimate: tPerM.get(m.id) || null }));
       const html = buildGuestMapReport(tracked, {
         filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "",
@@ -1583,7 +1583,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building legacy map…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611241444");
+      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611241518");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -3586,9 +3586,9 @@ function renderGuestsTab(guests, hist = [], apps = [], allNames = []) {
       ${uiState.guestFormOpen && !uiState.editingGuestId ? guestFormHtml(null) : ""}
       <div class="g-list">
         ${list.length ? list.map((g) => uiState.editingGuestId === g.id ? guestFormHtml(g, appById.get(g.applicant_id)) : `
-          <article class="g-card gst-${slug(guestStatus(g))} ${g.vip ? "is-vip" : ""}">
+          <article class="g-card gst-${slug(guestStatus(g))} ${g.vip ? "is-vip" : ""} ${g.gih_level3 ? "is-gih3" : ""}">
             <header class="g-head">
-              <div class="g-title"><b>${escapeHtml(g.guest_name)}</b>${g.vip ? `<span class="guest-vip">${I.star}VIP</span>` : ""}<span class="guest-pill gs-${slug(guestStatus(g))}">${escapeHtml(guestStatus(g))}</span></div>
+              <div class="g-title"><b>${escapeHtml(g.guest_name)}</b>${g.vip ? `<span class="guest-vip">${I.star}VIP</span>` : ""}${g.gih_level3 ? `<span class="guest-gih3" title="${g.gih3_added_at ? `Added automatically ${fmtDate(g.gih3_added_at)}: this guest showed up in the website Level 3 export` : "GIH Level 3"}">${I.check}GIH 3${g.gih3_added_at ? " · from Level 3 import" : ""}</span>` : ""}<span class="guest-pill gs-${slug(guestStatus(g))}">${escapeHtml(guestStatus(g))}</span></div>
               <div class="td-actions">
                 <button class="icon-btn edit-guest-btn" data-id="${g.id}" title="Edit">${I.edit}</button>
                 ${isAdmin() ? `<button class="icon-btn danger delete-guest-btn" data-id="${g.id}" title="Delete">${I.trash}</button>` : ""}
@@ -3600,6 +3600,7 @@ function renderGuestsTab(guests, hist = [], apps = [], allNames = []) {
               <div><dt>Order Date</dt><dd>${g.purchase_date ? fmtDate(g.purchase_date) : "—"}</dd></div>
               <div><dt>Delivery</dt><dd>${g.delivery_date ? fmtMonth(g.delivery_date) : "—"}</dd></div>
               <div><dt>Variant</dt><dd>${escapeHtml(g.variant || "GR GT")}</dd></div>
+              ${g.email || g.zip ? `<div class="g-wide"><dt>Contact</dt><dd>${escapeHtml([g.email, g.zip ? "ZIP " + g.zip : ""].filter(Boolean).join(" · "))}</dd></div>` : ""}
               <div class="g-wide"><dt>Profile</dt><dd class="g-prof">${guestProfileHtml(g, appById.get(g.applicant_id))}</dd></div>
               <div class="g-wide"><dt>Build</dt><dd>${guestBuildHtml(g)}</dd></div>
               ${g.notes ? `<div class="g-wide"><dt>Notes</dt><dd class="g-notes">${escapeHtml(g.notes)}</dd></div>` : ""}
@@ -3617,6 +3618,7 @@ function guestState(prefix, existing, app) {
     applicant: existing?.applicant_id ? app || { id: existing.applicant_id, name: "Linked profile" } : null,
     pdf_path: existing?.pdf_path || null, pdf_name: existing?.pdf_name || null, newPdf: null,
     vip: !!existing?.vip,
+    gih3: !!existing?.gih_level3,
   };
   return guestEdit[prefix];
 }
@@ -3642,8 +3644,11 @@ function guestFormHtml(existing, app) {
       <div class="g-sec">Guest</div>
       <div class="form-grid g-grid-3">
         <div class="form-field"><label>Guest Name *</label><input id="${p}name" data-draft required value="${escapeAttr(dv(`${p}name`, existing?.guest_name))}" /></div>
+        <div class="form-field"><label>Email <span class="muted">(used to match website requests)</span></label><input id="${p}email" data-draft type="email" maxlength="160" value="${escapeAttr(dv(`${p}email`, existing?.email))}" /></div>
+        <div class="form-field"><label>ZIP</label><input id="${p}zip" data-draft inputmode="numeric" maxlength="10" value="${escapeAttr(dv(`${p}zip`, existing?.zip))}" /></div>
         <div class="form-field"><label>Status</label><select id="${p}status" data-draft>${GUEST_STATUSES.map((x) => `<option ${status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
         <div class="form-field"><label>VIP</label><button type="button" class="g-vip-tgl ${st.vip ? "on" : ""}" data-gvip>${I.star}<span>${st.vip ? "VIP guest" : "Not VIP"}</span></button></div>
+        <div class="form-field"><label>GIH Level 3</label><button type="button" class="g-gih-tgl ${st.gih3 ? "on" : ""}" data-ggih>${I.check}<span>${st.gih3 ? "Level 3" : "Not Level 3"}</span></button></div>
         <div class="form-field"><label>Order Date</label><input id="${p}date" data-draft type="date" value="${escapeAttr(dv(`${p}date`, existing?.purchase_date))}" /></div>
         <div class="form-field"><label>Delivery Month</label><div class="form-field-split month-pick"><select id="${p}dmonth" data-draft><option value="">Month</option>${["01","02","03","04","05","06","07","08","09","10","11","12"].map((v, i) => `<option value="${v}" ${mm === v ? "selected" : ""}>${new Date(2000, i, 1).toLocaleDateString("en-US", { month: "short" })}</option>`).join("")}</select><select id="${p}dyear" data-draft><option value="">Year</option>${years.map((v) => `<option ${yy === v ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
         <div class="form-field g-disabled" title="Future variants will be added here once they're public"><label>Variant <span class="muted">(coming later)</span></label><select disabled>${GUEST_VARIANTS.map((v) => `<option>${v}</option>`).join("")}</select></div>
@@ -3720,6 +3725,7 @@ function wireGuestsTab(meister, guests = [], apps = [], allNames = []) {
     };
 
     form.querySelector("[data-gvip]").addEventListener("click", () => { st.vip = !st.vip; redraw(); });
+    form.querySelector("[data-ggih]").addEventListener("click", () => { st.gih3 = !st.gih3; redraw(); });
     form.querySelector("[data-gle]").addEventListener("change", (e) => { st.launch_edition = e.target.checked; redraw(); });
     form.querySelectorAll(".gb-opt").forEach((b) => b.addEventListener("click", () => {
       const l = b.dataset.spec, cat = b.closest(".gb-cat").dataset.cat, at = st.spec_tags.findIndex((t) => t.label === l);
@@ -3778,6 +3784,7 @@ function wireGuestsTab(meister, guests = [], apps = [], allNames = []) {
         purchase_date: g("date") || null, delivery_date: g("dmonth") && g("dyear") ? `${g("dyear")}-${g("dmonth")}-01` : null,
         notes: g("notes"), spec_tags: st.spec_tags, launch_edition: st.launch_edition,
         applicant_id: st.applicant?.id || null, pdf_path: st.pdf_path, pdf_name: st.pdf_name,
+        email: g("email").toLowerCase() || null, zip: (g("zip").match(/\d{5}/) || [""])[0] || g("zip") || null, gih_level3: st.gih3,
       };
       if (!fields.guest_name) return;
       const btn = form.querySelector("button[type=submit]");
