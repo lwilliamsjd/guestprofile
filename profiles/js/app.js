@@ -7,14 +7,14 @@ import {
   listMyNotifications, countMyUnread, markNotificationRead, markAllNotificationsRead, markInquiryNotificationsRead, subscribeMyNotifications,
   listInquiries, listInquiryKeys, level3Candidates, level3Mark, logInquiryImport, latestImportLog, getInquiry, createInquiry, createInquiries, undoInquiryImport, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611241518";
+} from "./api.js?v=202611241533";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611241518";
-import { SUPABASE_URL } from "./config.js?v=202611241518";
+} from "./outputs.js?v=202611241533";
+import { SUPABASE_URL } from "./config.js?v=202611241533";
 
 const app = document.getElementById("app");
 
@@ -2567,7 +2567,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241518");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241533");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2858,6 +2858,16 @@ async function renderL3Import(seq) {
     const guestDesc = (g) => `${g.meister_name ? `${g.meister_id ? `<a href="../crm/#/meister/${g.meister_id}" target="_blank" rel="noopener">${escapeHtml(g.meister_name)}</a>` : escapeHtml(g.meister_name)}'s Guests tab` : "A Meister's Guests tab"}: ${escapeHtml(g.name)}${g.status ? ` · ${escapeHtml(g.status)}` : ""}${g.gih_level3 ? " · already Level 3" : ""}`;
     const strong = (x, r) => (r.email && normEmail(x.email) === r.email) || (r.zip && normName(x.name) === r.key && z5(x.zip) === r.zip);
 
+    // blank email / ZIP / phone on the matched records get filled from the file (never overwritten)
+    const blanks = (x, keys) => keys.filter((k) => !x[k] && r_[k]);
+    let r_ = {};
+    const fillFor = (r, inqList, guestList) => {
+      r_ = r;
+      return [
+        ...inqList.filter((q) => srcOf(q) === "direct").map((q) => ({ kind: "inquiry", id: q.id, email: r.email, zip: r.zip, phone: r.phone, fields: blanks(q, ["email", "zip", "phone"]) })),
+        ...guestList.map((g) => ({ kind: "guest", id: g.id, email: r.email, zip: r.zip, fields: blanks(g, ["email", "zip"]) })),
+      ].filter((f) => f.fields.length);
+    };
     const seenEmail = new Map(), seenStrong = new Map(), seenName = new Map();
     plan = { add: [], auto: [], have: [], review: [], skip: [], bad: [] };
     for (const r of rows) {
@@ -2872,6 +2882,7 @@ async function renderL3Import(seq) {
       if (sInq.length || sGuest.length) {
         r.markInq = sInq.filter((q) => srcOf(q) === "direct" && !(q.gih_levels || []).includes(3)).map((q) => q.id);
         r.markGuest = sGuest.filter((g) => !g.gih_level3).map((g) => g.id);
+        r.fill = fillFor(r, sInq, sGuest);
         r.why = [...sInq.map((q) => `${normEmail(q.email) === r.email ? "Same email" : "Same name and ZIP"} · ${inqDesc(q)}`), ...sGuest.map((g) => `${normEmail(g.email) === r.email ? "Same email" : "Same name and ZIP"} · ${guestDesc(g)}`)];
         (r.markInq.length || r.markGuest.length ? plan.auto : plan.have).push(r);
         continue;
@@ -2890,6 +2901,7 @@ async function renderL3Import(seq) {
         r.why = why; r.choice = "";
         r.markInq = [...nInq, ...pInq].filter((q) => srcOf(q) === "direct" && !(q.gih_levels || []).includes(3)).map((q) => q.id);
         r.markGuest = nGuest.filter((g) => !g.gih_level3).map((g) => g.id);
+        r.fill = fillFor(r, [...nInq, ...pInq], nGuest);
         plan.review.push(r);
       } else { r.why = []; r.pick = true; plan.add.push(r); }
     }
@@ -2903,7 +2915,7 @@ async function renderL3Import(seq) {
     if (!plan) return;
     const opt = (k) => `<select data-map="${k}"><option value="">(none)</option>${headers.map((h, i) => `<option value="${i}" ${map[k] === i ? "selected" : ""}>${escapeHtml(h)}</option>`).join("")}</select>`;
     const cells = (r) => `<td class="muted">${r.line}</td><td><b>${escapeHtml(r.name || "—")}</b></td><td>${escapeHtml(r.email)}</td><td style="white-space:nowrap">${escapeHtml(r.phone)}</td><td>${escapeHtml(r.zip)}</td>`;
-    const why = (r) => `<td class="l3-why">${(r.why || []).map((w) => `<div>${w}</div>`).join("")}</td>`;
+    const why = (r) => `<td class="l3-why">${(r.why || []).map((w) => `<div>${w}</div>`).join("")}${r.fill?.length ? `<div class="l3-fill">${r.choice === "new" ? "" : `Fills in the missing ${[...new Set(r.fill.flatMap((f) => f.fields))].map((k) => (k === "zip" ? "ZIP" : k)).join(", ")} on the match${plan.review.includes(r) ? " if you pick Same person" : ""}`}</div>` : ""}</td>`;
     const head = (first, last) => `<thead><tr>${first ? `<th>${first}</th>` : ""}<th>Row</th><th>Name</th><th>Email</th><th>Phone</th><th>ZIP</th><th>${last}</th></tr></thead>`;
     const reviewRow = (r) => {
       const canMark = r.markInq.length || r.markGuest.length, done = r.added || r.marked;
@@ -2924,7 +2936,7 @@ async function renderL3Import(seq) {
         <div class="l3-tile skip"><b>${plan.have.length + plan.skip.length}</b><span>Already Level 3 or repeated, skipped</span></div>
         ${plan.bad.length ? `<div class="l3-tile bad"><b>${plan.bad.length}</b><span>Can't import (no name)</span></div>` : ""}
       </div>
-      ${result ? `<div class="banner inq-moved-banner">${I.check}<span><b>${result.added} ${result.added === 1 ? "guest" : "guests"} added to Level 3 Data, ${result.marked} existing ${result.marked === 1 ? "record" : "records"} marked GIH 3.</b> ${result.skipped} skipped${result.undecided ? `, ${result.undecided} left undecided` : ""}.</span><span class="inq-moved-actions"><button class="btn btn-sm" id="l3-undo-now">${I.undo}Undo this import</button><button class="btn btn-sm" id="l3-report">${I.excel}Download report</button><a class="btn btn-sm btn-primary" href="#/level3">Open Level 3 Data</a></span></div>`
+      ${result ? `<div class="banner inq-moved-banner">${I.check}<span><b>${result.added} ${result.added === 1 ? "guest" : "guests"} added to Level 3 Data, ${result.marked} existing ${result.marked === 1 ? "record" : "records"} marked GIH 3${result.filled ? `, missing contact info filled on ${result.filled}` : ""}.</b> ${result.skipped} skipped${result.undecided ? `, ${result.undecided} left undecided` : ""}.</span><span class="inq-moved-actions"><button class="btn btn-sm" id="l3-undo-now">${I.undo}Undo this import</button><button class="btn btn-sm" id="l3-report">${I.excel}Download report</button><a class="btn btn-sm btn-primary" href="#/level3">Open Level 3 Data</a></span></div>`
         : `<div class="l3-actions"><button class="btn btn-primary" id="l3-go" ${nAdd || nMark ? "" : "disabled"}>${I.upload}Import: add ${nAdd}, mark ${nMark}</button><button class="btn" id="l3-report">${I.excel}Download report</button>${undecided ? `<span class="muted">${undecided} in review ${undecided === 1 ? "has" : "have"} no choice yet and will be left out.</span>` : ""}</div>`}
       ${plan.review.length ? `<div class="sec-kicker inq-kicker">Need your review <span class="muted">Same name (or phone) but not the same email or ZIP. Pick one for each.</span></div>
         <div class="table-wrap"><table class="crm-table l3-table">${head("Your call", "Matches")}<tbody>${plan.review.map(reviewRow).join("")}</tbody></table></div>` : ""}
@@ -2956,7 +2968,7 @@ async function renderL3Import(seq) {
     go.disabled = true; go.textContent = "Importing…";
     const batch = crypto.randomUUID(), importedAt = new Date().toISOString();
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241518");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241533");
       const dealers = await dealerLocations();
       const out = [];
       for (const r of adds) {
@@ -2972,13 +2984,14 @@ async function renderL3Import(seq) {
       const saved = out.length ? await createInquiries(out, currentProfile) : [];
       adds.forEach((r) => (r.added = true));
       const inqIds = [...new Set(marks.flatMap((r) => r.markInq || []))], guestIds = [...new Set(marks.flatMap((r) => r.markGuest || []))];
-      const m = await level3Mark(batch, inqIds, guestIds);
+      const seenFill = new Set(), fill = marks.flatMap((r) => r.fill || []).filter((f) => !seenFill.has(f.kind + f.id) && seenFill.add(f.kind + f.id)).map(({ fields, ...f }) => f);
+      const m = await level3Mark(batch, inqIds, guestIds, fill);
       marks.forEach((r) => (r.marked = true));
       const markedN = (m?.inquiries || 0) + (m?.guests || 0);
       const skipped = plan.have.length + plan.skip.length + plan.bad.length + plan.review.filter((r) => r.choice === "same" && !(r.markInq.length || r.markGuest.length)).length;
       await logInquiryImport({ id: batch, file_name: fileName.slice(0, 200), imported_at: importedAt, imported_by_name: currentProfile.full_name, added: saved.length, marked: markedN, skipped }).catch(() => {});
       lastBatch = { batch, at: importedAt, file: fileName, by: currentProfile.full_name, byId: currentProfile.id, rows: saved, marked: markedN };
-      result = { added: saved.length, marked: markedN, skipped, undecided: plan.review.filter((r) => !r.choice).length };
+      result = { added: saved.length, marked: markedN, filled: m?.filled || 0, skipped, undecided: plan.review.filter((r) => !r.choice).length };
       toast(`Imported: ${saved.length} added, ${markedN} marked GIH 3`);
       draw();
     } catch (e) {
@@ -3049,7 +3062,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241518");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241533");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;

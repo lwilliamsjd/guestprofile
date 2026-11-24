@@ -1032,3 +1032,84 @@ end $$;
 revoke execute on function public.level3_candidates(text[], text[], text[]) from anon;
 revoke execute on function public.level3_mark(uuid, uuid[], uuid[]) from anon;
 revoke execute on function public.undo_inquiry_import(uuid) from anon;
+
+-- ============================================================
+-- LEVEL 3: FILL MISSING CONTACT INFO (run after level-3-matching.sql)
+-- When an import matches someone already on file (automatically or "Same person"),
+-- a blank email, ZIP or phone on that Inquiry / Meister guest is filled from the file.
+-- Existing values are never changed. Undo takes filled values back out.
+-- Safe to run more than once.
+-- ============================================================
+alter table guests add column if not exists contact_filled jsonb;
+alter table guests add column if not exists contact_filled_batch uuid;
+alter table inquiries add column if not exists contact_filled jsonb;
+alter table inquiries add column if not exists contact_filled_batch uuid;
+
+drop function if exists public.level3_mark(uuid, uuid[], uuid[]);
+-- p_fill: [{ "kind": "inquiry" | "guest", "id": uuid, "email": text, "zip": text, "phone": text }]
+create or replace function public.level3_mark(p_batch uuid, p_inquiry_ids uuid[], p_guest_ids uuid[], p_fill jsonb default '[]'::jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_i int; v_g int; v_f int := 0; f jsonb; n int;
+begin
+  if auth.uid() is null then raise exception 'Please sign in'; end if;
+  update inquiries set gih_levels = (select array_agg(distinct x order by x) from unnest(gih_levels || array[3]::smallint[]) x),
+         gih3_added_at = now(), gih3_batch = p_batch
+   where id = any(p_inquiry_ids) and not (3 = any(gih_levels));
+  get diagnostics v_i = row_count;
+  update guests set gih_level3 = true, gih3_added_at = now(), gih3_batch = p_batch
+   where id = any(p_guest_ids) and not gih_level3;
+  get diagnostics v_g = row_count;
+
+  for f in select * from jsonb_array_elements(coalesce(p_fill, '[]'::jsonb)) loop
+    if f->>'kind' = 'guest' then
+      update guests g set
+        email = coalesce(nullif(g.email, ''), nullif(f->>'email', '')),
+        zip = coalesce(nullif(g.zip, ''), nullif(f->>'zip', '')),
+        contact_filled = jsonb_strip_nulls(jsonb_build_object(
+          'email', case when coalesce(g.email, '') = '' and coalesce(f->>'email', '') <> '' then true end,
+          'zip', case when coalesce(g.zip, '') = '' and coalesce(f->>'zip', '') <> '' then true end)),
+        contact_filled_batch = p_batch
+      where g.id = (f->>'id')::uuid and g.contact_filled_batch is null
+        and ((coalesce(g.email, '') = '' and coalesce(f->>'email', '') <> '') or (coalesce(g.zip, '') = '' and coalesce(f->>'zip', '') <> ''));
+    else
+      update inquiries i set
+        email = coalesce(nullif(i.email, ''), nullif(f->>'email', '')),
+        zip = coalesce(nullif(i.zip, ''), nullif(f->>'zip', '')),
+        phone = coalesce(nullif(i.phone, ''), nullif(f->>'phone', '')),
+        contact_filled = jsonb_strip_nulls(jsonb_build_object(
+          'email', case when coalesce(i.email, '') = '' and coalesce(f->>'email', '') <> '' then true end,
+          'zip', case when coalesce(i.zip, '') = '' and coalesce(f->>'zip', '') <> '' then true end,
+          'phone', case when coalesce(i.phone, '') = '' and coalesce(f->>'phone', '') <> '' then true end)),
+        contact_filled_batch = p_batch
+      where i.id = (f->>'id')::uuid and i.contact_filled_batch is null
+        and ((coalesce(i.email, '') = '' and coalesce(f->>'email', '') <> '') or (coalesce(i.zip, '') = '' and coalesce(f->>'zip', '') <> '')
+          or (coalesce(i.phone, '') = '' and coalesce(f->>'phone', '') <> ''));
+    end if;
+    get diagnostics n = row_count; v_f := v_f + n;
+  end loop;
+  return jsonb_build_object('inquiries', v_i, 'guests', v_g, 'filled', v_f);
+end $$;
+revoke execute on function public.level3_mark(uuid, uuid[], uuid[], jsonb) from anon;
+
+-- Undo also clears contact info that import filled in.
+create or replace function public.undo_level3_fills()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.undone_at is not null and old.undone_at is null then
+    update guests set
+      email = case when contact_filled ? 'email' then null else email end,
+      zip = case when contact_filled ? 'zip' then null else zip end,
+      contact_filled = null, contact_filled_batch = null
+    where contact_filled_batch = new.id;
+    update inquiries set
+      email = case when contact_filled ? 'email' then null else email end,
+      zip = case when contact_filled ? 'zip' then null else zip end,
+      phone = case when contact_filled ? 'phone' then null else phone end,
+      contact_filled = null, contact_filled_batch = null
+    where contact_filled_batch = new.id;
+  end if;
+  return new;
+end $$;
+drop trigger if exists inquiry_imports_undo_fills on inquiry_imports;
+create trigger inquiry_imports_undo_fills after update of undone_at on inquiry_imports
+  for each row execute function public.undo_level3_fills();

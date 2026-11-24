@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611241518";
+import { supabase } from "./supabase-client.js?v=202611241533";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -291,9 +291,11 @@ export async function level3Candidates(emails, names, phones) {
   if (error) throw new Error(/level3_candidates/.test(error.message) ? "Run level-3-matching.sql in Supabase first." : error.message);
   return data || { inquiries: [], guests: [], applicants: [] };
 }
-export async function level3Mark(batch, inquiryIds, guestIds) {
-  if (!inquiryIds.length && !guestIds.length) return { inquiries: 0, guests: 0 };
-  const { data, error } = await supabase.rpc("level3_mark", { p_batch: batch, p_inquiry_ids: inquiryIds, p_guest_ids: guestIds });
+// Marks GIH 3 and fills blank email / ZIP / phone on the matched records (fill: [{ kind, id, email, zip, phone }]).
+export async function level3Mark(batch, inquiryIds, guestIds, fill = []) {
+  if (!inquiryIds.length && !guestIds.length && !fill.length) return { inquiries: 0, guests: 0, filled: 0 };
+  let { data, error } = await supabase.rpc("level3_mark", { p_batch: batch, p_inquiry_ids: inquiryIds, p_guest_ids: guestIds, p_fill: fill });
+  if (error && /p_fill|function/i.test(error.message)) ({ data, error } = await supabase.rpc("level3_mark", { p_batch: batch, p_inquiry_ids: inquiryIds, p_guest_ids: guestIds })); // before level-3-fill.sql
   if (error) throw error;
   return data;
 }
