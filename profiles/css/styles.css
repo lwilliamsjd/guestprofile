@@ -754,3 +754,5 @@ svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.15em; }
   .an-section-title { font-size: 14px; font-weight: 800; letter-spacing: .12em; color: var(--red); margin: 36px 0 14px; gap: 14px; }
   .an-section-title::after { height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(224,38,63,.75), rgba(224,38,63,.08)); }
 }
+.inq-moved-actions { display: flex; gap: 8px; margin-left: auto; flex: none; }
+.inq-moved-actions svg { width: 13px; height: 13px; }

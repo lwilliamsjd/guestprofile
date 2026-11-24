@@ -6,14 +6,14 @@ import {
   joinPresence, setEditing, leavePresence,
   listInquiries, getInquiry, createInquiry, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611231641";
+} from "./api.js?v=202611241004";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611231641";
-import { SUPABASE_URL } from "./config.js?v=202611231641";
+} from "./outputs.js?v=202611241004";
+import { SUPABASE_URL } from "./config.js?v=202611241004";
 
 const app = document.getElementById("app");
 
@@ -38,6 +38,7 @@ const I = {
   excel: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m8 8 8 8m0-8-8 8"/>'),
   warn: svg('<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>'),
   ban: svg('<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>'),
+  undo: svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>'),
   notes: svg('<path d="M5 3h10l4 4v14H5z"/><path d="M8 10h8M8 14h8M8 18h5"/>'),
   phone: svg('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'),
   save: svg('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/>'),
@@ -2315,7 +2316,7 @@ async function renderInquiryForm(route, seq) {
       </div>
     </div>
     ${rec?.vip && rec?.do_not_contact ? `<div class="banner inq-dnc-banner">${I.ban}<span><b>Do Not Contact.</b> High profile VIP: keep tracking and build the profile, but don't reach out.</span></div>` : ""}
-    ${moved ? `<div class="banner inq-moved-banner">${I.check}<span><b>Profile started</b> ${rec.moved_at ? fmtDate(rec.moved_at) : ""}${rec.moved_by_name ? ` by ${escapeHtml(rec.moved_by_name)}` : ""}. This inquiry stays here for the record.</span>${rec.applicant_id ? `<a class="btn btn-sm" href="#/p/${rec.applicant_id}">Open profile</a>` : ""}</div>` : ""}
+    ${moved ? `<div class="banner inq-moved-banner">${I.check}<span><b>Profile started</b> ${rec.moved_at ? fmtDate(rec.moved_at) : ""}${rec.moved_by_name ? ` by ${escapeHtml(rec.moved_by_name)}` : ""}. This inquiry stays here for the record.</span><span class="inq-moved-actions">${rec.applicant_id ? `<a class="btn btn-sm" href="#/p/${rec.applicant_id}">Open profile</a>` : ""}<button type="button" class="btn btn-sm" id="inq-unmove" title="Started on the wrong guest? Put this inquiry back on the open list">${I.undo}Undo</button></span></div>` : ""}
     <form id="inq-form" class="form-section inq-form" autocomplete="off">
       <div class="sec-kicker inq-kicker inq-kicker-first">Contact</div>
       <div class="form-grid">
@@ -2466,7 +2467,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611231641");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241004");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2628,6 +2629,20 @@ async function renderInquiryForm(route, seq) {
     } catch (err) { alert("Couldn't start the profile: " + err.message); btn.disabled = false; }
   });
 
+  // Undo "Start a profile": the inquiry goes back to Open. Admins can also send the started profile to the Trash.
+  $("inq-unmove")?.addEventListener("click", async () => {
+    if (!confirm(`Put ${rec.name} back on the open Inquiries list?`)) return;
+    let trashIt = false;
+    if (rec.applicant_id && currentProfile?.is_admin) trashIt = confirm(`Also move the profile that was started for ${rec.name} to the Trash?\n\nOK = move it to the Trash (you can restore it from Account → Trash)\nCancel = keep the profile`);
+    const btn = $("inq-unmove"); btn.disabled = true;
+    try {
+      if (trashIt) await trashApplicant(rec.applicant_id);
+      await updateInquiry(rec.id, { status: "Open", applicant_id: null, moved_at: null, moved_by_name: null }, currentProfile);
+      toast(trashIt ? "Back on the open list. The profile is in the Trash." : rec.applicant_id && !currentProfile?.is_admin ? "Back on the open list. The started profile is still there; an admin can remove it." : "Back on the open list");
+      navigate(`#/inquiries/${rec.id}`); render();
+    } catch (err) { alert("Couldn't undo: " + err.message); btn.disabled = false; }
+  });
+
   $("inq-delete")?.addEventListener("click", async () => {
     if (!confirm(`Delete the inquiry from ${rec.name}? Its notes and files are deleted too. This can't be undone.${moved ? " The profile that was started stays." : ""}`)) return;
     try {
@@ -2677,7 +2692,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611231641");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241004");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
