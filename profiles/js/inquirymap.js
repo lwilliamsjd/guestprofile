@@ -6,7 +6,7 @@ import { REGION_OF, STATE_NAMES, FIPS } from "../../crm/js/guestmap.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (n) => (n == null || isNaN(n) ? "—" : `${Math.round(n * 100)}%`);
-const METHODS = ["Phone", "Email", "Referral", "Other"];
+const METHODS = ["Phone", "Email", "Referral", "Website", "Other"];
 
 function locate(q) {
   const zip = String(q.zip || "").replace(/\D/g, "");
@@ -29,6 +29,13 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
   const vipOnly = !!opts.vipOnly;
   const list = inquiries.filter((q) => !vipOnly || q.vip).map(locate);
   const vipTotal = list.filter((q) => q.vip).length;
+  // Two sources share this report: Inquiries (red) and Level 3 Data from the website (green); VIPs are gold.
+  const isWeb = (q) => q.source === "website";
+  const webTotal = list.filter(isWeb).length, inqTotal = list.length - webTotal;
+  const mixed = webTotal > 0 && inqTotal > 0, webOnly = webTotal > 0 && !inqTotal;
+  const subject = vipOnly ? "VIP guests" : mixed ? "inquiries and Level 3 guests" : webOnly ? "Level 3 guests" : "direct inquiries";
+  const EYEBROW = mixed ? "INQUIRIES + LEVEL 3 DATA" : webOnly ? "LEVEL 3 DATA" : "DIRECT INQUIRIES";
+  const reportTitle = mixed ? "Inquiries + Level 3 Map" : webOnly ? "Level 3 Data Map" : "Direct Inquiries Map";
   const total = list.length;
   const open = list.filter((q) => q.status !== "Moved").length;
   const moved = total - open;
@@ -41,8 +48,8 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
   list.forEach((q) => {
     if (!q._pt) { unmapped.push(q); return; }
     const key = (q._city + "|" + q._state).toLowerCase();
-    if (!cities.has(key)) cities.set(key, { city: q._city, state: q._state, latSum: 0, lngSum: 0, guests: 0, vip: 0 });
-    const c = cities.get(key); c.guests++; c.latSum += q._pt.lat; c.lngSum += q._pt.lng; if (q.vip) c.vip++;
+    if (!cities.has(key)) cities.set(key, { city: q._city, state: q._state, latSum: 0, lngSum: 0, guests: 0, vip: 0, inq: 0, web: 0 });
+    const c = cities.get(key); c.guests++; c.latSum += q._pt.lat; c.lngSum += q._pt.lng; if (q.vip) c.vip++; if (isWeb(q)) c.web++; else c.inq++;
   });
   const cityList = [...cities.values()].map((c) => ({ ...c, lat: c.latSum / c.guests, lng: c.lngSum / c.guests })).sort((a, b) => b.guests - a.guests);
 
@@ -70,34 +77,33 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
 
   const page1 = `
   <section class="page">
-    <header class="hd"><div><div class="eyebrow">GR GT CONCIERGE · DIRECT INQUIRIES${vipOnly ? " · VIP ONLY" : ""}</div><h1>Where ${vipOnly ? "VIP inquiries" : "direct inquiries"} come from</h1></div>
-      <div class="meta">Guests who reached out to us directly, not through a dealer<br>Generated ${esc(generated)}${opts.by ? ` by ${esc(opts.by)}` : ""}</div></header>
+    <header class="hd"><div><div class="eyebrow">GR GT CONCIERGE · ${EYEBROW}${vipOnly ? " · VIP ONLY" : ""}</div><h1>Where ${subject} come from</h1></div>
+      <div class="meta">${mixed ? "Inquiries (reached out, events, Toyota referrals) and Level 3 Data (website requests)" : webOnly ? "Website requests to speak with us (GIH Level 3)" : "Guests who reached out to us directly, not through a dealer"}<br>Generated ${esc(generated)}${opts.by ? ` by ${esc(opts.by)}` : ""}</div></header>
     <div class="kpis">
-      ${kpi(total, vipOnly ? "VIP inquiries" : "Total inquiries")}
+      ${kpi(total, vipOnly ? "VIP guests" : mixed ? "Total guests" : webOnly ? "Level 3 guests" : "Total inquiries")}
       ${vipOnly ? kpi(list.filter((q) => q.ag_approved).length, "AG Approved") : `<div class="k vipk"><b>${vipTotal}</b><span>VIP</span></div>`}
-      ${kpi(open, "Open")}
-      ${kpi(moved, "Moved to profiles")}
+      ${mixed && !vipOnly ? `<div class="k inqk"><b>${inqTotal}</b><span>Inquiries</span></div><div class="k webk"><b>${webTotal}</b><span>Level 3 Data</span></div>` : `${kpi(open, "Open")}${kpi(moved, "Moved to profiles")}`}
       ${kpi(topState ? esc(topState.st) : "—", `Top state${topState ? ` · ${topState.n}` : ""}`)}
       ${kpi(topRegion && topRegion.n ? esc(topRegion.r) : "—", `Top region${topRegion && topRegion.n ? ` · ${pct(topRegion.share)}` : ""}`)}
     </div>
     <div class="maprow">
       <div class="mapbox"><svg id="map" viewBox="0 0 975 610" preserveAspectRatio="xMidYMin meet"></svg>
-        <div class="legend"><span>Inquiries by state</span><span class="lo">0</span><i class="ramp"></i><span class="hi">${maxState}</span>${vipOnly ? "" : `<span class="dot"></span><span>Inquiries from that city</span>`}${vipTotal ? `<span class="dot gold"></span><span>VIP${vipOnly ? " inquiries from that city" : ""}</span>` : ""}</div>
+        <div class="legend"><span>${mixed ? "Guests" : webOnly ? "Level 3 guests" : "Inquiries"} by state</span><span class="lo">0</span><i class="ramp"></i><span class="hi">${maxState}</span>${vipOnly ? "" : `${inqTotal ? `<span class="dot"></span><span>Inquiries</span>` : ""}${webTotal ? `<span class="dot green"></span><span>Level 3 Data</span>` : ""}`}${vipTotal ? `<span class="dot gold"></span><span>VIP${vipOnly ? " guests from that city" : ""}</span>` : ""}</div>
       </div>
       <aside class="side">
         <h3>Top cities</h3>
-        <ol class="areas">${cityList.slice(0, 6).map((c) => `<li><b>${esc(c.city)}, ${esc(c.state)}</b><span>${esc(STATE_NAMES[c.state] || "")}${c.vip && !vipOnly ? ` · <i class="vipt">${c.vip} VIP</i>` : ""}</span><em>${c.guests}</em></li>`).join("") || `<li class="none">No ZIP codes yet</li>`}</ol>
+        <ol class="areas">${cityList.slice(0, 6).map((c) => `<li><b>${esc(c.city)}, ${esc(c.state)}</b><span>${esc(STATE_NAMES[c.state] || "")}${mixed && !vipOnly ? ` · <i class="inqt">${c.inq}</i> / <i class="webt">${c.web} L3</i>` : ""}${c.vip && !vipOnly ? ` · <i class="vipt">${c.vip} VIP</i>` : ""}</span><em>${c.guests}</em></li>`).join("") || `<li class="none">No ZIP codes yet</li>`}</ol>
         <h3>How they reached out</h3>
         <div class="meth">${byMethod.map((x) => `<div><span>${x.m}</span><span class="bar"><i style="width:${total ? (x.n / Math.max(1, ...byMethod.map((y) => y.n))) * 100 : 0}%"></i></span><b>${x.n}</b></div>`).join("")}</div>
         ${unmapped.length ? `<p class="mut small">${unmapped.length} inquir${unmapped.length === 1 ? "y has" : "ies have"} no ZIP and ${unmapped.length === 1 ? "is" : "are"} not on the map.</p>` : ""}
       </aside>
     </div>
-    <footer class="ft"><span>From the Inquiries list in Applicant Profiles. Counts only, no names or contact details.</span><span>Page 1 / 2</span></footer>
+    <footer class="ft"><span>From ${mixed ? "Inquiries and Level 3 Data" : webOnly ? "Level 3 Data" : "the Inquiries list"} in Applicant Profiles. Counts only, no names or contact details.</span><span>Page 1 / 2</span></footer>
   </section>`;
 
   const page2 = `
   <section class="page">
-    <header class="hd small"><div><div class="eyebrow">DIRECT INQUIRIES · BREAKDOWN BY AREA</div></div><div class="meta">${esc(generated)}</div></header>
+    <header class="hd small"><div><div class="eyebrow">${EYEBROW} · BREAKDOWN BY AREA</div></div><div class="meta">${esc(generated)}</div></header>
     <h2>By region</h2>
     <table class="t">
       <thead><tr><th>Region</th><th>Inquiries</th><th>Share</th><th>Open</th><th>Moved to profiles</th><th>Top state</th></tr></thead>
@@ -191,9 +197,13 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
 #map .bub.vip { fill: #d4a94a; fill-opacity: .9; stroke: #8a6a1c; stroke-width: 1.2; }
 .legend .dot.gold { background: rgba(212,169,74,.9); border-color: #8a6a1c; margin-left: 6px; }
 .vipt { color: #a37a1f; font-style: normal; font-weight: 700; }
+#map .bub.web { fill: #3ddc84; fill-opacity: .88; stroke: #0e5c31; stroke-width: 1.4; }
+.legend .dot.green { background: rgba(61,220,132,.88); border-color: #0e5c31; margin-left: 6px; }
+.inqt { color: #c0142e; font-style: normal; font-weight: 700; } .webt { color: #157a43; font-style: normal; font-weight: 700; }
+.k.inqk b { color: #c0142e; } .k.webk b { color: #157a43; }
 .k.vipk b { color: #a37a1f; } .meth .bar { width: 100%; margin: 0; }
 `;
-  const data = { areas: cityList.map(({ lat, lng, guests, vip, city, state }) => ({ lat, lng, guests, vip, city, state })), stateTotals, maxState, maxArea, FIPS, vipOnly };
+  const data = { areas: cityList.map(({ lat, lng, guests, vip, inq, web, city, state }) => ({ lat, lng, guests, vip, inq, web, city, state })), stateTotals, maxState, maxArea, FIPS, vipOnly };
   const script = `
 (async function () {
   const D = ${JSON.stringify(data)};
@@ -211,7 +221,10 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
   const pts = D.areas.map((a) => ({ ...a, xy: proj([a.lng, a.lat]) })).filter((a) => a.xy);
   const rad = (g) => 4 + 22 * Math.sqrt(g / D.maxArea);
   pts.slice().sort((a, b) => b.guests - a.guests).forEach((a) => {
-    if (!D.vipOnly) out += '<circle class="bub" cx="' + a.xy[0] + '" cy="' + a.xy[1] + '" r="' + rad(a.guests) + '"><title>' + a.city + ", " + a.state + ": " + a.guests + '</title></circle>';
+    // Inquiries (red) and Level 3 Data (green), the bigger one underneath, then VIP (gold) on top
+    if (!D.vipOnly) [["bub", a.inq, " inquiries"], ["bub web", a.web, " Level 3"]].filter((x) => x[1]).sort((x, y) => y[1] - x[1]).forEach(([cls, n, lbl]) => {
+      out += '<circle class="' + cls + '" cx="' + a.xy[0] + '" cy="' + a.xy[1] + '" r="' + rad(n) + '"><title>' + a.city + ", " + a.state + ": " + n + lbl + '</title></circle>';
+    });
     if (a.vip) out += '<circle class="bub vip" cx="' + a.xy[0] + '" cy="' + a.xy[1] + '" r="' + rad(a.vip) + '"><title>' + a.city + ", " + a.state + ": " + a.vip + ' VIP</title></circle>';
   });
   const placed = [];
@@ -230,9 +243,9 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
   document.body.dataset.ready = "1";
   const b = document.getElementById("pdf-btn"); b.disabled = false; b.textContent = "Save as PDF"; b.onclick = () => window.print();
 })();`;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Direct Inquiries Map</title>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${reportTitle}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>${css}</style>
 <script src="${libs.d3array}"></script><script src="${libs.d3geo}"></script><script src="${libs.topojson}"></script>
-</head><body><div class="tb"><span>Direct Inquiries Map${vipOnly ? " · VIP only" : ""} · 2 pages, landscape</span><button id="pdf-btn" disabled>Loading map…</button></div>${page1}${page2}<script>${script}</script></body></html>`;
+</head><body><div class="tb"><span>${reportTitle}${vipOnly ? " · VIP only" : ""} · 2 pages, landscape</span><button id="pdf-btn" disabled>Loading map…</button></div>${page1}${page2}<script>${script}</script></body></html>`;
 }
