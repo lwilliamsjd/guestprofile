@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611241424";
+import { supabase } from "./supabase-client.js?v=202611241444";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -246,6 +246,13 @@ export async function createInquiries(rows, profile) {
     out.push(...(data || []));
   }
   return out;
+}
+// Undo the most recent Level 3 import (the database checks it's the latest and who's asking).
+export async function undoInquiryImport(batch) {
+  const { data, error } = await supabase.rpc("undo_inquiry_import", { p_batch: batch });
+  if (error) throw new Error(/undo_inquiry_import|function/i.test(error.message) && /exist|find/i.test(error.message) ? "Run level-3-undo.sql in Supabase first." : error.message);
+  if (data?.paths?.length) await supabase.storage.from("inquiry-files").remove(data.paths).catch(() => {});
+  return data || { deleted: 0, kept: 0 };
 }
 export async function listInquiries() {
   const { data, error } = await supabase.from("inquiries").select("*").order("received_on", { ascending: false }).order("created_at", { ascending: false });

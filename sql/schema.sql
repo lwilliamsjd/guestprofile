@@ -428,3 +428,39 @@ alter table inquiries add constraint inquiries_source_check check (source in ('d
 alter table inquiries drop constraint if exists inquiries_method_check;
 alter table inquiries add constraint inquiries_method_check check (method in ('Phone','Email','Referral','Website','Other'));
 create index if not exists inquiries_email_idx on inquiries (lower(email));
+
+-- ============================================================
+-- LEVEL 3 DATA: UNDO THE MOST RECENT IMPORT
+-- Each import is tagged with a batch id. The person who ran it (or an admin) can
+-- remove everything that import added. Guests already moved to a profile are kept.
+-- Safe to run more than once.
+-- ============================================================
+alter table inquiries add column if not exists import_batch uuid;
+alter table inquiries add column if not exists imported_at timestamptz;
+alter table inquiries add column if not exists import_file text;
+create index if not exists inquiries_import_batch_idx on inquiries (import_batch) where import_batch is not null;
+
+create or replace function public.undo_inquiry_import(p_batch uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_latest uuid; v_owner uuid; v_paths text[]; v_deleted int; v_kept int;
+begin
+  select import_batch, created_by into v_latest, v_owner
+    from inquiries where import_batch is not null
+    order by imported_at desc nulls last, created_at desc limit 1;
+  if v_latest is null or v_latest <> p_batch then
+    raise exception 'Only the most recent import can be undone';
+  end if;
+  if not (public.is_admin() or v_owner = auth.uid()) then
+    raise exception 'Only the person who ran this import, or an admin, can undo it';
+  end if;
+  select coalesce(array_agg(f.path), '{}') into v_paths
+    from inquiry_files f join inquiries i on i.id = f.inquiry_id
+    where i.import_batch = p_batch and i.status <> 'Moved';
+  select count(*) into v_kept from inquiries where import_batch = p_batch and status = 'Moved';
+  delete from inquiries where import_batch = p_batch and status <> 'Moved';
+  get diagnostics v_deleted = row_count;
+  update inquiries set import_batch = null where import_batch = p_batch; -- kept guests stop counting as part of it
+  return json_build_object('deleted', v_deleted, 'kept', v_kept, 'paths', v_paths);
+end $$;
+revoke execute on function public.undo_inquiry_import(uuid) from anon;

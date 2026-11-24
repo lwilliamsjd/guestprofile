@@ -5,16 +5,16 @@ import {
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
   listMyNotifications, countMyUnread, markNotificationRead, markAllNotificationsRead, markInquiryNotificationsRead, subscribeMyNotifications,
-  listInquiries, getInquiry, createInquiry, createInquiries, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
+  listInquiries, getInquiry, createInquiry, createInquiries, undoInquiryImport, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611241424";
+} from "./api.js?v=202611241444";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611241424";
-import { SUPABASE_URL } from "./config.js?v=202611241424";
+} from "./outputs.js?v=202611241444";
+import { SUPABASE_URL } from "./config.js?v=202611241444";
 
 const app = document.getElementById("app");
 
@@ -2253,6 +2253,7 @@ async function renderInquiries(seq, src = "direct") {
   let everyone;
   try { [everyone, notes, seen] = await Promise.all([listInquiries(), listInquiryNotes(), getInquirySeen(currentProfile.id)]); } catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
   all = everyone.filter((r) => srcOf(r) === src);
+  const lastImp = src === "website" ? latestImport(all) : null;
   const mgMap = new Map();
   (await meisterGuestMatches(all.map((r) => r.name)).catch(() => [])).forEach((m) => { const k = m.name_key; if (!mgMap.has(k)) mgMap.set(k, []); mgMap.get(k).push(m); });
   const mgOf = (r) => mgMap.get(guestMatchKey(r.name));
@@ -2291,6 +2292,7 @@ async function renderInquiries(seq, src = "direct") {
         <div><h1>${S.title}</h1><p class="muted">${S.sub}</p></div>
         <div class="page-actions">
           <button class="btn" id="inq-export">${I.excel}Export Excel</button>
+          ${src === "website" && canUndoImport(lastImp) ? `<button class="btn" id="l3-undo" title="Remove everything the most recent import added">${I.undo}Undo last import</button>` : ""}
           ${src === "website" ? `<a href="#/level3/new" class="btn">${I.plus}Add one</a><a href="#/level3/import" class="btn btn-primary">${I.upload}Import Excel</a>` : `<a href="#/inquiries/new" class="btn btn-primary">${I.plus}New Inquiry</a>`}
         </div>
       </div>
@@ -2344,6 +2346,11 @@ async function renderInquiries(seq, src = "direct") {
     }));
     main.querySelectorAll(".clickable-row").forEach((tr) => tr.addEventListener("click", () => navigate(`${S.base}/${tr.dataset.id}`)));
     main.querySelector("#inq-export").addEventListener("click", () => exportInquiries(all, notes, S.title));
+    main.querySelector("#l3-undo")?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try { if (await undoImportFlow(lastImp, notes)) return render(); } catch (err) { alert("Couldn't undo: " + err.message); }
+      e.target.disabled = false;
+    });
   }
   draw();
 }
@@ -2552,7 +2559,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241424");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241444");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2763,13 +2770,35 @@ function l3Date(v) {
 }
 const tidyName = (s) => String(s || "").replace(/\s+/g, " ").trim();
 
+// The most recent import among these rows: { batch, at, file, by, byId, rows }
+function latestImport(rows) {
+  const tagged = rows.filter((r) => r.import_batch);
+  if (!tagged.length) return null;
+  const top = tagged.reduce((a, b) => (String(b.imported_at || b.created_at) > String(a.imported_at || a.created_at) ? b : a));
+  const mine = tagged.filter((r) => r.import_batch === top.import_batch);
+  return { batch: top.import_batch, at: top.imported_at || top.created_at, file: top.import_file, by: top.created_by_name, byId: top.created_by, rows: mine };
+}
+const canUndoImport = (imp) => imp && (currentProfile?.is_admin || imp.byId === currentProfile?.id);
+async function undoImportFlow(imp, notes = []) {
+  const moved = imp.rows.filter((r) => r.status === "Moved").length, gone = imp.rows.length - moved;
+  const worked = imp.rows.filter((r) => r.status !== "Moved" && (notes.some((n) => n.inquiry_id === r.id) || (r.updated_at && r.imported_at && r.updated_at > new Date(new Date(r.imported_at).getTime() + 60000).toISOString()))).length;
+  const when = new Date(imp.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const msg = `Undo the import from ${when}${imp.file ? ` (${imp.file})` : ""}${imp.by ? ` by ${imp.by}` : ""}?\n\nThis removes the ${gone} ${gone === 1 ? "guest" : "guests"} it added.`
+    + (worked ? `\n\n${worked} of them ${worked === 1 ? "has" : "have"} been edited or has notes since, and ${worked === 1 ? "it" : "those"} will be removed too.` : "")
+    + (moved ? `\n\n${moved} already moved to a profile will be kept.` : "");
+  if (!confirm(msg)) return false;
+  const res = await undoInquiryImport(imp.batch);
+  toast(`Import undone: ${res.deleted} removed${res.kept ? `, ${res.kept} kept (moved to profiles)` : ""}`);
+  return true;
+}
+
 async function renderL3Import(seq) {
   const main = shell("level3", `<div class="loading">Loading…</div>`);
   let inqs, apps;
   try { [inqs, apps] = await Promise.all([listInquiries(), listApplicants().catch(() => [])]); }
   catch (e) { main.innerHTML = `<div class="banner error">${escapeHtml(e.message)}</div>`; return; }
   if (seq !== renderSeq) return;
-  let sheet = null, headers = [], map = {}, fileName = "", result = null, plan = null;
+  let sheet = null, headers = [], map = {}, fileName = "", result = null, plan = null, lastBatch = null;
 
   main.innerHTML = `
     <a href="#/level3" class="back-link">${I.back}Level 3 Data</a>
@@ -2858,7 +2887,7 @@ async function renderL3Import(seq) {
         ${plan.bad.length ? `<div class="l3-tile bad"><b>${plan.bad.length}</b><span>Can't import (no name)</span></div>` : ""}
       </div>
       ${result ? "" : `<div class="l3-actions"><button class="btn btn-primary" id="l3-go" ${picked ? "" : "disabled"}>${I.upload}Import ${picked} ${picked === 1 ? "guest" : "guests"}</button><button class="btn" id="l3-report">${I.excel}Download report</button></div>`}
-      ${result ? `<div class="banner inq-moved-banner">${I.check}<span><b>${result.added} ${result.added === 1 ? "guest" : "guests"} added to Level 3 Data.</b> ${result.skipped} skipped, ${result.held} left out after review.</span><span class="inq-moved-actions"><button class="btn btn-sm" id="l3-report">${I.excel}Download report</button><a class="btn btn-sm btn-primary" href="#/level3">Open Level 3 Data</a></span></div>` : ""}
+      ${result ? `<div class="banner inq-moved-banner">${I.check}<span><b>${result.added} ${result.added === 1 ? "guest" : "guests"} added to Level 3 Data.</b> ${result.skipped} skipped, ${result.held} left out after review.</span><span class="inq-moved-actions"><button class="btn btn-sm" id="l3-undo-now">${I.undo}Undo this import</button><button class="btn btn-sm" id="l3-report">${I.excel}Download report</button><a class="btn btn-sm btn-primary" href="#/level3">Open Level 3 Data</a></span></div>` : ""}
       ${plan.review.length ? `<div class="sec-kicker inq-kicker">Need your review <span class="muted">Same name or phone as someone already on file. Check the ones that are a different person to add them.</span></div>${table(plan.review, "review")}` : ""}
       ${plan.add.length ? `<div class="sec-kicker inq-kicker">New <span class="muted">Not on file anywhere. Uncheck any you don't want.</span></div>${table(plan.add, "add")}` : ""}
       ${plan.skip.length ? `<details class="l3-more"><summary class="sec-kicker inq-kicker">Skipped: already on file with the same email (${plan.skip.length})</summary>${table(plan.skip, "")}</details>` : ""}
@@ -2871,6 +2900,13 @@ async function renderL3Import(seq) {
     }));
     body.querySelector("#l3-report")?.addEventListener("click", downloadReport);
     body.querySelector("#l3-go")?.addEventListener("click", runImport);
+    body.querySelector("#l3-undo-now")?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try {
+        if (await undoImportFlow(lastBatch)) { result = null; lastBatch = null; inqs = await listInquiries(); return analyze(); }
+      } catch (err) { alert("Couldn't undo: " + err.message); }
+      e.target.disabled = false;
+    });
   }
 
   async function runImport() {
@@ -2879,8 +2915,9 @@ async function renderL3Import(seq) {
     if (!chosen.length) return;
     go.disabled = true; go.textContent = "Importing…";
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241424");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611241444");
       const dealers = await dealerLocations();
+      const batch = crypto.randomUUID(), importedAt = new Date().toISOString();
       const out = [];
       for (const r of chosen) {
         const here = r.zip ? await lookupZip(r.zip) : null;
@@ -2889,9 +2926,11 @@ async function renderL3Import(seq) {
           name: r.name, email: r.email || null, phone: r.phone || null, zip: r.zip || null, city: here?.city || null, state: here?.state || null,
           closest_dealer: near[0]?.dealership || null, closest_dealer_miles: near[0]?.miles ?? null,
           received_on: r.received_on, method: "Website", source: "website", gih_levels: [3], notify_team: false, status: "Open",
+          import_batch: batch, imported_at: importedAt, import_file: fileName.slice(0, 200),
         });
       }
-      await createInquiries(out, currentProfile);
+      const saved = await createInquiries(out, currentProfile);
+      lastBatch = { batch, at: importedAt, file: fileName, by: currentProfile.full_name, byId: currentProfile.id, rows: saved };
       chosen.forEach((r) => (r.added = true));
       result = { added: chosen.length, skipped: plan.skip.length + plan.bad.length, held: plan.review.filter((r) => !r.pick).length + plan.add.filter((r) => !r.pick).length };
       toast(`${chosen.length} added to Level 3 Data`);
@@ -2957,7 +2996,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241424");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611241444");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
