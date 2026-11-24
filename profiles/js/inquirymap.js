@@ -135,6 +135,47 @@ export function buildInquiryMapReport(inquiries, opts = {}) {
     <footer class="ft"><span>Regions follow the US Census (South, Northeast, West, Midwest). Closest dealer is the one saved on each inquiry.</span><span>Page 2 / 2</span></footer>
   </section>`;
 
+  // Page 2 when both sources are included: Inquiries and Level 3 Data side by side, small combined totals at the bottom.
+  const breakdown = (lst) => {
+    const n = lst.length, st = [...new Set(lst.map((q) => q._state).filter(Boolean))].map((x) => ({ st: x, name: STATE_NAMES[x] || x, region: REGION_OF[x] || "", n: lst.filter((q) => q._state === x).length }))
+      .sort((p, q) => q.n - p.n || p.name.localeCompare(q.name));
+    const reg = ["South", "Northeast", "West", "Midwest"].concat(lst.some((q) => q._region === "No location") ? ["No location"] : [])
+      .map((r) => { const qs = lst.filter((q) => q._region === r); return { r, n: qs.length, share: n ? qs.length / n : null, open: qs.filter((q) => q.status !== "Moved").length, moved: qs.filter((q) => q.status === "Moved").length }; });
+    const cty = new Map();
+    lst.forEach((q) => { if (!q._city) return; const k = (q._city + "|" + q._state).toLowerCase(); const c = cty.get(k) || { city: q._city, state: q._state, n: 0, vip: 0 }; c.n++; if (q.vip) c.vip++; cty.set(k, c); });
+    const dl = [...lst.reduce((mp, q) => { if (q.closest_dealer) { const k = q.closest_dealer.trim(); mp.set(k, (mp.get(k) || 0) + 1); } return mp; }, new Map()).entries()].map(([name, c]) => ({ name, n: c })).sort((p, q) => q.n - p.n);
+    return { n, st, reg, cities: [...cty.values()].sort((p, q) => q.n - p.n), dl, open: lst.filter((q) => q.status !== "Moved").length, moved: lst.filter((q) => q.status === "Moved").length, vip: lst.filter((q) => q.vip).length };
+  };
+  const half = (title, cls, lst) => {
+    const b = breakdown(lst), mr = Math.max(1, ...b.reg.map((x) => x.n)), ms = Math.max(1, ...b.st.map((x) => x.n));
+    return `<div class="half ${cls}">
+      <div class="half-hd"><h2>${title}</h2><span><b>${b.n}</b> total · ${b.open} open · ${b.moved} moved to profiles${b.vip ? ` · <i class="vipt">${b.vip} VIP</i>` : ""}</span></div>
+      <h3>By region</h3>
+      <table class="t compact"><thead><tr><th>Region</th><th>Guests</th><th>Share</th><th>Open</th><th>Moved</th></tr></thead>
+        <tbody>${b.reg.map((x) => `<tr><td><b>${x.r}</b></td><td><b>${x.n}</b></td><td><span class="bar sm"><i style="width:${(x.n / mr) * 100}%"></i></span>${pct(x.share)}</td><td>${x.open}</td><td>${x.moved}</td></tr>`).join("")}</tbody></table>
+      <h3>Top states</h3>
+      <table class="t compact"><thead><tr><th>State</th><th>Region</th><th>Guests</th><th>Share</th></tr></thead>
+        <tbody>${b.st.slice(0, 8).map((x) => `<tr><td><b>${esc(x.name)}</b></td><td class="mut">${esc(x.region)}</td><td><b>${x.n}</b></td><td><span class="bar sm"><i style="width:${(x.n / ms) * 100}%"></i></span>${pct(b.n ? x.n / b.n : null)}</td></tr>`).join("") || `<tr><td colspan="4" class="mut">No locations yet</td></tr>`}</tbody></table>
+      <div class="pair">
+        <div><h3>Top cities</h3><table class="t compact"><tbody>${b.cities.slice(0, 7).map((c) => `<tr><td><b>${esc(c.city)}, ${esc(c.state)}</b>${c.vip ? ` <span class="vipt">(${c.vip} VIP)</span>` : ""}</td><td class="num"><b>${c.n}</b></td></tr>`).join("") || `<tr><td class="mut">No ZIP codes yet</td></tr>`}</tbody></table></div>
+        <div><h3>Closest dealer</h3><table class="t compact"><tbody>${b.dl.slice(0, 7).map((x) => `<tr><td><b>${esc(x.name)}</b></td><td class="num"><b>${x.n}</b></td></tr>`).join("") || `<tr><td class="mut">No dealers set yet</td></tr>`}</tbody></table></div>
+      </div>
+    </div>`;
+  };
+  const page2split = `
+  <section class="page">
+    <header class="hd small"><div><div class="eyebrow">${EYEBROW} · BREAKDOWN BY AREA</div></div><div class="meta">${esc(generated)}</div></header>
+    <div class="halves">${half("Inquiries", "h-inq", list.filter((q) => !isWeb(q)))}${half("Level 3 Data", "h-web", list.filter(isWeb))}</div>
+    <div class="totals">
+      <span class="tl">Combined</span>
+      <span><b>${total}</b> guests</span><span class="inqt">${inqTotal} inquiries</span><span class="webt">${webTotal} Level 3</span>${vipTotal ? `<span class="vipt">${vipTotal} VIP</span>` : ""}
+      <span class="sep"></span>
+      ${byRegion.filter((x) => x.n).map((x) => `<span>${x.r} <b>${x.n}</b> <em>${pct(x.share)}</em></span>`).join("")}
+      ${topState ? `<span class="sep"></span><span>Top state <b>${esc(topState.name)}</b> (${topState.n})</span>` : ""}
+    </div>
+    <footer class="ft"><span>Regions follow the US Census (South, Northeast, West, Midwest). Closest dealer is the one saved on each entry.</span><span>Page 2 / 2</span></footer>
+  </section>`;
+
   const css = `
 @page { size: letter landscape; margin: 0; }
 * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -196,6 +237,22 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
 .meth b { text-align: right; }
 #map .bub.vip { fill: #d4a94a; fill-opacity: .9; stroke: #8a6a1c; stroke-width: 1.2; }
 .legend .dot.gold { background: rgba(212,169,74,.9); border-color: #8a6a1c; margin-left: 6px; }
+.halves { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; flex: 1; min-height: 0; }
+.half { min-width: 0; }
+.half-hd { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-bottom: 3px solid #e0263f; padding-bottom: 4px; margin-bottom: 2px; }
+.half.h-web .half-hd { border-color: #2fbf71; }
+.half-hd h2 { margin: 0; font-size: 15px; letter-spacing: .06em; }
+.half.h-inq .half-hd h2 { color: #c0142e; } .half.h-web .half-hd h2 { color: #157a43; }
+.half-hd span { font-size: 10.5px; color: #5c5c64; }
+.half h3 { font-size: 9.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #8a8a92; margin: 10px 0 4px; }
+.half.h-web .bar i { background: #2fbf71; }
+.half .t.compact td { padding: 3px 8px 3px 0; }
+.half .t td.num { text-align: right; padding-right: 0; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.totals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 10px; padding: 8px 12px; border: 1px solid #ececef; border-radius: 8px; background: #fafafb; font-size: 10.5px; color: #3c3c44; }
+.totals .tl { font-size: 9.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #8a8a92; }
+.totals em { font-style: normal; color: #8a8a92; }
+.totals .sep { width: 1px; height: 14px; background: #dcdce0; }
 .vipt { color: #a37a1f; font-style: normal; font-weight: 700; }
 #map .bub.web { fill: #3ddc84; fill-opacity: .88; stroke: #0e5c31; stroke-width: 1.4; }
 .legend .dot.green { background: rgba(61,220,132,.88); border-color: #0e5c31; margin-left: 6px; }
@@ -247,5 +304,5 @@ h3 { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform:
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>${css}</style>
 <script src="${libs.d3array}"></script><script src="${libs.d3geo}"></script><script src="${libs.topojson}"></script>
-</head><body><div class="tb"><span>${reportTitle}${vipOnly ? " · VIP only" : ""} · 2 pages, landscape</span><button id="pdf-btn" disabled>Loading map…</button></div>${page1}${page2}<script>${script}</script></body></html>`;
+</head><body><div class="tb"><span>${reportTitle}${vipOnly ? " · VIP only" : ""} · 2 pages, landscape</span><button id="pdf-btn" disabled>Loading map…</button></div>${page1}${mixed && !vipOnly ? page2split : page2}<script>${script}</script></body></html>`;
 }
