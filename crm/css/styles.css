@@ -1492,3 +1492,19 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 .inv-none { padding: 10px 2px; font-size: 13px; }
 .g-card.g-flash { animation: g-flash 2.6s ease-out; }
 @keyframes g-flash { 0%, 40% { box-shadow: 0 0 0 2px #3ddc84; } 100% { box-shadow: 0 0 0 2px transparent; } }
+
+/* ---- Guest ↔ inquiry merge ---- */
+.g-inqd { display: flex; flex-direction: column; gap: 6px; }
+.g-inq-merged { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.g-inq-merged > svg { width: 15px; height: 15px; color: #3ddc84; flex: none; }
+.g-inq-merged a, .g-inq-cand a { color: var(--text); text-decoration: none; }
+.g-inq-merged a:hover, .g-inq-cand a:hover { text-decoration: underline; }
+.g-inq-merged .muted, .g-inq-cand .muted { font-size: 12.5px; }
+.g-unmerge { font-size: 12px; }
+.g-inq-cand { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 10px; border: 1px solid rgba(212, 169, 74, .35); background: rgba(212, 169, 74, .07); border-radius: 7px; font-size: 13px; }
+.g-inq-cand.strong { border-color: rgba(212, 169, 74, .6); }
+.g-inq-cand > svg { width: 14px; height: 14px; color: #d4a94a; flex: none; }
+.g-inq-cand > span { flex: 1; min-width: 0; }
+.g-inq-none { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; }
+.mf-row { cursor: default; }
+.inv-head h2 svg { width: 18px; height: 18px; color: #3ddc84; }

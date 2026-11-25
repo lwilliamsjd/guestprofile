@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611251236";
+import { supabase } from "./supabase-client.js?v=202611251256";
 
 // ---------- auth ----------
 export async function signIn(email, password) {
@@ -336,6 +336,17 @@ export async function meisterGuestMatches(names) {
   if (!list.length) return [];
   const { data, error } = await supabase.rpc("meister_guest_matches", { p_names: list });
   return error ? [] : data || [];
+}
+// Meister guests tied to inquiries (merged, or same email / same name and ZIP), with when the
+// invite email went out. Guest and Meister details only for CRM users. Empty until the SQL is run.
+export async function inquiryGuestLinks(inquiryId) {
+  const { data, error } = await supabase.rpc("inquiry_guest_links", inquiryId ? { p_inquiry: inquiryId } : {});
+  return error ? [] : data || [];
+}
+export async function mergeGuestInquiry(guestId, inquiryId) {
+  const { data, error } = await supabase.rpc("merge_guest_inquiry", { p_guest: guestId, p_inquiry: inquiryId || null });
+  if (error) throw new Error(/function|schema cache/i.test(error.message) ? "Run the GUEST ↔ INQUIRY MERGE SQL in Supabase first." : error.message);
+  return data || {};
 }
 export async function listDealerLocations() {
   const r = await supabase.rpc("dealer_locations");

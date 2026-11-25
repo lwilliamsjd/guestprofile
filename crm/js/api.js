@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611251236";
+import { supabase } from "./supabase-client.js?v=202611251256";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -515,6 +515,30 @@ export async function deleteInteraction(id) {
 export async function listAllGuestNames() {
   const { data, error } = await supabase.from("guests").select("id, guest_name, guest_status, meister_id, meisters!inner(name, dealership, deleted_at)").is("meisters.deleted_at", null);
   return error ? [] : data || [];
+}
+
+// ---- guest ↔ inquiry merge ----
+export async function getInquiriesByIds(ids) {
+  if (!ids.length) return [];
+  const { data, error } = await supabase.from("inquiries").select("id, name, email, phone, zip, source, received_on, gih_levels, status").in("id", ids);
+  if (error) throw error;
+  return data || [];
+}
+export async function guestInquiryCandidates(guestIds) {
+  if (!guestIds.length) return [];
+  const { data, error } = await supabase.rpc("guest_inquiry_candidates", { p_guests: guestIds });
+  if (error) throw error;
+  return data || [];
+}
+export async function searchInquiriesForMerge(q) {
+  const { data, error } = await supabase.rpc("search_inquiries_for_merge", { p_q: q });
+  if (error) throw error;
+  return data || [];
+}
+export async function mergeGuestInquiry(guestId, inquiryId) {
+  const { data, error } = await supabase.rpc("merge_guest_inquiry", { p_guest: guestId, p_inquiry: inquiryId || null });
+  if (error) throw error;
+  return data || {};
 }
 
 // Level 3 guests on active Meisters who haven't been sent the invite email yet

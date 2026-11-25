@@ -1122,3 +1122,140 @@ create trigger inquiry_imports_undo_fills after update of undone_at on inquiry_i
 alter table guests add column if not exists invite_sent_at timestamptz;
 alter table guests add column if not exists invite_sent_by_name text;
 notify pgrst, 'reload schema';
+
+-- ============================================================
+-- GUEST ↔ INQUIRY MERGE
+-- A Meister guest can be merged with the Inquiry / Level 3 entry for the same person,
+-- so both are tracked as one. Merging fills a blank email or ZIP on either side and
+-- carries GIH Level 3 over to the guest. Both pages show the link, and Inquiries shows
+-- when the invite email went out. Unmerge just removes the link.
+-- Safe to run more than once.
+-- ============================================================
+alter table guests add column if not exists inquiry_id uuid references inquiries(id) on delete set null;
+alter table guests add column if not exists merged_at timestamptz;
+alter table guests add column if not exists merged_by_name text;
+create index if not exists guests_inquiry_idx on guests (inquiry_id);
+create index if not exists inquiries_email_idx on inquiries (lower(email));
+
+create or replace function public.zip5(s text)
+returns text language sql immutable as $$ select nullif(left(regexp_replace(coalesce(s, ''), '\D', '', 'g'), 5), '') $$;
+
+-- Inquiries that could be the same person as these Meister guests (same email, or same name)
+create or replace function public.guest_inquiry_candidates(p_guests uuid[])
+returns table (guest_id uuid, inquiry_id uuid, source text, name text, email text, phone text, zip text,
+               received_on date, gih_levels smallint[], status text, why text)
+language sql security definer stable set search_path = public as $$
+  select g.id, i.id, i.source, i.name, i.email, i.phone, i.zip, i.received_on, i.gih_levels, i.status,
+    case when coalesce(g.email, '') <> '' and lower(i.email) = lower(g.email) then 'email'
+         when public.zip5(g.zip) is not null and public.zip5(i.zip) = public.zip5(g.zip) then 'name_zip'
+         else 'name' end
+  from guests g
+  join inquiries i on (coalesce(g.email, '') <> '' and lower(i.email) = lower(g.email))
+                   or (length(public.norm_person_name(g.guest_name)) > 2 and public.norm_person_name(i.name) = public.norm_person_name(g.guest_name))
+  where g.id = any(p_guests) and public.has_crm_access() and i.id is distinct from g.inquiry_id;
+$$;
+
+-- Search Inquiries and Level 3 Data by name, email or phone (for a manual merge)
+create or replace function public.search_inquiries_for_merge(p_q text)
+returns table (id uuid, source text, name text, email text, phone text, zip text, city text, state text,
+               received_on date, gih_levels smallint[], status text)
+language sql security definer stable set search_path = public as $$
+  select i.id, i.source, i.name, i.email, i.phone, i.zip, i.city, i.state, i.received_on, i.gih_levels, i.status
+  from inquiries i
+  where public.has_crm_access() and length(trim(coalesce(p_q, ''))) > 1
+    and (i.name ilike '%' || trim(p_q) || '%' or i.email ilike '%' || trim(p_q) || '%'
+         or (length(regexp_replace(p_q, '\D', '', 'g')) >= 4 and regexp_replace(coalesce(i.phone, ''), '\D', '', 'g') like '%' || regexp_replace(p_q, '\D', '', 'g') || '%'))
+  order by i.received_on desc
+  limit 25;
+$$;
+
+-- Merge (or with p_inquiry null, unmerge) a Meister guest and an inquiry
+create or replace function public.merge_guest_inquiry(p_guest uuid, p_inquiry uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare g guests; i inquiries; v_name text;
+begin
+  if not public.has_crm_access() then raise exception 'Only Concierge CRM users can merge guests'; end if;
+  select * into g from guests where id = p_guest;
+  if not found then raise exception 'Guest not found'; end if;
+  if p_inquiry is null then
+    update guests set inquiry_id = null, merged_at = null, merged_by_name = null where id = p_guest;
+    return jsonb_build_object('unmerged', true);
+  end if;
+  select * into i from inquiries where id = p_inquiry;
+  if not found then raise exception 'Inquiry not found'; end if;
+  select full_name into v_name from profiles where id = auth.uid();
+  update guests set inquiry_id = i.id, merged_at = now(), merged_by_name = v_name,
+         email = coalesce(nullif(email, ''), nullif(lower(trim(i.email)), '')),
+         zip = coalesce(nullif(zip, ''), public.zip5(i.zip)),
+         gih_level3 = gih_level3 or (3 = any(coalesce(i.gih_levels, '{}')))
+   where id = p_guest;
+  update inquiries set email = coalesce(nullif(email, ''), nullif(g.email, '')),
+                       zip = coalesce(nullif(zip, ''), nullif(g.zip, ''))
+   where id = i.id and ((coalesce(email, '') = '' and coalesce(g.email, '') <> '') or (coalesce(zip, '') = '' and coalesce(g.zip, '') <> ''));
+  return jsonb_build_object('merged', true,
+    'guest_email', coalesce(g.email, '') = '' and coalesce(i.email, '') <> '',
+    'guest_zip', coalesce(g.zip, '') = '' and public.zip5(i.zip) is not null,
+    'gih3', not g.gih_level3 and 3 = any(coalesce(i.gih_levels, '{}')),
+    'inquiry_email', coalesce(i.email, '') = '' and coalesce(g.email, '') <> '',
+    'inquiry_zip', coalesce(i.zip, '') = '' and coalesce(g.zip, '') <> '');
+end $$;
+
+-- Meister guests tied to inquiries: merged ones, plus sure matches (same email, or same name and ZIP).
+-- Everyone signed in sees that a guest exists and when the invite email went out;
+-- only CRM users get the guest, Meister and status.
+create or replace function public.inquiry_guest_links(p_inquiry uuid default null)
+returns table (inquiry_id uuid, how text, guest_name text, invite_sent_at timestamptz, invite_sent_by_name text,
+               guest_id uuid, guest_status text, meister_id uuid, meister_name text, dealership text)
+language sql security definer stable set search_path = public as $$
+  with gs as (
+    select g.*, m.name as m_name, m.dealership as m_deal from guests g join meisters m on m.id = g.meister_id where m.deleted_at is null
+  ), l as (
+    select i.id as iid, 1 as rank, 'merged' as how, gs.* from gs join inquiries i on i.id = gs.inquiry_id
+     where p_inquiry is null or i.id = p_inquiry
+    union all
+    select i.id, 2, 'email', gs.* from gs join inquiries i on coalesce(gs.email, '') <> '' and lower(i.email) = lower(gs.email)
+     where (p_inquiry is null or i.id = p_inquiry) and i.id is distinct from gs.inquiry_id
+    union all
+    select i.id, 3, 'name_zip', gs.* from gs join inquiries i on public.norm_person_name(i.name) = public.norm_person_name(gs.guest_name)
+     where length(public.norm_person_name(gs.guest_name)) > 2 and public.zip5(gs.zip) is not null and public.zip5(i.zip) = public.zip5(gs.zip)
+       and (p_inquiry is null or i.id = p_inquiry) and i.id is distinct from gs.inquiry_id
+  )
+  select distinct on (l.iid, l.id) l.iid, l.how, l.guest_name, l.invite_sent_at, l.invite_sent_by_name,
+         case when public.has_crm_access() then l.id end,
+         case when public.has_crm_access() then l.guest_status end,
+         case when public.has_crm_access() then l.meister_id end,
+         case when public.has_crm_access() then l.m_name end,
+         case when public.has_crm_access() then l.m_deal end
+  from l where auth.uid() is not null
+  order by l.iid, l.id, l.rank;
+$$;
+
+-- Name matches now also return the guest id (CRM users) so Inquiries can offer Merge
+drop function if exists public.meister_guest_matches(text[]);
+create or replace function public.meister_guest_matches(p_names text[])
+returns table (name_key text, guest_name text, guest_status text, meister_id uuid, meister_name text, dealership text, guest_id uuid, merged_inquiry_id uuid)
+language sql security definer stable set search_path = public as $$
+  with keys as (
+    select distinct public.norm_person_name(n) as k from unnest(p_names) n
+    where length(public.norm_person_name(n)) > 2
+  )
+  select public.norm_person_name(g.guest_name),
+         g.guest_name,
+         case when public.has_crm_access() then g.guest_status end,
+         case when public.has_crm_access() then m.id end,
+         case when public.has_crm_access() then m.name end,
+         case when public.has_crm_access() then m.dealership end,
+         case when public.has_crm_access() then g.id end,
+         g.inquiry_id
+  from public.guests g
+  join public.meisters m on m.id = g.meister_id
+  join keys on keys.k = public.norm_person_name(g.guest_name)
+  where auth.uid() is not null and m.deleted_at is null;
+$$;
+
+revoke execute on function public.guest_inquiry_candidates(uuid[]) from anon;
+revoke execute on function public.search_inquiries_for_merge(text) from anon;
+revoke execute on function public.merge_guest_inquiry(uuid, uuid) from anon;
+revoke execute on function public.inquiry_guest_links(uuid) from anon;
+revoke execute on function public.meister_guest_matches(text[]) from anon;
+notify pgrst, 'reload schema';

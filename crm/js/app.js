@@ -33,7 +33,7 @@ import {
   setInteractionCategory,
   setInteractionDetails,
   fetchAnalyticsData,
-  listGuests, listAllGuestNames, listLevel3InvitesPending, listGuestHistory, searchApplicants, getApplicantsByIds, uploadGuestPdf, removeGuestPdf, guestPdfUrl,
+  listGuests, listAllGuestNames, listLevel3InvitesPending, getInquiriesByIds, guestInquiryCandidates, searchInquiriesForMerge, mergeGuestInquiry, listGuestHistory, searchApplicants, getApplicantsByIds, uploadGuestPdf, removeGuestPdf, guestPdfUrl,
   addGuest,
   updateGuest,
   deleteGuest,
@@ -58,10 +58,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611251236";
-import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611251236";
-import { exportToExcel } from "./export.js?v=202611251236";
-import { wireImport } from "./import-export.js?v=202611251236";
+} from "./api.js?v=202611251256";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611251256";
+import { exportToExcel } from "./export.js?v=202611251256";
+import { wireImport } from "./import-export.js?v=202611251256";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -123,6 +123,8 @@ const I = {
   bell: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>`,
   briefcase: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>`,
   x: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
+  merge: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.3 7.2C11 9 13 11 15.5 12M8.3 16.8C11 15 13 13 15.5 12"/></svg>`,
+  warn: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>`,
   tag: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5"/></svg>`,
   chart: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15v-4M12 15V7M17 15v-2"/></svg>`,
   inbound: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m11 18-6-6 6-6"/></svg>`,
@@ -1622,7 +1624,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611251236");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611251256");
       const tracked = meisters.map((m) => ({ ...m, guest_estimate: tPerM.get(m.id) || null }));
       const html = buildGuestMapReport(tracked, {
         filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "",
@@ -1642,7 +1644,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building legacy map…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611251236");
+      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611251256");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -2807,6 +2809,12 @@ async function renderMeister(route, seq) {
         listAllGuestNames().catch(() => []),
         getApplicantsByIds([...new Set(guests.map((g) => g.applicant_id).filter(Boolean))]).catch(() => []),
       ]);
+      const [mergedInqs, cands] = await Promise.all([
+        getInquiriesByIds([...new Set(guests.map((g) => g.inquiry_id).filter(Boolean))]).catch(() => []),
+        guestInquiryCandidates(guests.filter((g) => !g.inquiry_id).map((g) => g.id)).catch(() => null),
+      ]);
+      guestInq = { byId: new Map(mergedInqs.map((i) => [i.id, i])), cands: new Map(), ready: cands !== null };
+      (cands || []).forEach((c) => { if (!guestInq.cands.has(c.guest_id)) guestInq.cands.set(c.guest_id, []); guestInq.cands.get(c.guest_id).push(c); });
       [prevMeister, nextMeister] = await Promise.all([
         meister.previous_meister_id ? getMeister(meister.previous_meister_id).catch(() => null) : null,
         meister.replaced_by_id ? getMeister(meister.replaced_by_id).catch(() => null) : null,
@@ -3676,6 +3684,7 @@ function renderGuestsTab(guests, hist = [], apps = [], allNames = []) {
               <div><dt>Delivery</dt><dd>${g.delivery_date ? fmtMonth(g.delivery_date) : "—"}</dd></div>
               <div><dt>Variant</dt><dd>${escapeHtml(g.variant || "GR GT")}</dd></div>
               ${g.email || g.zip ? `<div class="g-wide"><dt>Contact</dt><dd>${escapeHtml([g.email, g.zip ? "ZIP " + g.zip : ""].filter(Boolean).join(" · "))}</dd></div>` : ""}
+              <div class="g-wide"><dt>Inquiry</dt><dd class="g-inqd">${guestInquiryHtml(g)}</dd></div>
               <div class="g-wide"><dt>Profile</dt><dd class="g-prof">${guestProfileHtml(g, appById.get(g.applicant_id))}</dd></div>
               <div class="g-wide"><dt>Build</dt><dd>${guestBuildHtml(g)}</dd></div>
               ${g.notes ? `<div class="g-wide"><dt>Notes</dt><dd class="g-notes">${escapeHtml(g.notes)}</dd></div>` : ""}
@@ -3684,6 +3693,78 @@ function renderGuestsTab(guests, hist = [], apps = [], allNames = []) {
           </article>`).join("") : `<div class="empty-state">No guests nominated yet.</div>`}
       </div>
     </div>`;
+}
+
+// ---- merged Inquiry / Level 3 entry on a guest card ----
+let guestInq = { byId: new Map(), cands: new Map(), ready: false };
+const INQ_SRC = { website: { label: "Level 3 Data", base: "#/level3" }, direct: { label: "Inquiries", base: "#/inquiries" } };
+const inqSrc = (i) => INQ_SRC[i?.source === "website" ? "website" : "direct"];
+const inqLink = (i) => `../profiles/${inqSrc(i).base}/${i.id}`;
+const inqWhy = { email: "same email", name_zip: "same name and ZIP", name: "same name" };
+function inqMeta(i) {
+  return [inqSrc(i).label, i.received_on ? `received ${fmtDate(i.received_on)}` : "", (i.gih_levels || []).includes(3) ? "GIH 3" : "", i.email || ""].filter(Boolean).map(escapeHtml).join(" · ");
+}
+function guestInquiryHtml(g) {
+  if (g.inquiry_id) {
+    const i = guestInq.byId.get(g.inquiry_id) || { id: g.inquiry_id, name: "Linked inquiry" };
+    return `<span class="g-inq-merged">${I.merge}<a href="${inqLink(i)}" target="_blank" rel="noopener"><b>${escapeHtml(i.name)}</b></a><span class="muted">${inqMeta(i)}${g.merged_at ? ` · merged ${fmtDate(g.merged_at)}${g.merged_by_name ? ` by ${escapeHtml(g.merged_by_name)}` : ""}` : ""}</span><button type="button" class="link-btn g-unmerge" data-gunmerge="${g.id}">Unmerge</button></span>`;
+  }
+  const cs = (guestInq.cands.get(g.id) || []).slice().sort((a, b) => ["email", "name_zip", "name"].indexOf(a.why) - ["email", "name_zip", "name"].indexOf(b.why)).slice(0, 3);
+  return `${cs.map((c) => `<div class="g-inq-cand ${c.why !== "name" ? "strong" : ""}">${I.warn}<span>Possible match: <a href="${inqLink(c)}" target="_blank" rel="noopener"><b>${escapeHtml(c.name)}</b></a> <span class="muted">(${inqWhy[c.why] || "match"}) · ${inqMeta(c)}</span></span><button type="button" class="btn btn-sm" data-gmerge="${g.id}" data-inq="${c.inquiry_id}">Merge</button></div>`).join("")}
+    <span class="g-inq-none">${cs.length ? "" : `<span class="muted">Not merged with an inquiry</span>`}<button type="button" class="link-btn" data-gfind="${g.id}">${cs.length ? "Find a different inquiry" : "Merge with an inquiry"}…</button></span>`;
+}
+
+async function doGuestMerge(g, inq) {
+  const msg = `Merge ${g.guest_name} (this Meister's guest) with ${inq.name} in ${inqSrc(inq).label}?\n\nThey'll be tracked as the same person on both pages. A blank email or ZIP on either side gets filled in${(inq.gih_levels || []).includes(3) ? ", and GIH Level 3 carries over to the guest" : ""}.`;
+  if (!confirm(msg)) return false;
+  try {
+    const r = await mergeGuestInquiry(g.id, inq.id || inq.inquiry_id);
+    const filled = [r.guest_email && "email", r.guest_zip && "ZIP", r.gih3 && "GIH 3"].filter(Boolean);
+    toast(`Merged with ${inq.name}${filled.length ? ` · added ${filled.join(", ")} to the guest` : ""}`);
+    render();
+    return true;
+  } catch (err) {
+    toast("Couldn't merge: " + (/function|schema cache/i.test(err.message) ? "run the GUEST ↔ INQUIRY MERGE SQL in Supabase first." : err.message), "error");
+    return false;
+  }
+}
+
+function openInquiryFinder(g) {
+  let root = document.getElementById("modal-root");
+  if (!root) { root = document.createElement("div"); root.id = "modal-root"; document.body.appendChild(root); }
+  root.innerHTML = `
+    <div class="modal-backdrop inv-modal-wrap">
+      <div class="inv-modal" role="dialog" aria-modal="true" aria-label="Merge with an inquiry">
+        <div class="inv-head">
+          <div><h2>${I.merge} Merge ${escapeHtml(g.guest_name)} with an inquiry</h2><div class="muted">Search Inquiries and Level 3 Data by name, email or phone.</div></div>
+          <button class="icon-btn" id="inv-close" title="Close">${I.x}</button>
+        </div>
+        <input type="search" id="mf-q" class="inv-q" value="${escapeAttr(g.guest_name)}" placeholder="Name, email or phone" autocomplete="off" />
+        <div class="inv-list" id="mf-res"></div>
+      </div>
+    </div>`;
+  const close = () => { root.innerHTML = ""; document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  root.querySelector(".inv-modal-wrap").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(); });
+  root.querySelector("#inv-close").addEventListener("click", close);
+  const q = root.querySelector("#mf-q"), res = root.querySelector("#mf-res");
+  let timer, seqNo = 0, rows = [];
+  const run = async () => {
+    const my = ++seqNo, term = q.value.trim();
+    if (term.length < 2) { res.innerHTML = `<div class="inv-none muted">Type at least 2 characters.</div>`; return; }
+    try { rows = await searchInquiriesForMerge(term); } catch (err) { res.innerHTML = `<div class="inv-none muted">${/function|schema cache/i.test(err.message) ? "Run the GUEST ↔ INQUIRY MERGE SQL in Supabase first." : escapeHtml(err.message)}</div>`; return; }
+    if (my !== seqNo) return;
+    res.innerHTML = rows.length ? rows.map((i) => `<div class="inv-row mf-row"><span class="inv-name"><span class="inv-line"><b>${escapeHtml(i.name)}</b>${i.status === "Moved" ? `<span class="guest-pill">Profile started</span>` : ""}</span><span class="muted">${inqMeta(i)}${i.phone ? ` · ${escapeHtml(i.phone)}` : ""}${i.zip ? ` · ZIP ${escapeHtml(i.zip)}` : ""}</span></span><button type="button" class="btn btn-sm btn-primary" data-mf="${i.id}">Merge</button></div>`).join("")
+      : `<div class="inv-none muted">No inquiries match "${escapeHtml(term)}".</div>`;
+    res.querySelectorAll("[data-mf]").forEach((b) => b.addEventListener("click", async () => {
+      const inq = rows.find((x) => x.id === b.dataset.mf);
+      b.disabled = true;
+      if (await doGuestMerge(g, inq)) close(); else b.disabled = false;
+    }));
+  };
+  q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(run, 250); });
+  run(); q.focus(); q.select();
 }
 
 // "Invite email sent" checkbox on each guest card, stamped with when and who
@@ -3807,6 +3888,18 @@ function wireGuestsTab(meister, guests = [], apps = [], allNames = []) {
       }
     });
   });
+
+  document.querySelectorAll("[data-gmerge]").forEach((b) => b.addEventListener("click", async () => {
+    const g = guests.find((x) => x.id === b.dataset.gmerge), c = (guestInq.cands.get(g.id) || []).find((x) => x.inquiry_id === b.dataset.inq);
+    if (g && c) { b.disabled = true; if (!(await doGuestMerge(g, { ...c, id: c.inquiry_id }))) b.disabled = false; }
+  }));
+  document.querySelectorAll("[data-gfind]").forEach((b) => b.addEventListener("click", () => { const g = guests.find((x) => x.id === b.dataset.gfind); if (g) openInquiryFinder(g); }));
+  document.querySelectorAll("[data-gunmerge]").forEach((b) => b.addEventListener("click", async () => {
+    const g = guests.find((x) => x.id === b.dataset.gunmerge);
+    if (!g || !confirm(`Unmerge ${g.guest_name} from the inquiry? Both records stay; only the link is removed.`)) return;
+    try { await mergeGuestInquiry(g.id, null); toast("Unmerged"); render(); }
+    catch (err) { toast("Couldn't unmerge: " + err.message, "error"); }
+  }));
 
   const appById = new Map(apps.map((a) => [a.id, a]));
   document.querySelectorAll(".guest-form").forEach(wireGuestForm);

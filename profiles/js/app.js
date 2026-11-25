@@ -5,16 +5,16 @@ import {
   listTeam, listChanges, addChange, updateChange, markExported, lastExportAt,
   joinPresence, setEditing, leavePresence,
   listMyNotifications, countMyUnread, markNotificationRead, markAllNotificationsRead, markInquiryNotificationsRead, subscribeMyNotifications,
-  listInquiries, listInquiryKeys, level3Candidates, level3Mark, logInquiryImport, latestImportLog, getInquiry, createInquiry, createInquiries, undoInquiryImport, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, listTeamAccess, setUserAccess, createUserLogin,
+  listInquiries, listInquiryKeys, level3Candidates, level3Mark, logInquiryImport, latestImportLog, getInquiry, createInquiry, createInquiries, undoInquiryImport, updateInquiry, deleteInquiry, listDealerLocations, meisterGuestMatches, inquiryGuestLinks, mergeGuestInquiry, listTeamAccess, setUserAccess, createUserLogin,
   listInquiryNotes, addInquiryNote, deleteInquiryNote, listInquiryFiles, uploadInquiryFile, inquiryFileUrl, deleteInquiryFile, getInquirySeen, markInquiriesSeen,
-} from "./api.js?v=202611251236";
+} from "./api.js?v=202611251256";
 import {
   USAGE_OPTIONS, normUsage, HPDE_LEVELS, RACE_LEVELS, LFA_STATUSES, DECISIONS, USAGE_SPLIT, CROSS_STATUSES, TIMING_FLEX, SOCIAL_PLATFORMS,
   escapeHtml, initials, garageOf, totalMiles, fmtDate, profileId, location, lfaStatusOf, rowsOf, usageSplitOf, splitTotal,
   avgOwnership, driverStyleLabel, quarterOptions, quarterKey, linesOf, fmtK,
   buildSummaryText, buildPersonaHtml, CODE_PHRASE, PHRASE_MAX, PERSONA_SUGGESTIONS, isCodePhrase, SHORT_BIO_FITS, shortBio, SPEC_OPTIONS, SPEC_LABELS, specLabel, specText,
-} from "./outputs.js?v=202611251236";
-import { SUPABASE_URL } from "./config.js?v=202611251236";
+} from "./outputs.js?v=202611251256";
+import { SUPABASE_URL } from "./config.js?v=202611251256";
 
 const app = document.getElementById("app");
 
@@ -48,6 +48,8 @@ const I = {
   inbox: svg('<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>'),
   reply: svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v4"/>'),
   users: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5 6.5-5s5.5 1.5 6.5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 14.2c2.5.2 4.3 1.7 5 4.8"/>'),
+  mail: svg('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 7L2 7"/>'),
+  merge: svg('<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8.3 7.2C11 9 13 11 15.5 12M8.3 16.8C11 15 13 13 15.5 12"/>'),
   image: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>'),
 };
 
@@ -2233,14 +2235,30 @@ function duplicateMap(rows) {
 }
 // "On a Meister's guest list" line for an inquiry; Meister details only for CRM users.
 const guestMatchKey = (s) => normName(s);
-function meisterGuestLine(ms, compact = false) {
+function meisterGuestLine(ms, compact = false, recId = null) {
   if (!ms?.length) return "";
   const crm = ms.some((m) => m.meister_id);
   const who = crm ? ms.map((m) => `${escapeHtml(m.meister_name || "a Meister")}${m.dealership ? ` (${escapeHtml(m.dealership)})` : ""}${m.guest_status ? ` · ${escapeHtml(m.guest_status)}` : ""}`).join("; ") : "";
   const short = crm ? ms.map((m) => `${escapeHtml(m.meister_name || "a Meister")}${m.guest_status ? ` · ${escapeHtml(m.guest_status)}` : ""}`).join("; ") : "";
   if (compact) return `<div class="inq-mg" title="${crm ? who.replace(/"/g, "&quot;") : "Same name as a guest a Meister nominated"}">${I.users}${crm ? `Meister guest: ${short}` : "On a Meister's guest list"}</div>`;
-  return crm ? ms.map((m) => `<a href="../crm/#/meister/${m.meister_id}" target="_blank" rel="noopener">${escapeHtml(m.guest_name)}</a> · on ${escapeHtml(m.meister_name || "a Meister")}'s Guests tab${m.dealership ? ` · ${escapeHtml(m.dealership)}` : ""}${m.guest_status ? ` · <b>${escapeHtml(m.guest_status)}</b>` : ""} <span class="muted">(same name)</span>`)
+  return crm ? ms.map((m) => `<a href="../crm/#/meister/${m.meister_id}" target="_blank" rel="noopener">${escapeHtml(m.guest_name)}</a> · on ${escapeHtml(m.meister_name || "a Meister")}'s Guests tab${m.dealership ? ` · ${escapeHtml(m.dealership)}` : ""}${m.guest_status ? ` · <b>${escapeHtml(m.guest_status)}</b>` : ""} <span class="muted">(same name)</span>${recId && m.guest_id ? (m.merged_inquiry_id === recId ? ` <span class="pill inq-merged-pill">${I.merge}Merged</span>` : ` <button type="button" class="btn btn-sm inq-merge-btn" data-merge-guest="${m.guest_id}" data-merge-name="${escapeHtml(m.guest_name)}">${I.merge}Merge</button>`) : ""}`)
     : [`${escapeHtml(ms[0].guest_name)} · a Meister has already nominated a guest with this name <span class="muted">(same name)</span>`];
+}
+// Meister guests tied to an inquiry (merged, or a sure match) and the invite email tag
+const fmtShortWhen = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: new Date(iso).getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+function inviteTag(links) {
+  const sent = (links || []).filter((l) => l.invite_sent_at).sort((a, b) => String(a.invite_sent_at).localeCompare(String(b.invite_sent_at)))[0];
+  return sent ? `<span class="pill inq-inv" title="Invite email sent ${fmtWhen(sent.invite_sent_at)}${sent.invite_sent_by_name ? ` by ${escapeHtml(sent.invite_sent_by_name)}` : ""} (from the Meister's Guests tab)">${I.mail}Invite email sent · ${fmtShortWhen(sent.invite_sent_at)}</span>` : "";
+}
+function mergedLine(links) {
+  const all = links || [], merged = all.filter((l) => l.how === "merged");
+  const m = merged.length ? merged : all;
+  if (!m.length) return "";
+  const crm = m.some((l) => l.meister_id);
+  const txt = crm ? m.map((l) => `${escapeHtml(l.meister_name || "a Meister")}${l.guest_status ? ` · ${escapeHtml(l.guest_status)}` : ""}`).join("; ") : "";
+  if (merged.length) return `<div class="inq-mg inq-merged" title="Merged with a guest on a Meister's Guests tab">${I.merge}${crm ? `Merged · Meister guest: ${txt}` : "Merged with a Meister's guest"}</div>`;
+  const why = m[0].how === "email" ? "same email" : "same name and ZIP";
+  return `<div class="inq-mg" title="Same person as a guest on a Meister's Guests tab (${why}). Open it to merge.">${I.users}${crm ? `Meister guest: ${txt} (${why})` : `On a Meister's guest list (${why})`}</div>`;
 }
 const isL3 = (r) => Array.isArray(r.gih_levels) && r.gih_levels.includes(3);
 const gihText = (l) => (Array.isArray(l) && l.length ? `GIH ${[...l].sort().join(" · ")}` : "");
@@ -2259,6 +2277,10 @@ async function renderInquiries(seq, src = "direct") {
   const mgMap = new Map();
   (await meisterGuestMatches(all.map((r) => r.name)).catch(() => [])).forEach((m) => { const k = m.name_key; if (!mgMap.has(k)) mgMap.set(k, []); mgMap.get(k).push(m); });
   const mgOf = (r) => mgMap.get(guestMatchKey(r.name));
+  const linkMap = new Map();
+  (await inquiryGuestLinks().catch(() => [])).forEach((l) => { if (!linkMap.has(l.inquiry_id)) linkMap.set(l.inquiry_id, []); linkMap.get(l.inquiry_id).push(l); });
+  const linksOf = (r) => linkMap.get(r.id);
+  const invSent = (r) => (linksOf(r) || []).some((l) => l.invite_sent_at);
   if (seq !== renderSeq) return;
   const lastSeen = seen.seen_at || new Date(Date.now() - 14 * 86400000).toISOString();
   const isNewForMe = (r) => src === "direct" && r.notify_team && r.created_at > lastSeen && r.created_by !== currentProfile.id;
@@ -2274,7 +2296,9 @@ async function renderInquiries(seq, src = "direct") {
     let base = st.view === "moved" ? moved : st.view === "all" ? all : open;
     if (st.show === "vip") base = base.filter((r) => r.vip);
     if (st.show === "dnc") base = base.filter((r) => r.vip && r.do_not_contact);
-    if (st.show === "mg") base = base.filter((r) => mgOf(r));
+    if (st.show === "mg") base = base.filter((r) => mgOf(r) || linksOf(r));
+    if (st.show === "inv") base = base.filter(invSent);
+    if (st.show === "notinv") base = base.filter((r) => !invSent(r));
     if (st.show === "l3") base = base.filter(isL3);
     if (st.show === "notl3") base = base.filter((r) => !isL3(r));
     if (st.show === "dups") base = base.filter((r) => dups.has(r.id));
@@ -2314,7 +2338,9 @@ async function renderInquiries(seq, src = "direct") {
           <option value="dnc" ${st.show === "dnc" ? "selected" : ""}>Do Not Contact (${all.filter((r) => r.vip && r.do_not_contact).length})</option>
           <option value="l3" ${st.show === "l3" ? "selected" : ""}>GIH Level 3, ready (${all.filter(isL3).length})</option>
           <option value="notl3" ${st.show === "notl3" ? "selected" : ""}>Not yet Level 3 (${all.filter((r) => !isL3(r)).length})</option>
-          <option value="mg" ${st.show === "mg" ? "selected" : ""}>On a Meister's guest list (${all.filter((r) => mgOf(r)).length})</option>
+          <option value="mg" ${st.show === "mg" ? "selected" : ""}>On a Meister's guest list (${all.filter((r) => mgOf(r) || linksOf(r)).length})</option>
+          <option value="inv" ${st.show === "inv" ? "selected" : ""}>Invite email sent (${all.filter(invSent).length})</option>
+          <option value="notinv" ${st.show === "notinv" ? "selected" : ""}>Invite email not sent (${all.filter((r) => !invSent(r)).length})</option>
           <option value="dups" ${st.show === "dups" ? "selected" : ""}>Possible duplicates (${dups.size})</option>
         </select>
       </div>
@@ -2326,10 +2352,10 @@ async function renderInquiries(seq, src = "direct") {
             return `
             <tr class="clickable-row ${r.status === "Moved" ? "inq-moved" : ""} ${r.vip ? "inq-is-vip" : ""} ${isL3(r) ? "inq-l3" : ""}" data-id="${r.id}">
               <td style="white-space:nowrap">${r.received_on ? fmtDate(r.received_on) : ""}${isNewForMe(r) ? `<div><span class="pill inq-new">New</span></div>` : ""}</td>
-              <td><div class="cell-name">${escapeHtml(r.name)}${gihText(r.gih_levels) ? ` <span class="pill inq-gih ${isL3(r) ? "l3" : ""}" ${isL3(r) ? `title="Reached GIH Level 3: ready for next steps"` : ""}>${isL3(r) ? I.check : ""}${gihText(r.gih_levels)}</span>` : ""}</div>
+              <td><div class="cell-name">${escapeHtml(r.name)}${gihText(r.gih_levels) ? ` <span class="pill inq-gih ${isL3(r) ? "l3" : ""}" ${isL3(r) ? `title="Reached GIH Level 3: ready for next steps"` : ""}>${isL3(r) ? I.check : ""}${gihText(r.gih_levels)}</span>` : ""}${inviteTag(linksOf(r))}</div>
                 <div class="cell-sub muted">${escapeHtml([r.email, fmtPhone(r.phone)].filter(Boolean).join(" · "))}</div>
                 ${r.gih3_added_at ? `<div class="inq-auto" title="This guest showed up in the website Level 3 export, so GIH Level 3 was added automatically">${I.check}GIH 3 added by Level 3 import · ${fmtDate(r.gih3_added_at)}</div>` : ""}
-                ${dup ? `<div class="inq-dup" title="Another inquiry has the same ${[...dup].join(", ")}">${I.warn}Possible duplicate (same ${[...dup].join(", ")})</div>` : ""}${meisterGuestLine(mgOf(r), true)}</td>
+                ${dup ? `<div class="inq-dup" title="Another inquiry has the same ${[...dup].join(", ")}">${I.warn}Possible duplicate (same ${[...dup].join(", ")})</div>` : ""}${mergedLine(linksOf(r)) || meisterGuestLine(mgOf(r), true)}</td>
               <td><span class="pill pill-method m-${(r.method || "Other").toLowerCase()}">${escapeHtml(r.method || "Other")}</span>${r.method === "Referral" && r.referred_by ? `<div class="cell-sub muted">from ${escapeHtml(r.referred_by)}</div>` : ""}</td>
               <td>${escapeHtml(inqLocation(r))}</td>
               <td>${escapeHtml(r.closest_dealer || "")}${r.closest_dealer_miles != null && r.closest_dealer ? `<div class="cell-sub muted">${r.closest_dealer_miles < 1 ? "under 1 mi" : `about ${Math.round(r.closest_dealer_miles)} mi`}</div>` : ""}</td>
@@ -2352,7 +2378,7 @@ async function renderInquiries(seq, src = "direct") {
       draw();
     }));
     main.querySelectorAll(".clickable-row").forEach((tr) => tr.addEventListener("click", () => navigate(`${S.base}/${tr.dataset.id}`)));
-    main.querySelector("#inq-export").addEventListener("click", () => exportInquiries(all, notes, S.title));
+    main.querySelector("#inq-export").addEventListener("click", () => exportInquiries(all, notes, S.title, linkMap));
     main.querySelector("#l3-undo")?.addEventListener("click", async (e) => {
       e.target.disabled = true;
       try { if (await undoImportFlow(lastImp, notes)) return render(); } catch (err) { alert("Couldn't undo: " + err.message); }
@@ -2362,7 +2388,7 @@ async function renderInquiries(seq, src = "direct") {
   draw();
 }
 
-function exportInquiries(rows, notes = [], title = "Inquiries") {
+function exportInquiries(rows, notes = [], title = "Inquiries", linkMap = new Map()) {
   if (!window.XLSX) return alert("Excel library didn't load. Check your connection and try again.");
   const byInq = new Map();
   notes.slice().reverse().forEach((n) => { if (!byInq.has(n.inquiry_id)) byInq.set(n.inquiry_id, []); byInq.get(n.inquiry_id).push(`${fmtDate(n.created_at)} ${n.author_name || ""}: ${n.body}`); });
@@ -2372,6 +2398,8 @@ function exportInquiries(rows, notes = [], title = "Inquiries") {
     Email: r.email || "", Phone: fmtPhone(r.phone), "Reached Out By": r.method || "", "Preferred Contact": r.preferred_contact || "", "Referred By": r.referred_by || "",
     ZIP: r.zip || "", City: r.city || "", State: r.state || "", "Closest Dealer": r.closest_dealer || "", "Miles (approx)": r.closest_dealer_miles ?? "",
     Notes: (byInq.get(r.id) || (r.notes ? [r.notes] : [])).join("\n"), Status: r.status === "Moved" ? "Moved to profiles" : "Open", "Moved On": r.moved_at ? fmtDate(r.moved_at) : "", "Added By": r.created_by_name || "",
+    "Merged With Meister Guest": (linkMap.get(r.id) || []).some((l) => l.how === "merged") ? "Yes" : "",
+    "Invite Email Sent": (() => { const l = (linkMap.get(r.id) || []).filter((x) => x.invite_sent_at).sort((a, b) => String(a.invite_sent_at).localeCompare(String(b.invite_sent_at)))[0]; return l ? fmtWhen(l.invite_sent_at) : ""; })(),
   }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Inquiries");
@@ -2417,6 +2445,7 @@ async function renderInquiryForm(route, seq) {
     ${rec?.gih3_added_at ? `<div class="banner inq-auto-banner">${I.check}<span><b>GIH Level 3 added automatically</b> ${fmtDate(rec.gih3_added_at)}: this guest also came in through the website Level 3 export.</span></div>` : ""}
     ${rec?.vip && rec?.do_not_contact ? `<div class="banner inq-dnc-banner">${I.ban}<span><b>Do Not Contact.</b> High profile VIP: keep tracking and build the profile, but don't reach out.</span></div>` : ""}
     ${moved ? `<div class="banner inq-moved-banner">${I.check}<span><b>Profile started</b> ${rec.moved_at ? fmtDate(rec.moved_at) : ""}${rec.moved_by_name ? ` by ${escapeHtml(rec.moved_by_name)}` : ""}. This inquiry stays here for the record.</span><span class="inq-moved-actions">${rec.applicant_id ? `<a class="btn btn-sm" href="#/p/${rec.applicant_id}">Open profile</a>` : ""}<button type="button" class="btn btn-sm" id="inq-unmove" title="Started on the wrong guest? Put this inquiry back on the open list">${I.undo}Undo</button></span></div>` : ""}
+    ${rec ? `<div id="inq-glinks"></div>` : ""}
     <form id="inq-form" class="form-section inq-form" autocomplete="off">
       <div class="sec-kicker inq-kicker inq-kicker-first">Contact</div>
       <div class="form-grid">
@@ -2539,7 +2568,7 @@ async function renderInquiryForm(route, seq) {
       if (why.length) rows.push(`<a href="${SRC[srcOf(o)].base}/${o.id}" target="_blank" rel="noopener">${escapeHtml(o.name)}</a> · ${srcOf(o) === "website" ? "Level 3 Data" : "inquiry"} ${o.received_on ? fmtDate(o.received_on) : ""}${o.email ? " · " + escapeHtml(o.email) : ""}${o.phone ? " · " + escapeHtml(fmtPhone(o.phone)) : ""} <span class="muted">(same ${why.join(" and ")})</span>`);
     }
     if (n.length > 2) for (const p of profiles) if (normName(p.name) === n && p.id !== rec?.applicant_id) rows.push(`<a href="#/p/${p.id}" target="_blank" rel="noopener">${escapeHtml(p.name)}</a> · applicant profile${p.preferred_dealer ? " · " + escapeHtml(p.preferred_dealer) : ""} <span class="muted">(same name)</span>`);
-    if (n.length > 2 && guestHits.key === n) rows.push(...meisterGuestLine(guestHits.rows));
+    if (n.length > 2 && guestHits.key === n) rows.push(...meisterGuestLine(guestHits.rows, false, rec?.id || null));
     $("i-match").innerHTML = inquiryMatchHtml(rows, "Possible match already on file");
     if (n.length > 2 && guestHits.key !== n) lookupGuests(n, $("i-name").value);
   }
@@ -2557,6 +2586,45 @@ async function renderInquiryForm(route, seq) {
   $("i-name").addEventListener("input", paintMatches);
   $("i-email").addEventListener("input", paintMatches);
   paintMatches();
+
+  // Meister guests tied to this inquiry: merged ones and sure matches, plus the invite email tag
+  async function paintGuestLinks() {
+    const box = $("inq-glinks");
+    if (!box || !rec) return;
+    const links = await inquiryGuestLinks(rec.id).catch(() => []);
+    if (!document.body.contains(box)) return;
+    const why = { email: "same email", name_zip: "same name and ZIP" };
+    box.innerHTML = links.length ? `<div class="inq-glinks">${links.sort((a, b) => (a.how === "merged" ? 0 : 1) - (b.how === "merged" ? 0 : 1)).map((l) => {
+      const crm = !!l.meister_id;
+      const inv = l.invite_sent_at ? `<span class="pill inq-inv">${I.mail}Invite email sent · ${fmtWhen(l.invite_sent_at)}${l.invite_sent_by_name ? ` by ${escapeHtml(l.invite_sent_by_name)}` : ""}</span>` : `<span class="pill inq-inv-no">${I.mail}Invite email not sent yet</span>`;
+      const who = crm ? `<b>${escapeHtml(l.guest_name)}</b> on ${escapeHtml(l.meister_name || "a Meister")}'s Guests tab${l.dealership ? ` · ${escapeHtml(l.dealership)}` : ""}${l.guest_status ? ` · <b>${escapeHtml(l.guest_status)}</b>` : ""}` : `a guest a Meister nominated`;
+      return `<div class="inq-glink ${l.how === "merged" ? "merged" : ""}">${l.how === "merged" ? I.merge : I.users}<div class="inq-glink-body"><div>${l.how === "merged" ? "Merged with " : "Also "}${who}${l.how !== "merged" ? ` <span class="muted">(${why[l.how] || "match"})</span>` : ""}</div><div class="inq-glink-tags">${inv}</div></div>
+        ${crm ? `<div class="inq-glink-act"><a class="btn btn-sm" href="../crm/#/meister/${l.meister_id}/guests/${l.guest_id}" target="_blank" rel="noopener">Open in CRM</a>${l.how === "merged" ? `<button type="button" class="btn btn-sm" data-unmerge-guest="${l.guest_id}">Unmerge</button>` : `<button type="button" class="btn btn-sm btn-primary inq-merge-btn" data-merge-guest="${l.guest_id}" data-merge-name="${escapeHtml(l.guest_name)}">${I.merge}Merge</button>`}</div>` : ""}</div>`;
+    }).join("")}</div>` : "";
+  }
+  paintGuestLinks();
+  async function onMergeClick(e) {
+    const mb = e.target.closest("[data-merge-guest]"), ub = e.target.closest("[data-unmerge-guest]");
+    if (!mb && !ub) return;
+    e.preventDefault();
+    try {
+      if (mb) {
+        if (!confirm(`Merge ${mb.dataset.mergeName} (Meister guest) with this ${src === "website" ? "Level 3 entry" : "inquiry"}?\n\nThey'll be tracked as the same person on both pages. A blank email or ZIP on either side gets filled in${isL3(rec) ? ", and GIH Level 3 carries over to the guest" : ""}.`)) return;
+        mb.disabled = true;
+        await mergeGuestInquiry(mb.dataset.mergeGuest, rec.id);
+        toast("Merged with the Meister guest");
+      } else {
+        if (!confirm("Unmerge this Meister guest? Both records stay; only the link is removed.")) return;
+        ub.disabled = true;
+        await mergeGuestInquiry(ub.dataset.unmergeGuest, null);
+        toast("Unmerged");
+      }
+      guestHits = { key: "", rows: [] };
+      paintMatches(); paintGuestLinks();
+    } catch (err) { alert("Couldn't " + (mb ? "merge" : "unmerge") + ": " + err.message); if (mb) mb.disabled = false; if (ub) ub.disabled = false; }
+  }
+  $("inq-glinks")?.addEventListener("click", onMergeClick);
+  $("i-match")?.addEventListener("click", onMergeClick);
   $("i-dealer").addEventListener("input", () => { dealerMiles = null; });
 
   let zipSeq = 0;
@@ -2567,7 +2635,7 @@ async function renderInquiryForm(route, seq) {
     if (zip.length !== 5) { box.innerHTML = ""; return; }
     box.innerHTML = `<span class="muted">Finding the closest dealers…</span>`;
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611251236");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611251256");
       const here = await lookupZip(zip);
       if (my !== zipSeq) return;
       if (here && fill) {
@@ -2968,7 +3036,7 @@ async function renderL3Import(seq) {
     go.disabled = true; go.textContent = "Importing…";
     const batch = crypto.randomUUID(), importedAt = new Date().toISOString();
     try {
-      const { lookupZip, closestDealers } = await import("./geo.js?v=202611251236");
+      const { lookupZip, closestDealers } = await import("./geo.js?v=202611251256");
       const dealers = await dealerLocations();
       const out = [];
       for (const r of adds) {
@@ -3062,7 +3130,7 @@ async function openInquiryMap(inqs, vipOnly = false) {
   if (!win) return alert("Allow pop ups for this site to open the map report.");
   win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
   try {
-    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611251236");
+    const { buildInquiryMapReport } = await import("./inquirymap.js?v=202611251256");
     const html = buildInquiryMapReport(inqs || [], { by: currentProfile?.full_name || "", vipOnly });
     const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     win.location.href = url;
