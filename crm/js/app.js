@@ -33,7 +33,7 @@ import {
   setInteractionCategory,
   setInteractionDetails,
   fetchAnalyticsData,
-  listGuests, listAllGuestNames, listGuestHistory, searchApplicants, getApplicantsByIds, uploadGuestPdf, removeGuestPdf, guestPdfUrl,
+  listGuests, listAllGuestNames, listLevel3InvitesPending, listGuestHistory, searchApplicants, getApplicantsByIds, uploadGuestPdf, removeGuestPdf, guestPdfUrl,
   addGuest,
   updateGuest,
   deleteGuest,
@@ -58,10 +58,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611251214";
-import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611251214";
-import { exportToExcel } from "./export.js?v=202611251214";
-import { wireImport } from "./import-export.js?v=202611251214";
+} from "./api.js?v=202611251236";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611251236";
+import { exportToExcel } from "./export.js?v=202611251236";
+import { wireImport } from "./import-export.js?v=202611251236";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -340,7 +340,7 @@ function parseHash() {
   if (parts[0] === "import") return { name: "import", key: "import" };
   if (parts[0] === "meister" && parts[1] === "new" && parts[2] === "from" && parts[3]) return { name: "meister", mode: "new", fromId: parts[3], key: `meister:new:${parts[3]}` };
   if (parts[0] === "meister" && parts[1] === "new") return { name: "meister", mode: "new", key: "meister:new" };
-  if (parts[0] === "meister" && parts[1]) return { name: "meister", mode: "view", id: parts[1], key: `meister:${parts[1]}` };
+  if (parts[0] === "meister" && parts[1]) return { name: "meister", mode: "view", id: parts[1], tab: parts[2] === "guests" ? "guests" : null, guestId: parts[2] === "guests" ? parts[3] || null : null, key: `meister:${parts[1]}` };
   return { name: "dashboard", key: "dashboard" };
 }
 
@@ -357,7 +357,7 @@ async function render() {
   if (route.key !== draftsRouteKey) {
     drafts = {};
     draftsRouteKey = route.key;
-    if (route.name === "meister") uiState = freshUiState(route.mode === "new" ? "profile" : "activity");
+    if (route.name === "meister") { uiState = freshUiState(route.mode === "new" ? "profile" : route.tab || "activity"); uiState.flashGuest = route.guestId || null; }
   } else {
     captureDrafts();
   }
@@ -510,6 +510,59 @@ function isStale(m) {
   return last && Date.now() - new Date(last).getTime() > STALE_DAYS * 86400000;
 }
 
+// ---- "Invites to send": Level 3 guests with no invite email yet ----
+function wireInvitesButton() {
+  const btn = document.getElementById("invites-btn"), cnt = document.getElementById("invites-count");
+  if (!btn) return;
+  let rows = null;
+  const load = async () => { rows = await listLevel3InvitesPending(); return rows; };
+  load().then((r) => { if (cnt && document.body.contains(cnt)) cnt.textContent = r.length; }).catch(() => { if (cnt) cnt.textContent = ""; });
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try { openInvitesModal(await load()); }
+    catch (err) { toast("Couldn't load invites: " + (/column|schema cache/i.test(err.message) ? "run the INVITE EMAIL SENT SQL in Supabase first." : err.message), "error"); }
+    finally { btn.disabled = false; }
+  });
+}
+
+function openInvitesModal(rows) {
+  const cnt = document.getElementById("invites-count");
+  if (cnt) cnt.textContent = rows.length;
+  let root = document.getElementById("modal-root");
+  if (!root) { root = document.createElement("div"); root.id = "modal-root"; document.body.appendChild(root); }
+  const order = { Allocated: 0, Delivered: 1, Nominated: 2, Waitlist: 3, Submitted: 4, Denied: 5 };
+  const sorted = rows.slice().sort((a, b) => (order[guestStatus(a)] ?? 9) - (order[guestStatus(b)] ?? 9) || String(a.guest_name).localeCompare(String(b.guest_name)));
+  const rowHtml = (g) => `<a class="inv-row" href="#/meister/${g.meister_id}/guests/${g.id}" data-q="${escapeAttr(`${g.guest_name} ${g.meisters?.name || ""} ${g.meisters?.dealership || ""} ${g.email || ""}`.toLowerCase())}">
+      <span class="inv-name"><span class="inv-line"><b>${escapeHtml(g.guest_name)}</b>${g.vip ? `<span class="guest-vip">${I.star}VIP</span>` : ""}</span><span class="muted">${escapeHtml(g.meisters?.name || "")}${g.meisters?.dealership ? ` · ${escapeHtml(g.meisters.dealership)}` : ""}${g.email ? ` · ${escapeHtml(g.email)}` : ""}</span></span>
+      <span class="guest-pill gs-${slug(guestStatus(g))}">${escapeHtml(guestStatus(g))}</span>
+    </a>`;
+  root.innerHTML = `
+    <div class="modal-backdrop inv-modal-wrap">
+      <div class="inv-modal" role="dialog" aria-modal="true" aria-label="Invites to send">
+        <div class="inv-head">
+          <div><h2>${I.mail} Invites to send</h2><div class="muted">${rows.length} Level 3 ${rows.length === 1 ? "guest has" : "guests have"} not been sent the invite email. Click a name to open their Meister.</div></div>
+          <button class="icon-btn" id="inv-close" title="Close">${I.x}</button>
+        </div>
+        ${rows.length > 8 ? `<input type="search" id="inv-q" class="inv-q" placeholder="Search guest, Meister, dealership or email" autocomplete="off" />` : ""}
+        <div class="inv-list">${sorted.length ? sorted.map(rowHtml).join("") : `<div class="empty-state">${I.check} Every Level 3 guest has been sent the invite email.</div>`}</div>
+        <div class="inv-none muted" style="display:none">No matches.</div>
+      </div>
+    </div>`;
+  const close = () => { root.innerHTML = ""; document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  root.querySelector(".inv-modal-wrap").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(); });
+  root.querySelector("#inv-close").addEventListener("click", close);
+  root.querySelectorAll(".inv-row").forEach((a) => a.addEventListener("click", close));
+  const q = root.querySelector("#inv-q");
+  q?.addEventListener("input", () => {
+    const t = q.value.trim().toLowerCase(); let shown = 0;
+    root.querySelectorAll(".inv-row").forEach((a) => { const on = !t || a.dataset.q.includes(t); a.style.display = on ? "" : "none"; if (on) shown++; });
+    root.querySelector(".inv-none").style.display = shown ? "none" : "";
+  });
+  q?.focus();
+}
+
 async function renderDashboard(route, seq) {
   let meisters, rollups, myFus;
   try {
@@ -549,6 +602,7 @@ async function renderDashboard(route, seq) {
     <div class="page-header">
       <h1>Meisters</h1>
       <div class="page-actions">
+        <button id="invites-btn" class="btn btn-ghost" title="Level 3 guests who haven't been sent the invite email">${I.mail} Invites to send <span class="inv-count" id="invites-count"></span></button>
         <a href="#/import" class="btn btn-ghost">${I.upload} Import</a>
         <button id="export-btn" class="btn btn-ghost">${I.download} Export to Excel</button>
         <button id="new-meister-btn" class="btn btn-primary">${I.plus} Add Meister</button>
@@ -631,6 +685,7 @@ async function renderDashboard(route, seq) {
   `;
 
   document.getElementById("new-meister-btn").addEventListener("click", () => navigate("#/meister/new"));
+  wireInvitesButton();
   document.getElementById("export-btn").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
@@ -1567,7 +1622,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611251214");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611251236");
       const tracked = meisters.map((m) => ({ ...m, guest_estimate: tPerM.get(m.id) || null }));
       const html = buildGuestMapReport(tracked, {
         filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "",
@@ -1587,7 +1642,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building legacy map…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611251214");
+      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611251236");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -2990,6 +3045,11 @@ async function renderMeister(route, seq) {
     wireQuickActions();
     wireActivityTab(container, meister);
     wireGuestsTab(meister, guests, guestApplicants, allGuestNames);
+    if (uiState.flashGuest) {
+      const card = container.querySelector(`.g-card[data-gid="${CSS.escape(uiState.flashGuest)}"]`);
+      uiState.flashGuest = null;
+      if (card) { card.scrollIntoView({ block: "center" }); card.classList.add("g-flash"); setTimeout(() => card.classList.remove("g-flash"), 2600); }
+    }
 
     if (uiState.focusId) {
       const el = document.getElementById(uiState.focusId);
@@ -3600,7 +3660,7 @@ function renderGuestsTab(guests, hist = [], apps = [], allNames = []) {
       ${uiState.guestFormOpen && !uiState.editingGuestId ? guestFormHtml(null) : ""}
       <div class="g-list">
         ${list.length ? list.map((g) => uiState.editingGuestId === g.id ? guestFormHtml(g, appById.get(g.applicant_id)) : `
-          <article class="g-card gst-${slug(guestStatus(g))} ${g.vip ? "is-vip" : ""} ${g.gih_level3 ? "is-gih3" : ""}">
+          <article data-gid="${g.id}" class="g-card gst-${slug(guestStatus(g))} ${g.vip ? "is-vip" : ""} ${g.gih_level3 ? "is-gih3" : ""}">
             <header class="g-head">
               <div class="g-title"><b>${escapeHtml(g.guest_name)}</b>${g.vip ? `<span class="guest-vip">${I.star}VIP</span>` : ""}${g.gih_level3 ? `<span class="guest-gih3" title="${g.gih3_added_at ? `Added automatically ${fmtDate(g.gih3_added_at)}: this guest showed up in the website Level 3 export` : "GIH Level 3"}">${I.check}GIH 3${g.gih3_added_at ? " · from Level 3 import" : ""}</span>` : ""}<span class="guest-pill gs-${slug(guestStatus(g))}">${escapeHtml(guestStatus(g))}</span></div>
               <div class="td-actions">

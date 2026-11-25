@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611251214";
+import { supabase } from "./supabase-client.js?v=202611251236";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -515,6 +515,15 @@ export async function deleteInteraction(id) {
 export async function listAllGuestNames() {
   const { data, error } = await supabase.from("guests").select("id, guest_name, guest_status, meister_id, meisters!inner(name, dealership, deleted_at)").is("meisters.deleted_at", null);
   return error ? [] : data || [];
+}
+
+// Level 3 guests on active Meisters who haven't been sent the invite email yet
+export async function listLevel3InvitesPending() {
+  const { data, error } = await supabase.from("guests")
+    .select("id, guest_name, guest_status, vip, email, meister_id, meisters!inner(name, dealership, deleted_at)")
+    .eq("gih_level3", true).is("invite_sent_at", null).is("meisters.deleted_at", null);
+  if (error) throw error;
+  return data || [];
 }
 
 export async function listGuests(meisterId) {

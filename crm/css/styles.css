@@ -1470,3 +1470,25 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 .g-gih-tgl { display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--grey); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .g-gih-tgl svg { width: 14px; height: 14px; }
 .g-gih-tgl.on { color: var(--green); border-color: rgba(61,220,132,.6); background: rgba(61,220,132,.1); }
+
+/* ---- Invites to send (Meisters page) ---- */
+.inv-count:not(:empty) { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; background: #3ddc84; color: #0b0b0c; font-size: 11px; font-weight: 800; margin-left: 2px; }
+.inv-modal-wrap { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding: 8vh 16px 16px; }
+.inv-modal { width: min(620px, 100%); max-height: 80vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.5); padding: 18px 18px 12px; animation: inv-in .16s ease-out; }
+@keyframes inv-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.inv-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.inv-head h2 { margin: 0 0 4px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+.inv-head h2 svg { width: 18px; height: 18px; color: #3ddc84; }
+.inv-head .muted { font-size: 12.5px; }
+.inv-q { width: 100%; margin-bottom: 10px; }
+.inv-list { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 2px; }
+.inv-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); text-decoration: none; }
+.inv-row:hover { border-color: #3ddc84; }
+.inv-row:hover b { color: #3ddc84; }
+.inv-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.inv-name b { font-size: 14px; }
+.inv-line { display: flex; align-items: center; gap: 8px; }
+.inv-name .muted { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-none { padding: 10px 2px; font-size: 13px; }
+.g-card.g-flash { animation: g-flash 2.6s ease-out; }
+@keyframes g-flash { 0%, 40% { box-shadow: 0 0 0 2px #3ddc84; } 100% { box-shadow: 0 0 0 2px transparent; } }
