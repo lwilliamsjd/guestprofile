@@ -1259,3 +1259,41 @@ revoke execute on function public.merge_guest_inquiry(uuid, uuid) from anon;
 revoke execute on function public.inquiry_guest_links(uuid) from anon;
 revoke execute on function public.meister_guest_matches(text[]) from anon;
 notify pgrst, 'reload schema';
+
+-- ============================================================
+-- GUEST INVITE EMAILS IN THE COMMUNICATION LOG
+-- Checking "Invite Email Sent" on a guest logs an outbound Email on that Meister's
+-- Activity, marked as to the guest. Unchecking removes it. Analytics counts it like any
+-- other email, as a conversation with a guest rather than the Meister.
+-- Run after the INVITE EMAIL SENT block. Safe to run more than once.
+-- ============================================================
+alter table interactions add column if not exists guest_id uuid references guests(id) on delete set null;
+alter table interactions add column if not exists guest_name text;
+alter table interactions add column if not exists kind text;
+create index if not exists interactions_guest_idx on interactions (guest_id);
+
+create or replace function public.log_guest_invite()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.invite_sent_at is not null and old.invite_sent_at is null then
+    insert into interactions (meister_id, method, direction, note, occurred_at, created_by, created_by_name, guest_id, guest_name, kind)
+    values (new.meister_id, 'Email', 'Outbound', 'Invite email sent to guest ' || new.guest_name || ' to schedule a time.',
+            new.invite_sent_at, auth.uid(), coalesce(new.invite_sent_by_name, (select full_name from profiles where id = auth.uid())),
+            new.id, new.guest_name, 'guest_invite');
+  elsif new.invite_sent_at is null and old.invite_sent_at is not null then
+    delete from interactions where guest_id = new.id and kind = 'guest_invite';
+  end if;
+  return new;
+end $$;
+drop trigger if exists guests_log_invite on guests;
+create trigger guests_log_invite after update of invite_sent_at on guests
+  for each row execute procedure public.log_guest_invite();
+
+-- invites already checked before this ran
+insert into interactions (meister_id, method, direction, note, occurred_at, created_by_name, guest_id, guest_name, kind)
+select g.meister_id, 'Email', 'Outbound', 'Invite email sent to guest ' || g.guest_name || ' to schedule a time.',
+       g.invite_sent_at, g.invite_sent_by_name, g.id, g.guest_name, 'guest_invite'
+from guests g
+where g.invite_sent_at is not null
+  and not exists (select 1 from interactions i where i.guest_id = g.id and i.kind = 'guest_invite');
+notify pgrst, 'reload schema';

@@ -1,4 +1,4 @@
-import { fetchAllForExport, listMeisterRollups, markExported } from "./api.js?v=202611251256";
+import { fetchAllForExport, listMeisterRollups, markExported } from "./api.js?v=202611251322";
 
 // Dates are written as real Excel date cells (not text) so they sort and
 // filter properly in Excel.
@@ -62,6 +62,7 @@ export async function exportToExcel(userId) {
 
   const interactionRows = interactions.map((i) => ({
     Meister: i.meisters ? i.meisters.name : "",
+    "With Guest": i.guest_name || "",
     Method: i.method,
     Direction: i.direction || "",
     "Question Type": catName[i.category_id] || "",

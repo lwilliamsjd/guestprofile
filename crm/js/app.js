@@ -58,10 +58,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611251256";
-import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611251256";
-import { exportToExcel } from "./export.js?v=202611251256";
-import { wireImport } from "./import-export.js?v=202611251256";
+} from "./api.js?v=202611251322";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611251322";
+import { exportToExcel } from "./export.js?v=202611251322";
+import { wireImport } from "./import-export.js?v=202611251322";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -848,7 +848,7 @@ async function renderActivity(route, seq) {
 
   // One feed: logged conversations + completed follow-ups, newest first.
   const activity = [
-    ...notes.map((n) => ({ type: "note", time: n.occurred_at, person: n.created_by_name, method: n.method, direction: n.direction, meister_id: n.meister_id, meisterName: n.meisters?.name, note: n.note, id: n.id, category_id: n.category_id })),
+    ...notes.map((n) => ({ type: "note", time: n.occurred_at, person: n.created_by_name, method: n.method, direction: n.direction, meister_id: n.meister_id, meisterName: n.meisters?.name, note: n.note, id: n.id, category_id: n.category_id, guest_id: n.guest_id, guestName: n.guest_name })),
     ...doneFus.map((f) => ({ type: "fu", time: f.done_at, person: f.user_name, method: "__fu", meister_id: f.meister_id, meisterName: f.meisters?.name, title: f.title, due_at: f.due_at, id: f.id })),
   ].sort((a, b) => (a.time < b.time ? 1 : -1));
 
@@ -928,6 +928,7 @@ async function renderActivity(route, seq) {
                 <div class="activity-top">
                   <a href="#/meister/${a.meister_id}" class="activity-meister">${escapeHtml(a.meisterName || "Unknown Meister")}</a>
                   ${directionChip(a.direction)}
+                  ${guestChip(a)}
                   ${cat ? `<span class="cat-chip has static">${I.tag} ${escapeHtml(cat.name)}</span>` : ""}
                   <span class="muted">by ${escapeHtml(a.person || "someone")}</span>
                   ${n ? `<a href="#/meister/${a.meister_id}" class="comment-count">${I.reply} ${n} ${n === 1 ? "comment" : "comments"}</a>` : ""}
@@ -1311,7 +1312,7 @@ async function renderAnalyticsPage(route, seq) {
     const pInts = d.interactions.filter((i) => inPrev(i.occurred_at) && conciergeOk(concOf(i.meisters)));
     prev = {
       ints: pInts.length,
-      contacted: new Set(pInts.map((i) => i.meister_id)).size,
+      contacted: new Set(pInts.filter((i) => !isGuestConvo(i)).map((i) => i.meister_id)).size,
       inbound: pInts.filter((i) => i.direction === "Inbound").length,
       sales: d.guests.filter((g) => g.purchase_date && inPrev(g.purchase_date + "T12:00:00") && conciergeOk(concOf(g.meisters))).length,
       delivered: d.guests.filter((g) => g.delivery_date && inPrev(g.delivery_date + "T12:00:00") && conciergeOk(concOf(g.meisters))).length,
@@ -1327,7 +1328,8 @@ async function renderAnalyticsPage(route, seq) {
   };
 
   // ---- KPIs ----
-  const contactedIds = new Set(ints.map((i) => i.meister_id).filter((id) => !departedIds.has(id)));
+  const contactedIds = new Set(ints.filter((i) => !isGuestConvo(i)).map((i) => i.meister_id).filter((id) => !departedIds.has(id)));
+  const guestInts = ints.filter(isGuestConvo);
   const weekEnd = endOfWeek(new Date());
   const dueThisWeek = fus.filter((f) => new Date(f.due_at) <= weekEnd);
   const inbound = ints.filter((i) => i.direction === "Inbound");
@@ -1359,7 +1361,7 @@ async function renderAnalyticsPage(route, seq) {
   const untyped = ints.filter((i) => !i.category_id || !catById(i.category_id)).length;
   // ---- going quiet: days since each Meister's last conversation (all time, not just the range) ----
   const lastTalk = {};
-  for (const i of d.interactions) if (!lastTalk[i.meister_id] || i.occurred_at > lastTalk[i.meister_id]) lastTalk[i.meister_id] = i.occurred_at;
+  for (const i of d.interactions) if (!isGuestConvo(i) && (!lastTalk[i.meister_id] || i.occurred_at > lastTalk[i.meister_id])) lastTalk[i.meister_id] = i.occurred_at;
   const daysSince = (m) => (lastTalk[m.id] ? Math.floor((Date.now() - new Date(lastTalk[m.id])) / 86400000) : null);
   const quiet = [
     { key: "q60", label: "60 to 89 days", color: "#f5a623", test: (n) => n != null && n >= STALE_DAYS && n < 90 },
@@ -1383,7 +1385,7 @@ async function renderAnalyticsPage(route, seq) {
   const salesSeries = monthlySeries(soldAll.map((g) => g.purchase_date + "T12:00:00"), nMonths);
   const deliverySeries = monthlySeries(deliveredAll.map((g) => g.delivery_date + "T12:00:00"), nMonths);
   const recentSales = soldAll.slice().sort((a, b) => (b.purchase_date || "").localeCompare(a.purchase_date || "")).slice(0, 3);
-  const engaged = groupBy(ints.filter((i) => !departedIds.has(i.meister_id)), (i) => i.meister_id)
+  const engaged = groupBy(ints.filter((i) => !departedIds.has(i.meister_id) && !isGuestConvo(i)), (i) => i.meister_id)
     .map(([id, items]) => ({ id, name: items[0].meisters?.name || "Unknown", dealership: items[0].meisters?.dealership, status: items[0].meisters?.status, n: items.length, last: items[0].occurred_at }))
     .sort((a, b) => b.n - a.n)
     .slice(0, 8);
@@ -1470,7 +1472,7 @@ async function renderAnalyticsPage(route, seq) {
     </div>
 
     <div class="kpi-strip kpi-strip-5">
-      <button class="kpi drill" data-drill="ints"><span class="kpi-num">${ints.length}</span><span class="kpi-label">Conversations logged</span>${delta(ints.length, prev?.ints)}</button>
+      <button class="kpi drill" data-drill="ints"><span class="kpi-num">${ints.length}</span><span class="kpi-label">Conversations logged${guestInts.length ? ` <span class="muted">· ${guestInts.length} with guests</span>` : ""}</span>${delta(ints.length, prev?.ints)}</button>
       <button class="kpi drill" data-drill="contacted"><span class="kpi-num">${contactedIds.size}</span><span class="kpi-label">Meisters contacted <span class="muted">of ${meisters.length}</span></span>${delta(contactedIds.size, prev?.contacted)}</button>
       <button class="kpi drill" data-drill="dir:Inbound"><span class="kpi-num st-sold">${inbound.length}</span><span class="kpi-label">Inbound <span class="muted">${ints.length ? Math.round((inbound.length / ints.length) * 100) + "% of logged" : ""}</span></span>${delta(inbound.length, prev?.inbound)}</button>
       <button class="kpi drill" data-drill="sales"><span class="kpi-num st-sold">${guests.length}</span><span class="kpi-label">Vehicles sold (guest orders)</span>${delta(guests.length, prev?.sales)}</button>
@@ -1484,7 +1486,7 @@ async function renderAnalyticsPage(route, seq) {
         ${ints.length ? barChartSvg(series, { drillPrefix: "bucket" }) : `<div class="empty-state">No activity in this range.</div>`}
       </div>
       <div class="card ana-span-4">
-        <div class="card-head"><h3>Interactions by type</h3></div>
+        <div class="card-head"><h3>Interactions by type</h3>${guestInts.length ? `<button class="link-btn muted drill" data-drill="intsguest" title="Emails, calls and texts with Meisters' guests">${guestInts.length} with guests</button>` : ""}</div>
         ${byMethod.length ? donutSvg(byMethod, "method") : `<div class="empty-state">Nothing yet.</div>`}
       </div>
 
@@ -1624,7 +1626,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611251256");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611251322");
       const tracked = meisters.map((m) => ({ ...m, guest_estimate: tPerM.get(m.id) || null }));
       const html = buildGuestMapReport(tracked, {
         filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "",
@@ -1644,7 +1646,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building legacy map…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611251256");
+      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611251322");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -1700,7 +1702,7 @@ function drillContent(key, ctx) {
   const intsList = (rows, title, sub) => ({
     title, sub: sub || `${rows.length} ${rows.length === 1 ? "conversation" : "conversations"}`,
     html: rows.length ? `<div class="notes-list">${rows.map(drillNoteHtml).join("")}</div>` : `<div class="empty-state">Nothing here.</div>`,
-    csv: { name: slug(title) + ".csv", rows: rows.map((r) => ({ Meister: r.meisters?.name || "", Method: r.method, Direction: r.direction || "", "Question Type": catById(r.category_id)?.name || "", "Date/Time": fmtDateTime(r.occurred_at), "Logged By": r.created_by_name || "", Note: r.note })) },
+    csv: { name: slug(title) + ".csv", rows: rows.map((r) => ({ Meister: r.meisters?.name || "", "With Guest": r.guest_name || "", Method: r.method, Direction: r.direction || "", "Question Type": catById(r.category_id)?.name || "", "Date/Time": fmtDateTime(r.occurred_at), "Logged By": r.created_by_name || "", Note: r.note })) },
   });
   const meisterList = (rows, title) => ({
     title, sub: `${rows.length} ${rows.length === 1 ? "Meister" : "Meisters"}`,
@@ -1715,6 +1717,7 @@ function drillContent(key, ctx) {
 
   switch (kind) {
     case "ints": return intsList(ctx.ints, "All conversations in range");
+    case "intsguest": return intsList(ctx.ints.filter(isGuestConvo), "Conversations with guests in range");
     case "contacted": return meisterList(ctx.meisters.filter((m) => ctx.ints.some((i) => i.meister_id === m.id)), "Meisters contacted in range");
     case "sales": {
       const rows = ctx.guests;
@@ -1839,6 +1842,7 @@ function drillNoteHtml(r) {
       <div class="note-top">
         <span class="method-badge method-${slug(r.method)}">${METHOD_ICON[r.method] || ""} ${escapeHtml(r.method)}</span>
         ${directionChip(r.direction)}
+        ${guestChip(r)}
         ${categorySelectHtml(r)}
         <a href="#/meister/${r.meister_id}" class="activity-meister">${escapeHtml(r.meisters?.name || "Unknown")}</a>
         <span class="muted">${escapeHtml(r.created_by_name || "someone")} &middot; ${fmtDateTime(r.occurred_at)}</span>
@@ -3248,10 +3252,11 @@ function noteCardHtml(i, fus, cmts) {
       <div class="note-top">
         <span class="method-badge method-${slug(i.method)}">${METHOD_ICON[i.method] || ""} ${escapeHtml(i.method)}</span>
         ${directionChip(i.direction)}
+        ${guestChip(i)}
         ${categorySelectHtml(i)}
         <span class="muted">${escapeHtml(i.created_by_name || "someone")} &middot; ${fmtDateTime(i.occurred_at)}${i.edited_by_name ? ` &middot; <span title="${escapeAttr(`Details changed by ${i.edited_by_name}${i.edited_at ? " on " + fmtDateTime(i.edited_at) : ""}`)}">edited</span>` : ""}</span>
         <span class="note-actions">
-          <button class="icon-btn edit-int-btn" data-id="${i.id}" title="Fix method, direction or date">${I.edit}</button>
+          ${i.kind === "guest_invite" ? "" : `<button class="icon-btn edit-int-btn" data-id="${i.id}" title="Fix method, direction or date">${I.edit}</button>`}
           ${isAdmin() ? `<button class="icon-btn danger delete-note-btn" data-id="${i.id}" title="Delete">${I.trash}</button>` : ""}
         </span>
       </div>
@@ -3881,7 +3886,8 @@ function wireGuestsTab(meister, guests = [], apps = [], allNames = []) {
         const next = tmp.firstElementChild;
         lbl.replaceWith(next);
         wireInv(next);
-        toast(box.checked ? "Invite email marked sent" : "Invite email cleared");
+        toast(box.checked ? "Invite email marked sent · logged on Activity" : "Invite email cleared · removed from Activity");
+        render();
       } catch (err) {
         box.checked = !box.checked; box.disabled = false;
         toast("Could not save: " + (/column|schema cache/i.test(err.message) ? "run the INVITE EMAIL SENT SQL in Supabase first." : err.message), "error");
@@ -4050,6 +4056,14 @@ function wirePhoneInput(input) {
     if (atEnd) input.setSelectionRange(input.value.length, input.value.length);
   });
 }
+
+// Conversations logged to a Meister's guest (e.g. the invite email) instead of the Meister
+function guestChip(i) {
+  const n = i.guest_name || i.guestName;
+  if (!i.guest_id && !n) return "";
+  return `<span class="guest-to-chip" title="This was with the Meister's guest, not the Meister">${I.users || ""} To guest${n ? `: ${escapeHtml(n)}` : ""}</span>`;
+}
+const isGuestConvo = (i) => !!(i.guest_id || i.kind === "guest_invite");
 
 function directionChip(direction) {
   if (!direction) return "";

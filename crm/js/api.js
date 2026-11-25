@@ -1,4 +1,4 @@
-import { supabase } from "./supabase-client.js?v=202611251256";
+import { supabase } from "./supabase-client.js?v=202611251322";
 
 // ---------- auth / account ----------
 export async function signIn(email, password) {
@@ -206,7 +206,7 @@ export async function markExported() {
 // and the signed-in user's own next pending follow-up).
 export async function listMeisterRollups(userId, name = null) {
   const [ints, gs, fus] = await Promise.all([
-    supabase.from("interactions").select("meister_id, occurred_at"),
+    supabase.from("interactions").select("meister_id, occurred_at, guest_id").then((r) => (r.error ? supabase.from("interactions").select("meister_id, occurred_at") : r)),
     supabase.from("guests").select("meister_id"),
     withFallback((n) => mineFilter(supabase.from("follow_ups").select("id, meister_id, title, due_at"), userId, n).is("done_at", null), userId, name),
   ]);
@@ -219,6 +219,7 @@ export async function listMeisterRollups(userId, name = null) {
   for (const i of ints.data) {
     const r = (rollup[i.meister_id] ||= blank());
     r.interaction_count += 1;
+    if (i.guest_id) continue; // a conversation with the Meister's guest isn't contact with the Meister
     if (!r.last_contact || i.occurred_at > r.last_contact) r.last_contact = i.occurred_at;
   }
   for (const g of gs.data) (rollup[g.meister_id] ||= blank()).guest_count += 1;

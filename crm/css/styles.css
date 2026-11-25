@@ -1508,3 +1508,5 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 .g-inq-none { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; }
 .mf-row { cursor: default; }
 .inv-head h2 svg { width: 18px; height: 18px; color: #3ddc84; }
+.guest-to-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(212, 169, 74, .45); background: rgba(212, 169, 74, .08); color: #d4a94a; }
+.guest-to-chip svg { width: 11px; height: 11px; }
