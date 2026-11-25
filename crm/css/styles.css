@@ -1246,7 +1246,8 @@ input.invalid, select.invalid, textarea.invalid { border-color: var(--red) !impo
   .ana-quiet { grid-column: span 4 !important; }
   .ana-quiet .bar-row { grid-template-columns: 1fr 70px 28px !important; gap: 8px !important; }
   .ana-engaged { grid-column: span 8 !important; }
-  .gc-kpis { grid-template-columns: repeat(4, 1fr) !important; }
+  .gc-kpis { grid-template-columns: repeat(5, 1fr) !important; }
+  .gc-inv-bar { background: #ddd !important; } .gc-inv-bar > i { background: #1e9e5a !important; }
   .gc-grid { grid-template-columns: 1fr 1fr !important; gap: 12px 24px !important; }
   .gc-grid > div:first-child { grid-column: 1 / -1; }
   .donut-num { fill: #111 !important; } .donut-lbl { fill: #555 !important; } .donut .seg { stroke: #fff !important; }
@@ -1318,7 +1319,11 @@ button.veh-kpi { cursor: pointer; } button.veh-kpi:hover { border-color: var(--b
 /* analytics: Meister guest counts */
 .form-grid-4 { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 900px) { .form-grid-4 { grid-template-columns: repeat(2, 1fr); } }
-.gc-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 4px 0 16px; }
+.gc-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 4px 0 16px; }
+.gc-inv-kpi b { color: #3ddc84; }
+.gc-inv-bar { display: block; height: 4px; border-radius: 2px; background: var(--border); margin-top: 5px; overflow: hidden; }
+.gc-inv-bar > i { display: block; height: 100%; background: #3ddc84; border-radius: 2px; }
+.gc-inv-yes { color: #3ddc84; font-size: 12.5px; }
 .gc-head-r { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
 @media print { #gc-map-btn { display: none; } }
 .gc-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 24px; }

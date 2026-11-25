@@ -58,10 +58,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611251102";
-import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611251102";
-import { exportToExcel } from "./export.js?v=202611251102";
-import { wireImport } from "./import-export.js?v=202611251102";
+} from "./api.js?v=202611251214";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611251214";
+import { exportToExcel } from "./export.js?v=202611251214";
+import { wireImport } from "./import-export.js?v=202611251214";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1368,6 +1368,9 @@ async function renderAnalyticsPage(route, seq) {
   const tTop = meisters.filter((m) => tPerM.get(m.id)).map((m) => ({ ...m, n: tPerM.get(m.id), alloc: tg.filter((g) => g.meister_id === m.id && isAlloc(g)).length }))
     .sort((a, b) => b.n - a.n || b.alloc - a.alloc || a.name.localeCompare(b.name)).slice(0, 5);
   const tMeistersWith = meisters.filter((m) => tPerM.get(m.id)).length;
+  // invite emails sent, as a share of every Level 3 guest
+  const tL3 = tg.filter((g) => g.gih_level3), tL3Sent = tL3.filter((g) => g.invite_sent_at).length;
+  const tL3Pct = tL3.length ? Math.round((tL3Sent / tL3.length) * 100) : 0;
 
   // ---- follow-up counters ----
   const now = new Date();
@@ -1510,6 +1513,7 @@ async function renderAnalyticsPage(route, seq) {
           <button class="veh-kpi drill" data-drill="tstatus:Submitted"><b>${tCount("Submitted")}</b><span>Submitted</span></button>
           <button class="veh-kpi drill" data-drill="tstatus:Nominated"><b>${tCount("Nominated")}</b><span>Nominated${tCount("Waitlist") ? ` · ${tCount("Waitlist")} waitlist` : ""}</span></button>
           <button class="veh-kpi drill" data-drill="tstatus:alloc"><b>${tCount("Allocated") + tCount("Delivered")}</b><span>Allocated · ${tCount("Delivered")} delivered</span></button>
+          <button class="veh-kpi drill gc-inv-kpi" data-drill="tinvite:l3" title="Level 3 guests who have been sent the invite email"><b>${tL3.length ? tL3Pct + "%" : "—"}</b><span>Invite emails sent · ${tL3Sent} of ${tL3.length} Level 3</span><i class="gc-inv-bar"><i style="width:${tL3Pct}%"></i></i></button>
         </div>
         <div class="gc-grid">
           <div>
@@ -1563,7 +1567,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611251102");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611251214");
       const tracked = meisters.map((m) => ({ ...m, guest_estimate: tPerM.get(m.id) || null }));
       const html = buildGuestMapReport(tracked, {
         filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "",
@@ -1583,7 +1587,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building legacy map…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611251102");
+      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611251214");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -1691,6 +1695,16 @@ function drillContent(key, ctx) {
         title: `Delivered — ${pt ? pt.label : ""}`, sub: `${rows.length} deliveries`,
         html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}<span class="muted"> · ${escapeHtml(guestStatus(g))} · via ${escapeHtml(g.meisters?.name || "")}</span></span><span class="muted">${fmtMonth(g.delivery_date)}</span></a>`).join("")}</div>` : `<div class="empty-state">No deliveries that month.</div>`,
         csv: { name: "delivered-month.csv", rows: rows.map((g) => ({ Guest: g.guest_name, Status: guestStatus(g), "Delivery Date": g.delivery_date, Meister: g.meisters?.name || "" })) },
+      };
+    }
+    case "tinvite": {
+      const rows = ctx.tg.filter((g) => g.gih_level3)
+        .sort((a, b) => (!!a.invite_sent_at - !!b.invite_sent_at) || String(a.guest_name).localeCompare(String(b.guest_name)));
+      const sent = rows.filter((g) => g.invite_sent_at).length;
+      return {
+        title: "Invite emails · Level 3 guests", sub: `${sent} of ${rows.length} sent${rows.length ? ` (${Math.round((sent / rows.length) * 100)}%)` : ""} · not sent listed first`,
+        html: rows.length ? `<div class="mini-list">${rows.map((g) => `<a href="#/meister/${g.meister_id}" class="mini-row"><span>${escapeHtml(g.guest_name)}${g.vip ? ` <span class="guest-vip">${I.star}VIP</span>` : ""}<span class="muted"> · via ${escapeHtml(g._m?.name || "")} · ${escapeHtml(g._st)}</span></span><span class="${g.invite_sent_at ? "gc-inv-yes" : "muted"}">${g.invite_sent_at ? `Sent ${escapeHtml(fmtDateTime(g.invite_sent_at))}` : "Not sent"}</span></a>`).join("")}</div>` : `<div class="empty-state">No Level 3 guests yet.</div>`,
+        csv: { name: "level3-invite-emails.csv", rows: rows.map((g) => ({ Guest: g.guest_name, VIP: g.vip ? "Yes" : "", Status: g._st, Meister: g._m?.name || "", Email: g.email || "", "Invite Email Sent": g.invite_sent_at ? "Yes" : "No", "Sent At": g.invite_sent_at ? fmtDateTime(g.invite_sent_at) : "", "Sent By": g.invite_sent_by_name || "" })) },
       };
     }
     case "tregion": case "tstatus": {
