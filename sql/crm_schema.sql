@@ -1113,3 +1113,12 @@ end $$;
 drop trigger if exists inquiry_imports_undo_fills on inquiry_imports;
 create trigger inquiry_imports_undo_fills after update of undone_at on inquiry_imports
   for each row execute function public.undo_level3_fills();
+
+-- ============================================================
+-- INVITE EMAIL SENT
+-- Checkbox on each nominated guest card, stamped with when it was
+-- checked and who checked it. Safe to run more than once.
+-- ============================================================
+alter table guests add column if not exists invite_sent_at timestamptz;
+alter table guests add column if not exists invite_sent_by_name text;
+notify pgrst, 'reload schema';

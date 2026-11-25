@@ -1,4 +1,4 @@
-import { GRGT_LOGO } from "./logo.js?v=202611241555";
+import { GRGT_LOGO } from "./logo.js?v=202611251102";
 // Outputs for an applicant:
 //  1) a plain text summary to paste into the other internal tool
 //  2) the two page Buyer Profile PDF (built as HTML, printed to PDF)

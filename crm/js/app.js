@@ -58,10 +58,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   markMeisterNotificationsRead,
-} from "./api.js?v=202611241555";
-import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611241555";
-import { exportToExcel } from "./export.js?v=202611241555";
-import { wireImport } from "./import-export.js?v=202611241555";
+} from "./api.js?v=202611251102";
+import { SPEC_OPTIONS, SPEC_LABELS, specLabel, specGroups } from "../../profiles/js/outputs.js?v=202611251102";
+import { exportToExcel } from "./export.js?v=202611251102";
+import { wireImport } from "./import-export.js?v=202611251102";
 
 const app = document.getElementById("app");
 let currentProfile = null;
@@ -1563,7 +1563,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building map report…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap.js?v=202611241555");
+      const { buildGuestMapReport } = await import("./guestmap.js?v=202611251102");
       const tracked = meisters.map((m) => ({ ...m, guest_estimate: tPerM.get(m.id) || null }));
       const html = buildGuestMapReport(tracked, {
         filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "",
@@ -1583,7 +1583,7 @@ async function renderAnalyticsPage(route, seq) {
     if (!win) { toast("Allow pop ups for this site to open the map report", "error"); return; }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Building legacy map…</p>");
     try {
-      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611241555");
+      const { buildGuestMapReport } = await import("./guestmap-legacy.js?v=202611251102");
       const html = buildGuestMapReport(meisters, { filterLabel: anaState.concierge ? `${anaState.concierge}'s Meisters` : "All concierges", by: currentProfile?.full_name || "" });
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       win.location.href = url;
@@ -3594,6 +3594,7 @@ function renderGuestsTab(guests, hist = [], apps = [], allNames = []) {
                 ${isAdmin() ? `<button class="icon-btn danger delete-guest-btn" data-id="${g.id}" title="Delete">${I.trash}</button>` : ""}
               </div>
             </header>
+            ${guestInviteHtml(g)}
             ${otherNominationsHtml(otherNominations(g.guest_name, g.meister_id, allNames))}
             ${guestJourneyHtml(g, histOf(g.id))}
             <dl class="g-facts">
@@ -3609,6 +3610,15 @@ function renderGuestsTab(guests, hist = [], apps = [], allNames = []) {
           </article>`).join("") : `<div class="empty-state">No guests nominated yet.</div>`}
       </div>
     </div>`;
+}
+
+// "Invite email sent" checkbox on each guest card, stamped with when and who
+function guestInviteHtml(g) {
+  const on = !!g.invite_sent_at;
+  return `<label class="g-inv ${on ? "on" : ""}" data-ginv="${g.id}" title="${on ? "Click to clear" : "Check once the invite email to schedule a time has gone out"}">
+    <input type="checkbox" ${on ? "checked" : ""} hidden /><span class="g-inv-box">${I.check}</span>
+    <span>Invite Email Sent</span>${on ? `<span class="g-inv-at">${escapeHtml(fmtDateTime(g.invite_sent_at))}${g.invite_sent_by_name ? ` · ${escapeHtml(g.invite_sent_by_name)}` : ""}</span>` : ""}
+  </label>`;
 }
 
 function guestState(prefix, existing, app) {
@@ -3698,6 +3708,31 @@ function wireGuestsTab(meister, guests = [], apps = [], allNames = []) {
     try { const a = document.createElement("a"); a.href = await guestPdfUrl(g, true); a.download = g.pdf_name || "profile.pdf"; document.body.appendChild(a); a.click(); a.remove(); }
     catch (err) { toast("Couldn't download: " + err.message, "error"); }
   }));
+
+  document.querySelectorAll("[data-ginv]").forEach(function wireInv(lbl) {
+    const box = lbl.querySelector("input");
+    box.addEventListener("change", async () => {
+      const g = guests.find((x) => x.id === lbl.dataset.ginv);
+      if (!g) return;
+      if (!box.checked && !confirm(`Clear the invite email timestamp for ${g.guest_name}?`)) { box.checked = true; return; }
+      const fields = box.checked
+        ? { invite_sent_at: new Date().toISOString(), invite_sent_by_name: currentProfile.full_name || null }
+        : { invite_sent_at: null, invite_sent_by_name: null };
+      box.disabled = true;
+      try {
+        Object.assign(g, await updateGuest(g.id, fields));
+        const tmp = document.createElement("div");
+        tmp.innerHTML = guestInviteHtml(g);
+        const next = tmp.firstElementChild;
+        lbl.replaceWith(next);
+        wireInv(next);
+        toast(box.checked ? "Invite email marked sent" : "Invite email cleared");
+      } catch (err) {
+        box.checked = !box.checked; box.disabled = false;
+        toast("Could not save: " + (/column|schema cache/i.test(err.message) ? "run the INVITE EMAIL SENT SQL in Supabase first." : err.message), "error");
+      }
+    });
+  });
 
   const appById = new Map(apps.map((a) => [a.id, a]));
   document.querySelectorAll(".guest-form").forEach(wireGuestForm);
